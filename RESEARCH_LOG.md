@@ -57,3 +57,22 @@ Setup de infra para research com APIs pagas tem custos ocultos significativos:
 2. Enquanto isso: leitura estruturada do código do TradingAgents
 3. Esboçar design do Macro Economist Agent no papel
 4. Começar draft do PAPER.md com seções que não dependem de resultados
+
+## 2026-04-23 — Dia 3 (Quinta)
+
+### Trabalho
+- Setup.py modificado via sed e script Python (após falha do TextEdit no dia 22)
+- Bloco 'if macro' adicionado após bloco 'fundamentals'
+- "macro" adicionado ao default de selected_analysts
+- `__init__.py` atualizado: import + __all__ de create_macro_economist
+- Validação: import + instantiation ambos funcionam
+
+### Lição operacional
+- TextEdit não é confiável pra edição de arquivos Python no GUI
+- sed + python heredoc é mais seguro (atômico, erro explícito)
+- Import superficial (só a classe) não valida nomes internos; precisa instanciar ou importar função direto pra catch bugs latentes
+
+### Status do Macro Agent
+- Código: 100% estruturado
+- Integração: 100% validada
+- Execução end-to-end: BLOQUEADA (billing Anthropic)
