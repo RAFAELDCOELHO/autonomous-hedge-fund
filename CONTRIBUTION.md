@@ -139,6 +139,80 @@ opt-in via the `selected_analysts` config parameter, preserving
 reproducibility of the original paper's baseline and enabling the 2x2
 factorial design described in Experimental Plan.
 
+### Backtest Infrastructure
+
+Evaluation substrate lives in `tradingagents/backtest/`. Four modules,
+one job each:
+
+- `baselines.py` — reference strategies: BuyAndHold, MACD crossover,
+  SMA crossover. Shared signature: `decide(prices_so_far) -> Action`.
+- `metrics.py` — CR, AR, Sharpe, MDD. Computed from position-and-price
+  path. No look-ahead by construction.
+- `runner.py` — execution engine. `run_agent_strategy(prices, decide_fn)`
+  walks the series day by day and passes only `prices.iloc[:i+1]` to
+  `decide_fn` at step `i`. The slicing is the only guarantee against
+  leakage.
+- `report.py` — aggregates results into comparable tables and equity
+  curves.
+
+The shared `decide_fn` signature is load-bearing. It lets baselines
+and agents plug into the same runner. The integration layer below
+exists to give the TradingAgents graph that same signature.
+
+### TradingAgents Integration Layer
+
+`tradingagents/backtest/agent_integration.py` (~140 lines) bridges the
+TradingAgents graph to the backtest runner. Three pieces:
+
+- `map_signal(decision) -> Action` — the graph emits 5 classes
+  (STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL); the runner expects 3
+  (BUY, HOLD, SELL). STRONG_BUY collapses to BUY, STRONG_SELL to
+  SELL.
+- `make_decide_fn(propagate_fn, ticker) -> decide_fn` — factory that
+  returns a `decide_fn` matching the runner's signature. Closes over
+  `propagate_fn` (the graph entry point) and the ticker. At each step
+  it builds a state from `prices_so_far`, calls `propagate_fn`,
+  extracts the final decision, maps it, returns an Action.
+- `run_tradingagents_backtest(...)` — high-level wrapper. Pulls
+  prices, instantiates the graph, wraps it with `make_decide_fn`,
+  hands it to `run_agent_strategy`.
+
+The `propagate_fn` injection matters. It keeps the orchestrator
+pluggable — I can swap a different graph in without touching the
+runner — and it makes the agent trivially mockable. The next section
+uses that.
+
+### Validation
+
+Before running any H1 experiment, I needed to prove the integration
+layer itself doesn't bias outcomes. The test: if the agent always
+says BUY, the strategy must be mathematically identical to BuyAndHold
+over the same window.
+
+Setup: mock agent that returns BUY on every call. Ticker AAPL,
+January 2024. Both strategies driven through `run_agent_strategy`
+with identical prices.
+
+Result:
+
+| Strategy         | CR     | Sharpe | MDD    |
+|------------------|--------|--------|--------|
+| BuyAndHold       | -0.67% | -0.502 | -5.52% |
+| Agent (mock BUY) | -0.67% | -0.502 | -5.52% |
+
+Identical across all three metrics. That closes two loops:
+`map_signal` correctly routes the BUY class, and the runner treats
+the agent's decision stream exactly like a baseline's — no hidden
+transaction cost, no off-by-one, no state leakage.
+
+The AAPL window was negative by coincidence (weak month for the
+ticker). The sign is irrelevant here. What matters is that both
+numbers are the same number.
+
+This validation is a precondition for H1. Any Sharpe difference
+between US and BR runs in the 2x2 factorial has to come from the
+agents, not from the plumbing.
+
 ## Experimental Plan
 
 ### H1 Test: Macro Context Asymmetry Across Markets
