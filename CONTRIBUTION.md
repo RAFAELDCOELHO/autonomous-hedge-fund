@@ -113,6 +113,32 @@ each agency's API (Bacen's SGS XML endpoints, IBGE's SIDRA nested JSON,
 Tesouro Direto's deprecated endpoints behind Cloudflare). With brazilfi, 
 the Macro Economist Agent's tool layer is a handful of wrapper 
 functions — typed, tested, and CI-validated.
+## Implementation Architecture
+
+### Macro Economist Agent
+
+The Macro Economist Agent extends the TradingAgents analyst layer with
+an agent specialized in macroeconomic analysis. It follows the same
+factory pattern as the existing Market, News, Social, and Fundamentals
+analysts: a factory function (`create_macro_economist`) that
+instantiates a LangChain agent bound to a toolset and a domain-specific
+system prompt, returning a closure used by the graph orchestrator.
+
+The agent consumes four LangChain tools backed by the brazilfi library:
+
+- `get_selic(last_days)`: SELIC policy rate time series (Bacen SGS)
+- `get_inflation(last_months)`: IPCA headline inflation (Bacen SGS)
+- `get_gdp(last_quarters)`: GDP growth quarterly series (IBGE SIDRA)
+- `get_exchange_rate(last_days)`: BRL/USD daily rate (Bacen SGS)
+
+Integration into the LangGraph pipeline required three changes:
+a new creation block in `tradingagents/graph/setup.py`, addition of
+`macro_report` as a field in `AgentState`, and export of
+`create_macro_economist` from `tradingagents.agents`. The agent is
+opt-in via the `selected_analysts` config parameter, preserving
+reproducibility of the original paper's baseline and enabling the 2x2
+factorial design described in Experimental Plan.
+
 ## Experimental Plan
 
 ### H1 Test: Macro Context Asymmetry Across Markets

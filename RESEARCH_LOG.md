@@ -76,3 +76,23 @@ Setup de infra para research com APIs pagas tem custos ocultos significativos:
 - Código: 100% estruturado
 - Integração: 100% validada
 - Execução end-to-end: BLOQUEADA (billing Anthropic)
+
+## 2026-04-24 — Dia 4 (Sexta)
+
+### Trabalho
+- CONTRIBUTION.md atualizado: nova seção "Implementation Architecture" com 4 sub-seções (Macro Economist Agent já inserida; Backtest Infrastructure, TradingAgents Integration Layer, Validation pendentes de revisão estilo B)
+- Novo arquivo: tradingagents/backtest/agent_integration.py (140 linhas)
+  - map_signal(): normaliza BUY/OVERWEIGHT/HOLD/UNDERWEIGHT/SELL → BUY/HOLD/SELL
+  - make_decide_fn(): factory com closure, dependency injection via propagate_fn
+  - run_tradingagents_backtest(): wrapper de alto nível
+- Validação: equivalência numérica perfeita com BuyAndHold em AAPL Jan 2024 (CR -0.67%, Sharpe -0.502, MDD -5.52%) usando mock propagate
+
+### Leitura guiada com Lex
+- baselines.py completo (BuyAndHold, MACDStrategy, SMACrossStrategy, _Strategy ABC, _simulate)
+- Conceitos novos aprendidos: polimorfismo/duck typing, abstract base class, factory, closure, opt-in vs opt-out
+
+### Pendente nesse dia
+- Inserir sub-seções Backtest Infrastructure / TradingAgents Integration Layer / Validation no CONTRIBUTION.md (versão B estilo direto)
+- Adaptação tickers BR (yfinance .SA)
+- Checkpoint semanal formal
+- Sem resposta Anthropic billing até agora (3º follow-up mandado hoje cedo)
