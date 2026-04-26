@@ -35,6 +35,13 @@ from tradingagents.agents.utils.agent_utils import (
     get_global_news
 )
 
+from tradingagents.agents.utils.macro_tools import (
+    get_selic,
+    get_inflation,
+    get_gdp,
+    get_exchange_rate,
+)
+
 from .conditional_logic import ConditionalLogic
 from .setup import GraphSetup
 from .propagation import Propagator
@@ -191,6 +198,15 @@ class TradingAgentsGraph:
                     get_balance_sheet,
                     get_cashflow,
                     get_income_statement,
+                ]
+            ),
+            "macro": ToolNode(
+                [
+                    # Brazilian macroeconomic tools
+                    get_selic,
+                    get_inflation,
+                    get_gdp,
+                    get_exchange_rate,
                 ]
             ),
         }
