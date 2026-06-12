@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        # Dummy key: the graph-construction test instantiates LLM clients
+        # but never makes API calls. test_api_smoke.py is a manual script
+        # that hits the live Anthropic API, so it is excluded from CI.
+        env:
+          ANTHROPIC_API_KEY: ci-dummy-key
+        run: uv run pytest tests/ --ignore=tests/test_api_smoke.py

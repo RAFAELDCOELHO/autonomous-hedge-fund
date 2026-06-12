@@ -3,10 +3,11 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tradingagents"
+name = "autonomous-hedge-fund"
 version = "0.2.3"
-description = "TradingAgents: Multi-Agents LLM Financial Trading Framework"
+description = "Multi-agent LLM trading system with Macro Economist Agent for emerging market research"
 readme = "README.md"
+keywords = ["trading", "multi-agent", "llm", "emerging-markets", "macro", "brazil"]
 requires-python = ">=3.12"
 dependencies = [
     "langchain-core>=0.3.81",
@@ -35,7 +36,12 @@ dependencies = [
     "huggingface-hub>=1.11.0",
     "einops>=0.8.2",
     "safetensors>=0.7.0",
+    "python-dotenv>=1.1.0",
+    "brazilfi>=0.2.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/RAFAELDCOELHO/autonomous-hedge-fund"
 
 [project.scripts]
 tradingagents = "cli.main:app"
@@ -45,3 +51,8 @@ include = ["tradingagents*", "cli*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

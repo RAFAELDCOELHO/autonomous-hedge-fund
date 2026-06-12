@@ -1,3 +1,5 @@
+> **Research status:** Infrastructure complete. H1 experiment pending. PAPER.md draft available.
+
 # Research Contribution
 
 ## Origin: brazilfi
@@ -21,8 +23,9 @@ Current state (v0.3.0):
 - Pydantic v2 typed models
 - 76% test coverage, 36 tests
 - CI with ruff + mypy strict + pytest on Python 3.11/3.12
-- Trusted Publishing to PyPI via GitHub Actions OIDC## 
-Independent Research: Multi-Agent LLM Trading
+- Trusted Publishing to PyPI via GitHub Actions OIDC
+
+## Independent Research: Multi-Agent LLM Trading
 
 Separately from brazilfi, I developed an implementation inspired by 
 TradingAgents (Xiao et al., 2024, arXiv:2412.20138), a multi-agent LLM 
@@ -42,6 +45,7 @@ Jan-Mar 2024)?
 
 This work was developed independently and targets US equities, matching 
 the original paper's evaluation setup.
+
 ## Emerging Research Question: Macro Context in Multi-Agent Trading
 
 During the planning of evaluation phases beyond the paper's original 
@@ -71,6 +75,7 @@ exchange rates) to the TradingAgents pipeline improves trading
 performance (measured by Sharpe ratio and cumulative return) 
 significantly more in emerging markets than in developed markets, 
 due to differences in macroeconomic volatility.
+
 ## Convergence: brazilfi as Substrate
 
 The Macro Economist Agent requires structured, reliable access to 
@@ -113,6 +118,7 @@ each agency's API (Bacen's SGS XML endpoints, IBGE's SIDRA nested JSON,
 Tesouro Direto's deprecated endpoints behind Cloudflare). With brazilfi, 
 the Macro Economist Agent's tool layer is a handful of wrapper 
 functions — typed, tested, and CI-validated.
+
 ## Implementation Architecture
 
 ### Macro Economist Agent
@@ -165,10 +171,10 @@ exists to give the TradingAgents graph that same signature.
 TradingAgents graph to the backtest runner. Three pieces:
 
 - `map_signal(decision) -> Action` — the graph emits 5 classes
-  (STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL); the runner expects 3
-  (BUY, HOLD, SELL). STRONG_BUY collapses to BUY, STRONG_SELL to
+  (BUY, OVERWEIGHT, HOLD, UNDERWEIGHT, SELL); the runner expects 3
+  (BUY, HOLD, SELL). OVERWEIGHT collapses to BUY, UNDERWEIGHT to
   SELL.
-- `make_decide_fn(propagate_fn, ticker) -> decide_fn` — factory that
+- `make_decide_fn(ticker, config, propagate_fn) -> decide_fn` — factory that
   returns a `decide_fn` matching the runner's signature. Closes over
   `propagate_fn` (the graph entry point) and the ticker. At each step
   it builds a state from `prices_so_far`, calls `propagate_fn`,

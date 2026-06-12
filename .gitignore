@@ -217,32 +217,17 @@ __marimo__/
 
 # Cache
 **/data_cache/
-.env
-__pycache__/
-.venv/
-*.pyc
 .kronos_cache/
-.env
-__pycache__/
-.venv/
 *.pyc
-.kronos_cache/
-.env
-__pycache__/
 .venv/
-*.pyc
-.kronos_cache/
-.env
-__pycache__/
-.venv/
-*.pyc
-.kronos_cache/
-.env
-__pycache__/
-.venv/
-*.pyc
-.kronos_cache/
-.env
-.env
-.env
-.env
+
+# Local environment overrides
+.env.local
+
+# macOS
+.DS_Store
+
+# Research artifacts
+results/
+*.pkl
+data/raw/
