@@ -1,0 +1,27 @@
+[
+  {
+    "model": "mistral:7b",
+    "warm_deterministic": true,
+    "cold_deterministic": true,
+    "warm_hashes": [
+      "d897c71d",
+      "d897c71d",
+      "d897c71d"
+    ],
+    "cold_hashes": [
+      "d897c71d",
+      "d897c71d",
+      "d897c71d"
+    ],
+    "warm_outputs": [
+      " {\"signal\": \"BUY\", \"confidence\": 0.9, \"reasoning\": \"PETR4's steep 20d return (-42.8%) and high volume z-score (+3.42) indicate oversold conditions. The current SELIC rate of 4.25% is below the historical pressure point of 12%. Inflation (IPCA) and FX risk (USD/BRL) are currently low, providing a favorable macro context.\"}",
+      " {\"signal\": \"BUY\", \"confidence\": 0.9, \"reasoning\": \"PETR4's steep 20d return (-42.8%) and high volume z-score (+3.42) indicate oversold conditions. The current SELIC rate of 4.25% is below the historical pressure point of 12%. Inflation (IPCA) and FX risk (USD/BRL) are currently low, providing a favorable macro context.\"}",
+      " {\"signal\": \"BUY\", \"confidence\": 0.9, \"reasoning\": \"PETR4's steep 20d return (-42.8%) and high volume z-score (+3.42) indicate oversold conditions. The current SELIC rate of 4.25% is below the historical pressure point of 12%. Inflation (IPCA) and FX risk (USD/BRL) are currently low, providing a favorable macro context.\"}"
+    ],
+    "cold_outputs": [
+      " {\"signal\": \"BUY\", \"confidence\": 0.9, \"reasoning\": \"PETR4's steep 20d return (-42.8%) and high volume z-score (+3.42) indicate oversold conditions. The current SELIC rate of 4.25% is below the historical pressure point of 12%. Inflation (IPCA) and FX risk (USD/BRL) are currently low, providing a favorable macro context.\"}",
+      " {\"signal\": \"BUY\", \"confidence\": 0.9, \"reasoning\": \"PETR4's steep 20d return (-42.8%) and high volume z-score (+3.42) indicate oversold conditions. The current SELIC rate of 4.25% is below the historical pressure point of 12%. Inflation (IPCA) and FX risk (USD/BRL) are currently low, providing a favorable macro context.\"}",
+      " {\"signal\": \"BUY\", \"confidence\": 0.9, \"reasoning\": \"PETR4's steep 20d return (-42.8%) and high volume z-score (+3.42) indicate oversold conditions. The current SELIC rate of 4.25% is below the historical pressure point of 12%. Inflation (IPCA) and FX risk (USD/BRL) are currently low, providing a favorable macro context.\"}"
+    ]
+  }
+]
