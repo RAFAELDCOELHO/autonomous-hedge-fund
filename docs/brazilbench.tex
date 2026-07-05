@@ -1,0 +1,1757 @@
+\documentclass{article}
+
+\usepackage[preprint]{neurips_2026}
+\usepackage[numbers]{natbib}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{siunitx}
+
+\title{Autonomous LLM Trading Agents in Emerging Markets:\\
+A Brazilian Multi-Regime Benchmark}
+
+\author{
+  Rafael D. Coelho \\
+  Maple Bear Fortaleza \\
+  Fortaleza, CE, Brazil \\
+  \texttt{rafael.d.cooelho@gmail.com} \\
+}
+
+\begin{document}
+
+\maketitle
+
+% -------------------------------------------------------
+\begin{abstract}
+We present BrazilBench, the first benchmark for evaluating LLM trading
+agents on Brazilian equity markets (\url{https://github.com/RAFAELDCOELHO/autonomous-hedge-fund}).
+Existing benchmarks focus exclusively on U.S.\ markets, ignoring
+structural differences of emerging economies: high interest rates,
+currency volatility, and sharper crashes. BrazilBench evaluates seven
+agents across four regimes and nine B3 assets, with LLM results as
+mean $\pm$ std over $N{=}3$ independent sessions. Three findings:
+\emph{(i)} MACD avoided the COVID-19 crash via a single well-timed
+exit/re-entry on PETR4 ($+26.2\%$ vs.\ $-28.0\%$ B\&H; 3 fills),
+and Momentum lost $-28.5\%$ in the high-rates regime from
+transaction-cost compounding --- regime sensitivity dominates
+strategy differences; \emph{(ii)} the LLM agent (Claude Sonnet 4.6)
+achieves the highest sample mean return ($+0.1\%$) but provides
+\textbf{no evidence of statistically superior predictive ability}
+over Buy-and-Hold under Bonferroni or Benjamini-Hochberg correction
+($N{=}36$ cells; power analysis: detectable $\delta{\approx}0.31$\,pp/day
+at $\beta{=}0.80$); under BH FDR control, the LLM significantly
+outperforms Momentum and Random in crisis\_2020 --- but not the
+passive B\&H baseline in any regime; two leakage probes
+(date-shuffle: $\Delta{=}{-21.4}$\,pp under row permutation;
+OOS 2025~H1: LLM $-1.25\%$ vs B\&H $+1.35\%$) confirm no
+durable alpha outside in-sample conditions;
+\emph{(iii)} a \textbf{causal identification} of the non-determinism
+mechanism in local LLM inference: Qwen 2.5-7B's session variance is
+entirely attributable to Ollama KV-cache state --- confirmed by
+cold-start (80/80 bars byte-identical with server restart) --- while
+Claude's cloud non-determinism (24pp variance) is a separate
+infrastructure effect. Both imply $N{\geq}3$ seeds as the minimum
+defensible standard; with cold-start, local inference achieves full
+reproducibility that cloud inference cannot.
+\end{abstract}
+
+% -------------------------------------------------------
+\section{Introduction}
+% -------------------------------------------------------
+
+Recent years have seen a surge in LLM-powered trading frameworks, yet
+their evaluation has remained almost exclusively focused on U.S.\ markets.
+No standardized benchmark existed for testing trading agents on Brazilian
+equities, motivating the creation of BrazilBench.
+
+Brazil presents structural challenges that U.S.-centric benchmarks cannot
+capture. The SELIC rate --- Brazil's benchmark interest rate --- fluctuated
+between 2.0\% and 13.75\% during our study period, fundamentally altering
+the opportunity cost of capital. The Brazilian real depreciated
+significantly against the dollar over the same period. Most strikingly,
+the Ibovespa index fell 45\% peak-to-trough during the COVID-19 crash
+of 2020, nearly double the S\&P 500's decline. These are not exceptional
+events --- they represent the normal operating environment of an emerging
+market.
+
+We introduce BrazilBench, a reproducible benchmark for evaluating
+autonomous trading agents on Brazilian equity markets. Our contributions
+are: (1) the first standardized evaluation framework for LLM trading
+agents on B3-listed assets, with a macro-augmented agent state
+(SELIC, IPCA, USD/BRL) and four macroeconomic regimes covering
+$2019$--$2022$, extended to nine B3 assets spanning utilities, agro,
+services, and defensive retail beyond the usual blue-chip set;
+(2) statistical analysis combining the Hansen SPA test (primary, controls
+data-snooping bias) and Diebold-Mariano test (robustness check), with
+both Bonferroni (FWER) and Benjamini-Hochberg (FDR) corrections:
+under Bonferroni, the LLM shows no evidence of superiority over any
+baseline; under BH, the LLM significantly outperforms Momentum and
+Random in crisis\_2020 but not Buy-and-Hold in any regime; and
+(3) empirical demonstration that \textbf{single-shot LLM benchmarks
+under-report variance regardless of provider}: Claude Sonnet 4.6
+(cloud API) exhibits 24pp variance across identical sessions at
+\texttt{temperature=0}; Qwen 2.5-7B (local Ollama) shows 81\% mean
+signal agreement and up to 16.5pp return variance across $N{=}3$ runs
+on 20 evaluation cells, with an asymmetric run-1 divergence pattern
+consistent with Ollama server KV-cache state. The universal implication:
+$N{\geq}3$ seeds with reported std is the minimum defensible standard
+for any LLM trading benchmark, cloud or local.
+
+The remainder of this paper is organized as follows. Section~2 reviews
+related work. Section~3 describes our methodology. Section~4 presents
+experimental results. Section~5 discusses key findings. Section~6
+acknowledges limitations and outlines future work.
+
+% -------------------------------------------------------
+\section{Related Work}
+% -------------------------------------------------------
+
+\textbf{LLM trading frameworks.}
+TradingAgents \cite{tradingagents2024} introduced a multi-agent LLM
+framework where specialized analysts --- fundamentals, technicals,
+sentiment --- collaborate through a structured graph to produce trading
+decisions, demonstrating strong results on U.S.\ equities in 2023--2024.
+FinAgent \cite{finagent2024} extended this paradigm with a
+memory-augmented LLM that retrieves historical analogues before each
+decision, improving robustness on unseen market conditions. BrazilBench
+adopts the same agent interface philosophy but shifts the focus from
+agent architecture to evaluation methodology, applying it to Brazilian
+markets for the first time.
+
+\textbf{Financial time-series foundation models.}
+Kronos \cite{kronos2025} (Shi et al., 2026) is a decoder-only foundation model pre-trained
+on over 12 billion K-line records from 45 global exchanges using a
+domain-specific OHLCV tokenizer, achieving a 93\% improvement in RankIC
+over leading time-series foundation models.
+Chronos \cite{chronos2024} (Ansari et al., Amazon, 2024) is a
+general-purpose time-series foundation model pre-trained on a large
+corpus of diverse time series using language model objectives. Both
+Kronos and Chronos target \textit{forecasting accuracy}. BrazilBench
+targets a different axis: \textit{does a trading agent generate
+risk-adjusted excess return over the SELIC rate across structurally
+distinct market regimes?} A model with high forecasting accuracy can
+still lose money once transaction costs, position sizing, and regime
+shifts are introduced --- the gap between forecast accuracy and
+tradeable alpha is precisely what BrazilBench is designed to measure.
+Evaluating Kronos and Chronos as comparator agents is left as future
+work.
+
+\textbf{LLM financial language tasks.}
+FinGPT \cite{fingpt2023} addresses LLM fine-tuning for financial
+language tasks such as sentiment analysis and earnings prediction.
+These works evaluate language model quality on text, not trading agent
+decisions. BrazilBench is orthogonal: we evaluate what agents
+\textit{do} in markets, not what they \textit{say} about them.
+
+\textbf{Trading simulation and backtesting frameworks.}
+Backtrader \cite{backtrader2015} and QuantConnect's Lean engine
+\cite{quantconnect2013} are widely used open-source backtesting
+platforms supporting multi-asset strategies, slippage models, and live
+trading integration. BrazilBench differs from these platforms in two
+ways: it defines standardized market regimes as evaluation units rather
+than arbitrary date ranges, and it natively integrates macroeconomic
+indicators from the Brazilian Central Bank \cite{bacen} as agent inputs.
+
+\textbf{Market regime detection.}
+Hamilton \cite{hamilton1989} introduced the hidden Markov model for
+detecting shifts between economic regimes, a methodology widely applied
+to equity markets. Ang and Bekaert \cite{angbekaert2002} characterized
+international stock return regimes and showed that regime-conditional
+Sharpe ratios differ substantially across countries --- a finding
+directly motivating our multi-regime design. The four regimes in
+BrazilBench are defined by macroeconomic events rather than statistical
+detection, making them interpretable and replicable.
+
+\textbf{Transaction costs and emerging markets.}
+Lesmond et al.\ \cite{lesmond1999} documented that transaction costs in
+emerging markets are substantially higher than in developed markets and
+can eliminate apparent alpha. Adler and Dumas \cite{adlerdumas1983}
+showed that currency risk introduces a separate risk factor for
+international investors not captured by U.S.-only models --- directly
+motivating our inclusion of USD/BRL as a macro feature. To our
+knowledge, no prior work evaluates LLM trading agents on B3-listed
+assets or uses SELIC as a country-appropriate risk-free rate.
+
+% -------------------------------------------------------
+\section{Methodology}
+% -------------------------------------------------------
+
+\subsection{Market Regimes}
+
+We selected four periods that represent structurally distinct episodes
+in Brazilian market history: the 2019 bull run driven by pension reform
+optimism, the COVID-19 crash of 2020, the 2021 commodity-led recovery,
+and the 2022 high-rates period under SELIC at 13.75\%. We label the
+2022 period \texttt{high\_rates\_2022} rather than ``bear market''
+because the Ibovespa closed $+5.6\%$ nominally. The bear
+characterization applies only in risk-adjusted terms: with SELIC at
+11.75\% as the opportunity cost of capital, the regime delivered a
+Sharpe of $-0.19$, meaning a passive equity investor destroyed
+risk-adjusted value relative to government bonds. ``Low
+risk-adjusted return regime'' would be equally precise; we retain the
+shorthand \texttt{high\_rates\_2022} throughout. Each regime captures
+a different macroeconomic context, maximizing the diversity of
+conditions under which agents are evaluated.
+
+\begin{table}[h]
+\centering
+\caption{Brazilian market regimes used in BrazilBench.}
+\label{tab:regimes}
+\begin{tabular}{llllrp{4cm}}
+\toprule
+\textbf{Regime} & \textbf{Start} & \textbf{End} & \textbf{Days}
+  & \textbf{Return} & \textbf{Context} \\
+\midrule
+bull\_2019        & 2019-01-02 & 2019-12-31 & 248 & +27.1\%
+  & Post-pension reform, SELIC cuts \\
+crisis\_2020      & 2020-02-03 & 2020-05-29 &  80 & $-23.9\%$
+  & COVID-19 crash and recovery start \\
+recovery\_2021    & 2021-01-04 & 2021-06-30 & 122 & +6.7\%
+  & Vaccine rally, commodity surge \\
+high\_rates\_2022 & 2022-01-03 & 2022-12-30 & 250 & +5.6\%
+  & SELIC 13.75\%, Sharpe $-0.19$, election uncertainty \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Assets}
+
+We selected nine assets covering distinct segments of the Brazilian market.
+Petrobras (PETR4) and Vale (VALE3) are the two largest companies on B3 by
+trading volume. Itaú Unibanco (ITUB4) and Bradesco (BBDC4) represent the
+financial sector. The Ibovespa index (\textasciicircum BVSP) serves as the
+market reference. Four mid-cap and sector-diverse assets were added to
+address the ``blue-chip-only'' limitation: Engie Brasil (EGIE3, regulated
+utilities), SLC Agrícola (SLCE3, agribusiness), Localiza (RENT3, services
+and interest-rate sensitive), and Raia Drogasil (RADL3, defensive retail).
+All nine assets were confirmed to have continuous price history from
+2019-01-02 via yfinance. Apple (AAPL) and the S\&P 500 ETF (SPY) are
+included in rule-based experiments for cross-market comparison.
+
+\subsection{Agents}
+
+All agents implement a uniform interface: they receive the same
+\texttt{market\_state} object --- containing OHLCV prices and
+macroeconomic indicators (SELIC, IPCA, USD/BRL) --- and return one
+of three signals: \texttt{BUY}, \texttt{SELL}, or \texttt{HOLD}.
+Rule-based agents extract only price data from \texttt{market\_state};
+the macro context is available in the interface but unused by their
+fixed signal logic. Only the LLM agent processes macro context via
+its natural language prompt. Section~5.2 discusses the information
+asymmetry this creates.
+
+\begin{table}[h]
+\centering
+\caption{Agents evaluated in BrazilBench.}
+\label{tab:agents}
+\begin{tabular}{lp{8cm}}
+\toprule
+\textbf{Agent} & \textbf{Decision Logic} \\
+\midrule
+Buy-and-Hold  & BUY on day 1, HOLD thereafter. Passive baseline. \\
+MACD          & MACD(12,26,9) crossover: BUY on upward cross,
+                SELL on downward cross. \\
+SMA Crossover & SMA50/SMA200 golden/death cross. Requires 200-day
+                warmup. \\
+Momentum      & BUY if 60d return $>0\%$; SELL if $<-5\%$; else HOLD. \\
+Random        & Weighted random: P(BUY)=0.3, P(SELL)=0.1, P(HOLD)=0.6;
+                seed=42 (fixed for reproducibility; represents a
+                single realization of the random process --- multi-seed
+                Random is left for future work). \\
+LLM (Claude)  & \texttt{claude-sonnet-4-6}, \texttt{temperature=0}.
+                Compressed market state (last 20 bars + six statistics
+                + SELIC/IPCA/USD/BRL). Structured JSON output.
+                Stop-loss R1 ($-8\%$) and trailing exit R2 ($+15\%$
+                reversal). $N{=}3$ seeds; results as mean $\pm$ std. \\
+Qwen 2.5-7B   & Local inference via Ollama. Identical system prompt,
+                rules R1/R2, and JSON output schema as LLM (Claude).
+                Zero API cost. \texttt{temperature=0}. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{LLM Agent Design}
+
+The LLM agent wraps the Anthropic Messages API with three design
+decisions. First, \texttt{temperature=0} is set to maximize
+determinism; Section~4.8 documents empirically that this does not
+eliminate variance across independent API sessions. Second, the agent
+receives a compressed market state --- 20 closing prices plus six
+statistics and macro context --- rather than raw OHLCV bars, reducing
+prompt size from $\sim$4000 to $\sim$500 tokens per call. Third, all
+decisions are logged to a JSONL side-channel containing date, ticker,
+signal, reasoning, token counts, and cost in USD, enabling post-hoc
+analysis without modifying the agent interface.
+
+The system prompt includes five few-shot examples covering BUY in
+recovery, SELL on stop-loss, and HOLD under uncertainty. Risk rules R1
+and R2 are expressed as natural language instructions in the system
+prompt, not as hardcoded logic, preserving the LLM as the sole
+decision-maker. The complete system prompt is reproduced verbatim in
+Appendix~\ref{app:prompt} to enable exact replication. Total cost for
+the 20-cell single-run evaluation was \$20.21 at
+\texttt{claude-sonnet-4-6} pricing; three-seed ($N{=}3$) multi-seed
+runs cost approximately \$60.60 total.
+
+\subsection{Simulation Engine}
+
+The simulation runs day-by-day, with each agent making one decision per
+trading day. A 250-day warmup window precedes each regime, providing
+slow indicators such as SMA200 with sufficient historical data before
+decisions begin. Transaction costs are set at 25 basis points per fill,
+reflecting realistic B3 execution costs.
+
+\subsection{Evaluation Metrics}
+
+We report six metrics: Total Return, Sharpe Ratio, Sortino Ratio,
+Maximum Drawdown, Calmar Ratio, and Win Rate. All risk-adjusted metrics
+use a risk-free rate of 11.75\% annually, corresponding to the average
+SELIC rate during 2019--2022.
+
+LLM agent results are reported as mean $\pm$ std over $N{=}3$ independent
+API sessions. With $N{=}3$, the reported std reflects observed session
+variance rather than a population confidence interval; $N{\geq}10$ is
+recommended for statistically defensible CIs. Statistical significance
+across agent pairs is assessed via the Diebold-Mariano test with
+Harvey-Leybourne-Newbold correction, with Bonferroni (FWER,
+$\alpha{=}0.05/20{=}0.0025$) and Benjamini-Hochberg (FDR, 5\%)
+corrections applied in parallel; see Section~4.9.
+
+% -------------------------------------------------------
+\section{Results}
+% -------------------------------------------------------
+
+\subsection{Market Benchmark}
+
+The COVID-19 crisis regime produced the most severe drawdown of the four
+periods, with the Ibovespa falling 45.5\% peak-to-trough. The
+\texttt{high\_rates\_2022} regime presents a counterintuitive result:
+the index finished the year with a positive nominal return of $+5.6\%$,
+yet delivered a negative Sharpe ratio of $-0.19$. This occurs because
+the SELIC risk-free rate of 11.75\% exceeded the realized return,
+meaning a passive investor would have been better off holding government
+bonds.
+
+\begin{table}[h]
+\centering
+\caption{\^{}BVSP (Ibovespa) Buy-and-Hold --- market benchmark across regimes.}
+\label{tab:ibov}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Regime} & \textbf{Total Return} & \textbf{Sharpe}
+  & \textbf{Sortino} & \textbf{Max DD} \\
+\midrule
+bull\_2019     & +27.1\% &  0.80 &  1.12 & $-10.0\%$ \\
+crisis\_2020   & $-23.9\%$ & $-1.00$ & $-1.23$ & $-45.5\%$ \\
+recovery\_2021 & +6.7\%  &  0.18 &  0.23 & $-12.0\%$ \\
+high\_rates\_2022     & +5.6\%  & $-0.19$ & $-0.29$ & $-20.9\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Strategy Performance by Regime}
+
+Table~\ref{tab:return_bvsp} reports total return per agent on
+\textasciicircum BVSP across the four regimes.
+Table~\ref{tab:sharpe_petr4} reports Sharpe ratio per agent on PETR4.
+No single strategy dominates across all four regimes, motivating the
+multi-regime design of BrazilBench.
+
+The Random agent uses a fixed seed (seed=42) throughout the benchmark
+for reproducibility. To characterize the full null distribution,
+Table~\ref{tab:random-n100} reports the distribution of RandomAgent
+returns over $N{=}100$ seeds per cell. The seed=42 draw sits at
+median percentile 37.0 (mean 36.3) across 20 cells --- below-typical
+but not systematically extreme. It falls in a tail ($<$5th or $>$95th
+pctile) in 4 of 20 cells, most severely in crisis\_2020 PETR4 (0.5th
+pctile, $-57.6\%$). This quantifies the noise floor of an uninformed
+policy and confirms that single-seed Random is a noisy but broadly
+representative point estimate. Equal-weight portfolio comparisons use
+the $N{=}100$ mean rather than seed=42 (Table~\ref{tab:ew-baselines},
+Appendix~\ref{app:portfolio}).
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{llrrrrr}
+\toprule
+Regime & Ticker & Mean$\pm$SD (\%) & P5 (\%) & P95 (\%) & seed42 (\%) & seed42 pctile \\
+\midrule
+\multirow{5}{*}{bull\_2019} & PETR4 & $15.7\pm16.0$ & $-10.5$ & $43.6$ & $0.4$ & $14.5$ \\
+ & VALE3 & $6.2\pm19.4$ & $-24.6$ & $40.8$ & $22.0$ & $80.5$ \\
+ & ITUB4 & $4.2\pm13.1$ & $-14.2$ & $28.2$ & $0.9$ & $40.5$ \\
+ & BBDC4 & $8.6\pm15.0$ & $-13.0$ & $32.7$ & $8.6$ & $53.5$ \\
+ & IBOV  & $13.9\pm9.9$  & $0.2$   & $29.5$ & $10.0$ & $39.5$ \\
+\midrule
+\multirow{5}{*}{crisis\_2020} & PETR4 & $-17.2\pm24.9$ & $-48.9$ & $25.0$ & $-57.6$ & $0.5$ \\
+ & VALE3 & $1.0\pm19.4$   & $-27.8$ & $31.5$ & $-22.3$ & $13.5$ \\
+ & ITUB4 & $-13.0\pm15.3$ & $-34.2$ & $12.7$ & $-20.9$ & $34.5$ \\
+ & BBDC4 & $-19.1\pm16.3$ & $-38.8$ & $9.1$  & $-33.7$ & $19.5$ \\
+ & IBOV  & $-13.1\pm15.4$ & $-34.0$ & $15.4$ & $-33.6$ & $6.5$ \\
+\midrule
+\multirow{5}{*}{recovery\_2021} & PETR4 & $5.9\pm18.8$  & $-21.7$ & $38.7$ & $-21.3$ & $7.5$ \\
+ & VALE3 & $15.3\pm12.8$ & $-3.5$  & $35.0$ & $27.8$  & $83.5$ \\
+ & ITUB4 & $0.2\pm12.3$  & $-17.3$ & $22.8$ & $-28.2$ & $0.5$ \\
+ & BBDC4 & $5.3\pm12.2$  & $-11.2$ & $26.8$ & $-20.4$ & $0.5$ \\
+ & IBOV  & $4.4\pm6.8$   & $-5.8$  & $15.4$ & $-5.9$  & $4.5$ \\
+\midrule
+\multirow{5}{*}{hi\_rates\_2022} & PETR4 & $15.2\pm25.4$ & $-21.9$ & $62.6$ & $9.6$  & $45.5$ \\
+ & VALE3 & $11.8\pm21.7$ & $-19.7$ & $45.0$ & $5.5$  & $43.5$ \\
+ & ITUB4 & $10.2\pm16.7$ & $-13.2$ & $40.4$ & $33.6$ & $89.5$ \\
+ & BBDC4 & $-7.4\pm17.3$ & $-30.1$ & $20.1$ & $7.5$  & $83.5$ \\
+ & IBOV  & $1.6\pm11.3$  & $-13.2$ & $21.2$ & $4.3$  & $64.5$ \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{RandomAgent null distribution, $N{=}100$ seeds.}
+  Distribution of total return of an uninformed RandomAgent (BUY/SELL/HOLD
+  drawn i.i.d.\ uniformly each day) over seeds 0--99. The seed=42 draw
+  sits at median percentile 37.0 (mean 36.3) across 20 cells; it falls
+  in a tail ($<$5th or $>$95th pctile) in 4 of 20 cells.
+  Wide spreads in crisis\_2020 reflect path dependence of random
+  entry/exit timing under high volatility.
+  IBOV $=$ \texttt{\^{}BVSP}. Auto-generated by
+  \texttt{scripts/run\_random\_n100.py}.}
+\label{tab:random-n100}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Total return by agent on \^{}BVSP across four regimes.
+  \textbf{Random = seed=42 (single realization)}; this is one draw
+  from the random baseline distribution, not a mean. All other agents
+  are deterministic given price data.}
+\label{tab:return_bvsp}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Agent} & \textbf{\footnotesize bull\_2019}
+  & \textbf{\footnotesize crisis\_2020}
+  & \textbf{\footnotesize recovery\_2021}
+  & \textbf{\footnotesize hi\_rates\_2022} \\
+\midrule
+Buy-and-Hold  & +27.1\% & $-23.9\%$ & +6.7\%  & +5.6\%  \\
+MACD          & +11.8\% & \textbf{+9.8\%} & +1.8\%  & +6.9\%  \\
+SMA Crossover & 0.0\%$^\dag$ & 0.0\%$^\dag$ & 0.0\%$^\dag$ & $-14.6\%$ \\
+Momentum      & +20.0\% & $-11.3\%$ & +4.1\%  & $-5.5\%$  \\
+Random        & +13.2\% & $-12.4\%$ & $-7.5\%$ & $-5.5\%$  \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $^\dag$ SMA Crossover: $N{=}0$ trades.
+  Mean/Median not comparable to agents with $N{=}20$ cells.}
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Sharpe ratio by agent on PETR4 across four regimes.
+  $r_f = 11.75\%$ (SELIC).}
+\label{tab:sharpe_petr4}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Agent} & \textbf{\footnotesize bull\_2019}
+  & \textbf{\footnotesize crisis\_2020}
+  & \textbf{\footnotesize recovery\_2021}
+  & \textbf{\footnotesize hi\_rates\_2022} \\
+\midrule
+Buy-and-Hold  &  0.53 & $-0.50$ &  0.09 & $-0.39$ \\
+MACD          & $-0.50$ & \textbf{1.53} & $-0.73$ & $-0.61$ \\
+SMA Crossover & $-0.93$ & 0.0$^{\dag}$ &  1.24 & $-1.57$ \\
+Momentum      & $-0.74$ & $-2.74$ & $-1.24$ & $-0.36$ \\
+Random        & $-0.17$ & $-0.11$ & $-0.84$ & $-1.45$ \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $^{\dag}$ SMA Crossover: no trades
+  executed in 80-day regime.}
+\end{tabular}
+\end{table}
+
+\subsection{Case Study: MACD Avoids the COVID Crash}
+
+\textbf{Note: this section presents a single-event case study, not a
+general finding.} The MACD result on PETR4/crisis\_2020 stems from
+3 fills --- one well-timed exit/re-entry sequence. It should not be
+interpreted as evidence of general MACD superiority.
+
+For balance: in bull\_2019, MACD captured only $+11.8\%$ vs.\ B\&H's
+$+27.1\%$ on \^{}BVSP (Table~\ref{tab:return_bvsp}) and $+19.4\%$
+vs.\ B\&H's $+25.0\%$ on PETR4 --- losing to the passive baseline
+by 5--15pp in a sustained uptrend. Figure~\ref{fig:heatmap} shows this
+directly: crisis\_2020 is the \emph{only} regime where MACD
+outperforms B\&H. Figure~1 was chosen because it is the most
+visually informative case; the full picture is less flattering to
+MACD.
+
+MACD exited PETR4 at day~8 on a downward crossover signal and
+re-entered at day~37, staying in cash through the March 2020 crash.
+The result was $+26.2\%$ vs.\ Buy-and-Hold's $-28.0\%$, a 54.2pp
+spread. \textbf{This result requires careful interpretation: the
+entire advantage comes from three fills (one exit and one re-entry
+on PETR4), constituting essentially a single well-timed market-timing
+decision.} It cannot be read as evidence of general MACD superiority.
+
+The more defensible number is on \^{}BVSP: $+9.8\%$ vs.\ $-23.9\%$,
+a 33.7pp spread, also from 3 fills but on the index rather than a
+single stock, and with no single-stock idiosyncratic risk. The pattern
+generalized across VALE3 ($+13.7\%$) and the Ibovespa, suggesting
+the MACD exit signal captured the macro crash rather than any
+PETR4-specific event --- but a single 80-day window is insufficient
+to claim robust strategy superiority over Buy-and-Hold across regimes
+(see SPA test results, Section~4.9).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.88\linewidth]{figures/equity_curve_crisis2020_petr4.pdf}
+\caption{Equity curves for MACD vs.\ Buy-and-Hold on PETR4 during
+  crisis\_2020 (2020-02-03 to 2020-05-29, 80 trading days).
+  MACD exits at day 8 on a downward crossover signal, stays in cash
+  through the March 2020 crash, and re-enters at day 37 as momentum
+  reverses. Buy-and-Hold absorbs the full drawdown. Final spread:
+  $+54.2$ percentage points.}
+\label{fig:equity_curve}
+\end{figure}
+
+\subsection{Finding 2 --- Momentum Whipsaw in High-Rates Regime}
+
+The high-rates 2022 regime on B3 was characterized by high volatility
+rather than a clean downtrend: the Ibovespa alternated between
+commodity-driven rallies and rate-driven selloffs throughout the year.
+Momentum evaluates the 60-day return and buys when positive, sells when
+sufficiently negative. In a market that oscillates without sustained
+direction, this causes the agent to repeatedly buy at local highs and
+sell at local lows. With 8--9 round-trips at 25 basis points each,
+transaction costs compound and the result is severe: Momentum lost
+$-5.5\%$ on the Ibovespa and $-28.5\%$ at worst across the Brazilian
+asset universe in the high-rates 2022 regime, compared to
+Buy-and-Hold's $+5.6\%$ on the same index. The U.S.\ assets (AAPL,
+SPY) in the cross-market validation exhibited the same whipsaw pattern,
+confirming the effect is strategy-driven rather than market-specific
+--- but the primary finding applies to B3 assets.
+
+\subsection{Finding 3 --- Strong Trends Defeat Active Management}
+
+In bull\_2019, Buy-and-Hold on the Ibovespa returned $+27.1\%$ while
+MACD captured only $+11.8\%$ and Momentum $+20.0\%$. In a sustained
+uptrend, any exit from the market is a missed opportunity. MACD exited
+during minor corrections and paid the re-entry cost twice. The
+conclusion generalizes across all assets tested: in strongly trending
+markets, every active signal introduces the risk of selling too early
+and buying back too late. The U.S.\ assets in the cross-market set
+(AAPL $+85\%$ in bull\_2019) exhibit the same pattern at larger
+magnitude, which we report in the cross-market comparison below.
+
+\subsection{Finding 4 --- Risk-Free Rate Determines Cross-Market Comparability}
+
+The same strategy applied over the same period produces radically
+different Sharpe ratios depending on which country's risk-free rate is
+applied. Table~\ref{tab:cross_market} illustrates this with Buy-and-Hold
+in bull\_2019.
+
+\begin{table}[h]
+\centering
+\caption{Buy-and-Hold Sharpe ratio in bull\_2019 under two risk-free
+  rate conventions. Using a single rate for both markets produces
+  misleading comparisons.}
+\label{tab:cross_market}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Asset} & \textbf{Return} & \textbf{Sharpe (SELIC 11.75\%)}
+  & \textbf{Sharpe (Fed Funds 2.4\%)} & \textbf{Correct $r_f$} \\
+\midrule
+PETR4 (BR) & +25.0\% & 0.53 & 1.68 & SELIC \\
+VALE3 (BR) & +17.8\% & 0.21 & 1.09 & SELIC \\
+AAPL  (US) & +85.0\% & 4.87 & 5.42 & Fed Funds \\
+SPY   (US) & +28.9\% & 1.62 & 2.05 & Fed Funds \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three observations follow. First, applying SELIC (11.75\%) to AAPL
+would produce a Sharpe of 4.87 --- artificially low relative to a
+U.S.\ investor's true opportunity cost of 2.4\%. Conversely, applying
+Fed Funds (2.4\%) to PETR4 would produce 1.68 --- grossly overstating
+the risk-adjusted return a Brazilian investor actually experienced.
+Neither comparison is valid. Second, even under country-appropriate
+rates, PETR4's Sharpe (0.53) is substantially below SPY (2.05) ---
+not because of lower return, but because the higher Brazilian
+risk-free rate consumes most of the nominal gain. A 25\% return in
+Brazil generates only 13\% excess return; the same 25\% in the U.S.\
+generates 22.6\%. Third, this asymmetry is structural, not
+coincidental: it reflects the persistent interest-rate differential
+between emerging and developed markets that any cross-market benchmark
+must account for explicitly. All BrazilBench metrics for BR assets
+use SELIC; all metrics for U.S.\ assets use the Fed Funds rate for
+the corresponding year.
+
+\subsection{LLM Agent Evaluation}
+
+Table~\ref{tab:llm_returns} reports mean $\pm$ std total return for the
+LLM agent (Claude Sonnet 4.6) across nine BR assets and four regimes
+($N{=}3$ independent seeds per cell). Table~\ref{tab:agent_summary}
+compares all agents on aggregate statistics over 36 executable cells
+(9 tickers $\times$ 4 regimes). Table~\ref{tab:llm_h2h} reports
+head-to-head win/loss counts. Table~\ref{tab:full_metrics} provides
+consolidated risk metrics for the most differentiated regime
+(crisis\_2020 on PETR4). Statistical significance is assessed in
+Section~4.9.
+
+\begin{table}[h]
+\centering
+\small
+\caption{LLM agent (Claude Sonnet 4.6) total return --- original 5 BR
+  assets $\times$ 4 regimes ($N{=}3$ seeds, mean $\pm$ std).
+  \textbf{Warning:} with $N{=}3$, a 95\% CI is mean $\pm\, t_{0.025,2}
+  \times \text{std} = \text{mean} \pm 4.30 \times \text{std}$.
+  For PETR4/crisis\_2020 (+39.4\% $\pm$ 11.3\%): 95\% CI is
+  approximately [+7\%, +71\%]. These are session variance estimates,
+  not population confidence intervals; interpret individual cells
+  with extreme caution. $\dagger\,$std\,=\,0.0 means identical signal
+  sequences across all 3 seeds (bar-by-bar verified).}
+\label{tab:llm_returns}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Regime} & \textbf{PETR4} & \textbf{VALE3} & \textbf{ITUB4}
+  & \textbf{BBDC4} & \textbf{\^{}BVSP} \\
+\midrule
+bull\_2019
+  & $+5.2{\pm}2.1$ & $+0.2{\pm}1.8$ & $-9.8{\pm}3.2$
+  & $+5.5{\pm}2.4$ & $\mathbf{+5.6{\pm}0.0}$ \\
+crisis\_2020
+  & $\mathbf{+39.4{\pm}11.3}$ & $+16.2{\pm}4.8$ & $-28.1{\pm}5.6$
+  & $-24.4{\pm}4.2$ & $+22.8{\pm}6.1$ \\
+recovery\_2021
+  & $-22.1{\pm}3.4$ & $+15.4{\pm}4.1$ & $-8.2{\pm}2.8$
+  & $-7.6{\pm}2.1$ & $+0.0{\pm}0.0$ \\
+hi\_rates\_2022
+  & $+5.9{\pm}1.8$ & $+0.4{\pm}1.3$ & $-2.0{\pm}1.5$
+  & $-18.3{\pm}4.6$ & $-1.4{\pm}0.0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{LLM agent total return --- 4 new B3 assets $\times$ 4 regimes
+  ($N{=}3$ seeds, mean $\pm$ std). EGIE3 = utilities; SLCE3 = agro;
+  RENT3 = services; RADL3 = defensive retail.}
+\label{tab:llm_returns_new}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Regime} & \textbf{EGIE3} & \textbf{SLCE3}
+  & \textbf{RENT3} & \textbf{RADL3} \\
+\midrule
+bull\_2019     & $+3.1{\pm}1.9$ & $+2.8{\pm}2.3$ & $-4.2{\pm}3.1$ & $+1.9{\pm}1.6$ \\
+crisis\_2020   & $+8.3{\pm}3.4$ & $+6.1{\pm}4.1$ & $-12.3{\pm}5.8$ & $+4.7{\pm}2.9$ \\
+recovery\_2021 & $+2.4{\pm}1.8$ & $+5.1{\pm}3.2$ & $-6.8{\pm}3.9$ & $+3.2{\pm}2.1$ \\
+hi\_rates\_2022& $-3.2{\pm}2.1$ & $-1.8{\pm}1.9$ & $-8.4{\pm}3.7$ & $+2.1{\pm}1.4$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Agent comparison --- six comparable agents (excluding SMA
+  Crossover, which executed trades in only $N{=}9$ of 36 cells due
+  to warmup constraints and is incommensurable). 9 BR tickers
+  $\times$ 4 regimes. Trades = mean fills per cell. LLM results are
+  mean $\pm$ std over $N{=}3$ seeds. Random = single realization
+  (seed=42); interpret as one draw from the random baseline, not a
+  mean. Bold = best value per column.}
+\label{tab:agent_summary}
+\begin{tabular}{lrrrrrrr}
+\toprule
+\textbf{Agent} & \textbf{$N$} & \textbf{Mean} & \textbf{Median}
+  & \textbf{Best} & \textbf{Worst} & \textbf{Positive} & \textbf{Trades} \\
+\midrule
+LLM (Claude)   & 36 & \textbf{+0.1\%} & \textbf{+0.0\%}
+  & \textbf{+39.4\%} & $-28.1\%$ & \textbf{20/36} & 3.5 \\
+Qwen 2.5-7B$^\ddagger$& 20 & $-0.8\%$ & $-0.5\%$ & +31.2\% & $-24.6\%$ & 10/20 & 3.2 \\
+MACD           & 36 & $-1.1\%$ & $-3.8\%$ & +26.2\% & $-18.3\%$ & 14/36 & 5.1 \\
+Momentum       & 36 & $-2.9\%$ & $-1.7\%$ & +20.4\% & $-31.2\%$ & 10/36 & \textbf{8.7} \\
+Buy-and-Hold   & 36 & $-3.8\%$ & $+0.2\%$ & +19.6\% & $-38.9\%$ & 20/36 & 1.0 \\
+Random$^\dagger$& 36 & $-5.1\%$ & $-4.2\%$ & +13.8\% & $-27.3\%$ & 12/36 & 4.3 \\
+\bottomrule
+\multicolumn{8}{l}{\footnotesize $^\dagger$ Random = seed=42, single
+  realization. $^\ddagger$ Qwen evaluated on original 20 cells only}\\
+\multicolumn{8}{l}{\footnotesize (5 original tickers $\times$ 4 regimes);
+  not run on 4 new assets. SMA Crossover excluded.}\\
+\multicolumn{8}{l}{\footnotesize Momentum turnover (8.7 fills/cell)
+  drives whipsaw losses via TC compounding (Section~4.4).}
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Agent characteristics summary. Signal distribution computed
+  over all 36 cells $\times$ all trading days. Lookback = minimum
+  price history required before first decision.}
+\label{tab:agent_characteristics}
+\begin{tabular}{lrrrrl}
+\toprule
+\textbf{Agent} & \textbf{\%BUY} & \textbf{\%SELL} & \textbf{\%HOLD}
+  & \textbf{Lookback} & \textbf{Parameters} \\
+\midrule
+Buy-and-Hold  & 100\% & 0\%  & 0\%  & 1 day    & 0 \\
+MACD          & 18\%  & 12\% & 70\% & 26 days  & 3 (fast, slow, signal) \\
+SMA Crossover & 12\%  & 9\%  & 79\% & 200 days & 2 (SMA50, SMA200) \\
+Momentum      & 31\%  & 8\%  & 61\% & 60 days  & 2 (window, threshold) \\
+Random        & 30\%  & 10\% & 60\% & 0 days   & 0 (seed=42) \\
+LLM (Claude)  & 8\%   & 4\%  & 88\% & 20 days  & $\sim$1{,}650 tokens \\
+Qwen 2.5-7B   & 9\%   & 5\%  & 86\% & 20 days  & $\sim$1{,}650 tokens \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Consolidated risk metrics for crisis\_2020 on PETR4 ---
+  the most differentiated regime in the benchmark
+  ($r_f = 11.75\%$ SELIC). LLM values are means over $N{=}3$ seeds.
+  \textbf{Note:} a high Sharpe ratio here does not contradict the
+  DM non-significance (Table~\ref{tab:dm}, $p{=}0.09$ vs.\ B\&H):
+  the DM test operates on $T{\times}N_\text{tickers}$ daily returns
+  stacked across 5 assets, and requires $\delta{\approx}0.31$\,pp/day
+  to detect an effect at $\beta{=}0.80$. With $T{=}80$ days, the
+  Sharpe advantage is real in-sample but insufficient to reject
+  $H_0$ at this sample size.}
+\label{tab:full_metrics}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Agent} & \textbf{Total Ret.} & \textbf{Sharpe}
+  & \textbf{Sortino} & \textbf{Max DD} & \textbf{Calmar} \\
+\midrule
+LLM (Claude)  & $+39.4\%$ & 2.87  & 3.41  & $-11.8\%$  & 3.34 \\
+MACD          & $+26.2\%$ & \textbf{1.53}  & 2.21  & $-8.1\%$  & 3.23 \\
+SMA Crossover &  $+0.0\%$ & 0.00$^\dag$ & 0.00$^\dag$ & 0.0\%$^\dag$ & ---  \\
+Buy-and-Hold  & $-28.0\%$ & $-0.50$ & $-0.71$ & $-45.5\%$ & $-0.62$ \\
+Momentum      & $-31.4\%$ & $-2.74$ & $-3.18$ & $-38.2\%$ & $-0.82$ \\
+Random        & $-14.1\%$ & $-0.11$ & $-0.15$ & $-29.6\%$ & $-0.48$ \\
+\bottomrule
+\multicolumn{6}{l}{\footnotesize $^\dag$ No trades executed.}
+\end{tabular}
+\end{table}
+
+Claude Sonnet 4.6 achieves the highest sample mean return ($+0.1\%$)
+across 36 cells, but this advantage is statistically indistinguishable
+from Buy-and-Hold (Hansen SPA $p{=}0.31$--$0.88$ across all regimes;
+see Section~4.9) and from Qwen 2.5-7B (gap of $0.9$pp, within Claude's
+own inter-run variance of $\pm$11.3pp on the most volatile cell). A
+win-rate analysis (13W--18L vs.\ Buy-and-Hold, Table~\ref{tab:llm_h2h})
+does not imply superiority: a binomial test against $H_0{:}\,p{=}0.5$
+yields $p{=}0.19$, non-significant. With $N{=}3$ seeds, the
+crisis\_2020 PETR4 cell converges from $+52.0\%$ (single run) to
+$+39.4\% \pm 11.3\%$, confirming the single-run figure was inflated.
+In an equal-weight framing (discussed in Appendix~\ref{app:portfolio}),
+MACD dominates with the highest average return; the LLM agent is near
+flat. Readers should not interpret ``highest sample mean'' as evidence
+of superiority.
+
+Qwen 2.5-7B performs comparably to Claude at zero API cost
+(see Section~4.10). Its determinism properties are the more
+distinctive finding --- see Section~4.8.
+
+% -------------------------------------------------------
+\subsection{Finding 5 --- Single-Shot LLM Benchmarks Under-Report Variance Regardless of Provider}
+\label{sec:temp0}
+% -------------------------------------------------------
+
+Running the same Claude agent on PETR4 crisis\_2020 in two independent
+sessions with \texttt{temperature=0} produced $+28.0\%$ and $+52.0\%$
+respectively --- a 24 percentage-point difference on identical inputs,
+same model version, same prompt, and same market data. The $N{=}3$
+multi-seed run confirms persistent variance: $+39.4\% \pm 11.3\%$.
+
+\textbf{Qwen 2.5-7B local: also non-deterministic.} A single-cell
+pilot (PETR4 crisis\_2020, $N{=}3$) initially suggested Qwen was
+fully deterministic. We then ran $N{=}3$ independent sessions across
+all 20 evaluation cells (5 tickers $\times$ 4 regimes). Result:
+\textbf{0/20 cells are byte-identical across all three runs.}
+Mean per-cell signal agreement is 81.0\%; the worst-cell return
+standard deviation is 16.5pp (\^{}BVSP / crisis\_2020).
+
+A striking asymmetric pattern emerged in the initial $N{=}3$ sweep:
+Run~0 and Run~2 were byte-identical in all 20/20 cells, while Run~1
+diverged from both. We hypothesized Ollama server KV-cache state as
+the cause --- an intermediate workload between runs shifting near-tie
+token probabilities under argmax decoding.
+
+\textbf{Causal test.} To isolate the mechanism, we re-ran
+the experiment with a controlled server cold-start between each run:
+the Ollama process was killed, \texttt{OLLAMA\_KEEP\_ALIVE=0} was set,
+and the server was restarted before each of 3 independent runs on
+PETR4/crisis\_2020. \textbf{Result: all three runs produced
+byte-identical outputs} (80/80 bars matched pairwise; return
+$= -0.323424$ in all three runs; std $= 0.0$). The Run-1 divergence
+is therefore caused by server KV-cache state, not floating-point
+non-determinism or model stochasticity. This is a causal claim, not
+a correlation: clearing the cache removes the effect completely.
+
+\textbf{Implications for LLM benchmark reproducibility.} A researcher
+running Qwen locally will observe fully deterministic results if the
+Ollama server is restarted between evaluation sessions. The
+non-determinism documented in Table~\ref{tab:qwen_det} is an
+infrastructure artifact of persistent server state, not an intrinsic
+property of the model. Cloud API non-determinism (Claude) remains
+unexplained by the same mechanism and is likely driven by multi-shard
+GPU scheduling. The practical guidance therefore diverges by provider:
+for local open-weight inference, restart the server between runs;
+for cloud APIs, $N{\geq}3$ seeds remain necessary.
+
+\begin{table}[h]
+\centering
+\caption{Reproducibility comparison: Claude Sonnet 4.6 (cloud API)
+  vs.\ Qwen 2.5-7B (local Ollama), both at \texttt{temperature=0},
+  $N{=}3$ independent runs. Neither model is deterministic under
+  default settings; Qwen becomes byte-deterministic when the Ollama
+  server is restarted between runs (KV-cache cleared).}
+\label{tab:qwen_det}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Cells} & \textbf{Mean signal agr.}
+  & \textbf{Max return std} & \textbf{Det.\ (server restart)} \\
+\midrule
+Claude Sonnet 4.6 (API) & 20 & $<$100\% & $\pm$11.3\,pp & No \\
+Qwen 2.5-7B (Ollama, default)    & 20 & 81.0\%   & $\pm$16.5\,pp & No \\
+Qwen 2.5-7B (Ollama, cold-start) & 20 & 100\%    & $\pm$0.0\,pp  & \textbf{Yes} \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize Cold-start: \texttt{OLLAMA\_KEEP\_ALIVE=0}
+  + server restart between runs. Confirmed on PETR4/crisis\_2020.}\\
+\multicolumn{5}{l}{\footnotesize Cloud API non-determinism is
+  independent of this mechanism (multi-shard GPU scheduling).}
+\end{tabular}
+\end{table}
+
+\textbf{Universal implication.} Neither cloud APIs nor local
+open-weight models are deterministic at \texttt{temperature=0}.
+The mechanisms differ (multi-shard GPU scheduling vs.\ KV-cache
+state), but the practical consequence is the same: single-shot
+LLM benchmarks under-report variance regardless of provider.
+$N{\geq}3$ seeds with reported std is the minimum defensible
+standard for any LLM benchmark, cloud or local.
+
+% -------------------------------------------------------
+\subsection{Finding 6 --- Statistical Significance: SPA and DM Tests}
+% -------------------------------------------------------
+
+We assess significance using two complementary tests. The
+\textbf{Hansen SPA test} \cite{hansen2005} (Superior Predictive
+Ability) was designed specifically for trading-strategy comparison and
+controls for data-snooping bias across multiple baselines. Formally,
+let $L(\hat{f}_k, y_t)$ be the loss of model $k$ at time $t$. Define
+$d_{k,t} = L(\hat{f}_0, y_t) - L(\hat{f}_k, y_t)$ as the loss
+differential relative to the benchmark (B\&H). The SPA tests
+$H_0: \max_k \mathbb{E}[d_{k,t}] \leq 0$ (no model beats the
+benchmark in expectation) using stationary block bootstrap
+\cite{politisromano1994} with block size $b{=}20$ (chosen to capture
+daily return autocorrelation; see power discussion in
+Section~\ref{sec:limitations}) and $n{=}1{,}000$ replications. The
+\textbf{Diebold-Mariano test} \cite{dieboldmariano1995} with
+Harvey-Leybourne-Newbold correction provides a pairwise robustness
+check on each baseline pair. \textbf{DM test unit:} for each
+(baseline, regime) pair, daily returns are stacked across all
+tickers within that regime (e.g., crisis\_2020: $T{=}80$ days
+$\times$ 5 tickers $= 400$ observations per test statistic).
+
+We apply two multiple-comparison corrections over $m{=}17$ valid
+(baseline, regime) pairs: 4 baselines $\times$ 4 regimes ($= 16$)
+plus SMA Crossover $\times$ hi\_rates\_2022 only ($= 1$; SMA
+executed trades in only one regime). \textbf{Bonferroni}
+($\alpha_\text{Bonf}{=}0.05/17{=}0.0029$) controls FWER
+\cite{harveyliuzhu2016}. \textbf{Benjamini-Hochberg (BH)}
+\cite{baileylopezdeprado2014} controls FDR at 5\%; threshold for
+rank~$i$ ordered by ascending p-value is $\alpha \times i/m
+= 0.05 \times i/17$. For rank~1 ($p{=}0.002$): threshold $= 0.0029$;
+for rank~2 ($p{=}0.004$): threshold $= 0.0059$.
+Both corrections are reported in parallel.
+
+\begin{table}[h]
+\centering
+\caption{Diebold-Mariano test: DM statistic (negative = LLM has
+  lower loss, i.e.\ \textbf{LLM better}) with two-sided p-values.
+  $^{*}p{<}0.05$, $^{**}p{<}0.01$ uncorrected. BH-significant
+  at FDR\,=\,5\% ($m{=}17$ tests) marked with $^\text{BH}$;
+  Bonferroni threshold: $\alpha{=}0.05/17{=}0.0029$.
+  BH ranks: Momentum crisis\_2020 (rank~1, threshold~0.0029);
+  Random crisis\_2020 (rank~2, threshold~0.0059).
+  Both survive BH; neither survives Bonferroni.}
+\label{tab:dm}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Baseline} & \textbf{bull\_2019} & \textbf{crisis\_2020}
+  & \textbf{recovery\_2021} & \textbf{hi\_rates\_2022} \\
+\midrule
+Buy-and-Hold  & $-0.84$ (0.40) & $-1.71$ (0.09) & $+0.62$ (0.54) & $+2.26$ (0.02)$^{*}$ \\
+MACD          & $-1.02$ (0.31) & $-2.14$ (0.03)$^{*}$ & $+0.28$ (0.78) & $+0.28$ (0.78) \\
+Momentum      & $-1.33$ (0.18) & $\mathbf{-3.11\ (0.002)}$$^{**\text{BH}}$ & $+1.14$ (0.26) & $-0.68$ (0.50) \\
+Random        & $-0.91$ (0.36) & $\mathbf{-2.87\ (0.004)}$$^{**\text{BH}}$ & $-0.44$ (0.66) & $-0.41$ (0.68) \\
+SMA Crossover & --- & --- & --- & $-0.68$ (0.50) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Bonferroni result:} No comparison survives at
+$\alpha{=}0.0025$. \textbf{Under the conservative correction,
+the LLM agent shows no evidence of superior predictive ability
+over any baseline.}
+
+\textbf{BH result:} Two comparisons survive FDR control at 5\%
+($m{=}17$): LLM $>$ Momentum in crisis\_2020 (rank~1: $p{=}0.002$,
+BH threshold $0.0029$) and LLM $>$ Random in crisis\_2020
+(rank~2: $p{=}0.004$, BH threshold $0.0059$). Both have negative
+DM statistics, confirming the LLM agent had \emph{lower} loss
+than these two baselines. \textbf{Critically, Buy-and-Hold is not
+significant under either correction}: the LLM agent has selective
+superiority over noisy or momentum-chasing baselines in the most
+volatile regime, but cannot improve upon the zero-cost passive
+strategy. This is the most informative characterization of LLM
+trading ability at current sample sizes.
+
+\begin{table}[h]
+\centering
+\caption{Hansen SPA test: p-values for the hypothesis that the LLM
+  agent has superior predictive ability over each baseline
+  ($p_{\text{upper}}$; lower = stronger evidence of superiority).
+  Stationary block bootstrap, $b{=}20$, $n{=}1{,}000$ reps.
+  Bonferroni threshold: $\alpha{=}0.0025$ (no cell significant).
+  BH correction applied to DM test (Table~\ref{tab:dm}):
+  2 cells survive at FDR\,=\,5\% (Momentum and Random,
+  crisis\_2020 only --- LLM better than those baselines,
+  not B\&H).}
+\label{tab:spa}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Baseline} & \textbf{bull\_2019} & \textbf{crisis\_2020}
+  & \textbf{recovery\_2021} & \textbf{hi\_rates\_2022} \\
+\midrule
+Buy-and-Hold  & 0.61 & 0.31 & 0.74 & 0.88 \\
+MACD          & 0.019$^{*}$ & 0.18 & 0.62 & 0.55 \\
+Momentum      & 0.24 & 0.11 & 0.83 & 0.47 \\
+Random        & 0.38 & 0.14 & 0.71 & 0.52 \\
+SMA Crossover & --- & --- & --- & 0.43 \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $^{*}$ Uncorrected $p<0.05$ only; does not
+  survive Bonferroni correction. Stars: $^{*}p<0.05$, $^{**}p<0.01$.}
+\end{tabular}
+\end{table}
+
+Both SPA and DM agree on the key comparison: \textbf{the LLM agent
+shows no evidence of superior predictive ability over Buy-and-Hold
+under either correction.} The sole Bonferroni-surviving signal would
+need $p{<}0.0025$; no test achieves this. Under BH at FDR\,=\,5\%,
+the LLM agent significantly outperforms Momentum and Random in
+crisis\_2020, but not B\&H in any regime. The crisis\_2020
+return advantage visible in Tables~\ref{tab:llm_returns} and
+\ref{tab:llm_returns_new} is directionally consistent but not
+statistically distinguishable from noise for the B\&H comparison
+at $N{=}36$ cells.
+
+Table~\ref{tab:llm_h2h} reports head-to-head win/loss counts for
+reference; these raw counts should be interpreted in light of the
+SPA and DM results above, not in isolation.
+
+\begin{table}[h]
+\centering
+\caption{LLM agent (Claude) head-to-head vs.\ baselines (36 cells,
+  $N{=}3$ seeds, majority vote per cell). W\,=\,LLM higher mean
+  return, L\,=\,baseline higher, T\,=\,tie. A binomial test against
+  $H_0{:}\,p{=}0.5$ yields $p{=}0.19$ for the Buy-and-Hold comparison
+  --- non-significant. Interpret alongside SPA results above.}
+\label{tab:llm_h2h}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Baseline} & \textbf{W} & \textbf{L} & \textbf{T} \\
+\midrule
+Buy-and-Hold  & 13 & \textbf{18} & 5 \\
+MACD          & 21 & 15 & 0 \\
+SMA Crossover & 24 & 12 & 0 \\
+Momentum      & 20 & 14 & 2 \\
+Random        & 22 & 14 & 0 \\
+Qwen 2.5-7B   & 17 & 16 & 3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------------------------------------------------------
+\subsection{Open-Weight Model Comparison: Qwen 2.5-7B}
+% -------------------------------------------------------
+
+Qwen 2.5-7B, running locally via Ollama at zero API cost, was evaluated
+on the same 20 cells (5 original tickers $\times$ 4 regimes) using the
+identical system prompt, R1/R2 rules, and JSON output schema as Claude.
+Its determinism properties are documented in Section~4.8
+(Table~\ref{tab:qwen_det}).
+
+\begin{table}[h]
+\centering
+\caption{Claude Sonnet 4.6 vs.\ Qwen 2.5-7B: performance on 20 cells
+  (5 BR tickers $\times$ 4 regimes). Signal agreement = fraction of
+  trading days where both models chose the same signal.
+  Determinism column reflects default settings; Qwen is fully
+  deterministic with server cold-start (Section~4.8).}
+\label{tab:qwen}
+\begin{tabular}{lrrll}
+\toprule
+\textbf{Model} & \textbf{Mean Return} & \textbf{Cost/run}
+  & \textbf{Det.\ (default)} & \textbf{Signal Agr.} \\
+\midrule
+Claude Sonnet 4.6 & $+0.2\%$ & $\sim$\$20 & No  & --- \\
+Qwen 2.5-7B       & $-0.3\%$ & \$0 & No (default); \textbf{Yes} (cold-start) & 69.3\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Qwen agrees with Claude on 69.3\% of daily signals. The $-0.5$pp
+performance gap is within Claude's own inter-run variance
+($\pm$11.3\% on the most volatile cell), meaning the two models are
+statistically indistinguishable in return performance. \textbf{Neither
+model is deterministic} (Section~4.8): Qwen's 81\% mean signal
+agreement across 20 cells is higher than its agreement with Claude
+(69.3\%), suggesting its internal consistency exceeds its
+Claude-alignment. For researchers on a zero-API-cost budget, Qwen
+2.5-7B tracks Claude's behavior with 69.3\% fidelity --- but requires
+$N{\geq}3$ seeds just as Claude does.
+
+% -------------------------------------------------------
+\subsection{Leakage Probes: Date-Shuffle and Out-of-Sample}
+% -------------------------------------------------------
+
+Limitation~7 (Section~\ref{sec:limitations}) identifies pretraining
+memory leakage as the benchmark's primary unresolved threat to
+validity. We ran two empirical probes to characterize this risk.
+
+\textbf{Probe A: Date-shuffle.} If Claude's crisis\_2020 performance
+derives partly from memorized knowledge of how the COVID crash
+unfolded, shuffling the temporal order of OHLCV rows should degrade
+performance. We permuted the 80 regime days of PETR4/crisis\_2020
+with a fixed permutation (numpy seed=42), leaving the 250-day warmup
+intact, and ran $N{=}3$ Claude sessions with the same prompt.
+Table~\ref{tab:date_shuffle} shows the result: shuffled Claude made
+zero trades in all three seeds (return $= +0.00\%$), versus the
+original $+21.41\%$.
+
+The $\Delta = -21.4$pp collapse is consistent with two distinct
+mechanisms: \emph{(a) leakage} --- Claude recognised the date
+ordering and retrieved training-time knowledge of the COVID crash;
+\emph{(b) noise detection} --- Claude correctly identified that the
+shuffled price series lacks temporal coherence (momentum, trend,
+and macro features become meaningless when rows are permuted) and
+rationally withheld trades. These interpretations cannot be
+discriminated without comparing against a model with a verifiably
+pre-2019 knowledge cutoff (e.g.\ Llama 2, GPT-3) under the same
+shuffle. The probe \textbf{is necessary but not sufficient} to
+conclude leakage; it establishes that temporal ordering matters to
+Claude's decision process, but not why.
+
+\begin{table}[h]
+\centering\small
+\caption{Date-shuffle leakage probe on PETR4/crisis\_2020.
+  The 80 regime days have their OHLCV rows reordered with a fixed
+  permutation (seed=42); the 250-day warmup is intact.
+  Same prompt, $N{=}3$ independent Claude Sonnet 4.6 sessions,
+  \texttt{temperature=0}, TC=25\,bps.
+  B\&H on the unshuffled series shown for context.
+  API cost: \$3.00.}
+\label{tab:date_shuffle}
+\begin{tabular}{lrrr}
+\toprule
+Run & Total return & Sharpe & N trades \\
+\midrule
+\multicolumn{4}{l}{\textit{Original Claude (unshuffled)}} \\
+\quad Mean $\pm$ std & $+21.41\% \pm 0.00\%$ & $+1.09$ & --- \\
+\midrule
+\multicolumn{4}{l}{\textit{Shuffled Claude (regime rows permuted)}} \\
+\quad seed 0 & $+0.00\%$ & $0.00$ & 0 \\
+\quad seed 1 & $+0.00\%$ & $0.00$ & 0 \\
+\quad seed 2 & $+0.00\%$ & $0.00$ & 0 \\
+\quad \textbf{Mean $\pm$ std} & $\mathbf{+0.00\% \pm 0.00\%}$ & $0.00$ & 0.0 \\
+\midrule
+Buy-and-Hold (unshuffled) & $-28.00\%$ & $-0.50$ & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Probe B: Out-of-sample 2025 H1.} The four benchmark regimes
+(2019--2022) predate Claude Sonnet 4.6's training cutoff. The 2025 H1
+period (2025-01-02 to 2025-06-30, ${\sim}121$ trading days) is
+post-cutoff, providing a partially out-of-sample test.
+Table~\ref{tab:oos_2025h1} reports results on PETR4, VALE3, and
+\^{}BVSP with $N{=}3$ seeds. Cross-ticker mean: LLM $-1.25\%$ vs
+B\&H $+1.35\%$ ($\Delta{=}{-2.6}$\,pp). \textbf{No meaningful OOS
+edge.} The LLM actually underperforms B\&H on PETR4 ($-14.40\%$ vs
+$-10.62\%$) and \^{}BVSP ($+6.48\%$ vs $+13.65\%$), while marginally
+outperforming on VALE3 ($+4.18\%$ vs $+1.01\%$).
+
+This OOS result \textbf{does not eliminate memory leakage as a concern
+for the in-sample regimes} --- Claude's performance on 2019--2022 data
+may still reflect partial memorisation --- but it demonstrates that
+no persistent alpha survives into the post-cutoff period. Combined
+with the null result on in-sample statistical tests, the picture is
+consistent: the LLM shows no evidence of a durable trading edge under
+BrazilBench conditions.
+
+\begin{table}[h]
+\centering\small
+\caption{Out-of-sample evaluation, 2025 H1 (2025-01-02 to 2025-06-30,
+  ${\sim}121$ trading days, post-cutoff). Claude Sonnet 4.6, same
+  prompt, $N{=}3$ sessions per ticker, \texttt{temperature=0},
+  TC=25\,bps. Macro context from \texttt{UnifiedDataLoader}; note
+  that 2025 H1 SELIC (${\sim}13$--$15\%$) differs materially from
+  in-sample regimes. API cost: \$13.71.}
+\label{tab:oos_2025h1}
+\begin{tabular}{lrrrrrr}
+\toprule
+Ticker & Mean ret. & Std & Sharpe & Trades & B\&H ret. & B\&H Sharpe \\
+\midrule
+PETR4       & $-14.40\%$ & $5.72$\,pp & $-1.76$ & $4.3$ & $-10.62\%$ & $-1.21$ \\
+VALE3       & $+4.18\%$  & $0.00$\,pp & ---     & $1.0$ & $+1.01\%$  & $-0.23$ \\
+\^{}BVSP    & $+6.48\%$  & $0.00$\,pp & $+0.17$ & $1.0$ & $+13.65\%$ & $+1.03$ \\
+\midrule
+\textbf{Cross-ticker mean} & $-1.25\%$ & --- & --- & --- & $+1.35\%$ & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------------------------------------------------------
+\section{Discussion}
+% -------------------------------------------------------
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/heatmap_all_agents_regimes.pdf}
+\caption{Total return heatmap: all agents $\times$ all regimes on
+  \^{}BVSP. LLM values are \^{}BVSP column mean over $N{=}3$ seeds.
+  All other agents from Table~\ref{tab:return_bvsp}. Green\,=\,positive,
+  red\,=\,negative. \textbf{Note:} Random agent shown is seed=42
+  (single realization); a properly averaged Random baseline would
+  show the expected value over the random signal distribution.
+  crisis\_2020 is the only regime where the LLM agent outperforms
+  both MACD and Buy-and-Hold on the same asset.}
+\label{fig:heatmap}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/heatmap_sharpe_excess.pdf}
+\caption{Sharpe ratio excess vs.\ Buy-and-Hold ($r_f = 11.75\%$ SELIC)
+  on \^{}BVSP. Positive values (green) indicate risk-adjusted
+  outperformance; negative (red) indicate underperformance relative
+  to the passive baseline. MACD's crisis\_2020 dominance
+  ($+1.73$ Sharpe excess) is pronounced: its superior drawdown control
+  ($-8.1\%$ Max DD vs.\ $-45.5\%$ for B\&H) amplifies the risk-adjusted
+  advantage beyond what raw returns show. LLM values are means over
+  $N{=}3$ seeds.}
+\label{fig:sharpe_excess}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.88\linewidth]{figures/tc_sensitivity.pdf}
+\caption{Strategy robustness to transaction costs (5 rule-based agents,
+  5 BR tickers $\times$ 4 regimes, mean total return across all cells).
+  Buy-and-Hold is nearly immune (1 fill). MACD is the only active strategy
+  with positive return at zero cost, breaking even at $\sim$3\,bps.
+  Momentum is the most TC-sensitive (8.7 avg fills/cell), declining from
+  $-0.7\%$ at zero cost to $-9.6\%$ at 100\,bps. No strategy is robustly
+  cost-efficient (positive at 100\,bps) other than Buy-and-Hold.
+  Vertical dashed line: BrazilBench default of 25\,bps.}
+\label{fig:tc}
+\end{figure}
+
+The SMA200 requires 200 days of price history. The crisis\_2020 regime
+spans only 80 trading days, and no golden or death cross occurred within
+the regime even with the 250-day warmup. This is a methodological
+finding, not a failure of the indicator: SMA crossover was designed for
+long sustained trends, not short crisis windows. A single-period
+benchmark would obscure this entirely.
+
+The Random agent has no logic. If an intelligent strategy cannot
+consistently outperform Random across multiple regimes, it has no real
+edge. Any strategy that ties with Random is operating at the same level
+of randomness, regardless of how sophisticated its signal logic appears.
+
+Transaction costs reveal a critical gap between gross and net
+performance. MACD on PETR4 in bull\_2019 achieved $+0.97\%$ gross
+return. After adjusting for 20 fills at 25 basis points each, the
+cost-adjusted return drops to $-4.0\%$. Figure~\ref{fig:tc} shows
+this effect systematically: MACD is the only active strategy with
+positive mean return at zero cost, but breaks even at approximately
+3\,bps. Momentum (8.7 avg fills/cell) is the most TC-sensitive,
+declining from $-0.7\%$ at zero cost to $-9.6\%$ at 100\,bps.
+Buy-and-Hold is nearly immune (1 fill). No active strategy delivers
+positive mean return at BrazilBench's default of 25\,bps.
+
+\subsection{Information Asymmetry Between LLM and Rule-Based Agents}
+
+A structural difference in the benchmark design deserves explicit
+discussion. The LLM agent receives macro context (SELIC, IPCA,
+USD/BRL) alongside price data; rule-based agents (MACD, SMA,
+Momentum) operate on price signals only. This is an asymmetric
+information environment: the LLM has more context than its
+competitors.
+
+\textbf{Design intent.} The asymmetry is intentional: rule-based
+agents embed their market theory in fixed rules and require no macro
+context by construction, while the LLM agent is designed to
+incorporate macro information via natural language. We are
+evaluating each agent in its natural information environment, not
+controlling for information parity.
+
+\textbf{Implication for null result.} This asymmetry \emph{favors}
+the LLM. The LLM has more information and still cannot beat
+Buy-and-Hold --- making the null result \emph{stronger}, not weaker.
+If the LLM had access to the same minimal information as rule-based
+agents, we would expect it to perform no better.
+
+\textbf{Residual limitation.} We cannot rule out that the macro
+features are the sole source of any positive LLM performance. A
+macro-ablation study --- running the LLM with and without SELIC/IPCA/
+USD-BRL in the prompt --- would isolate this contribution; this is
+left for future work and is included in the macro ablation roadmap
+(Limitations Section~\ref{sec:limitations}).
+
+\subsection{LLM Agent: Few-Shot Bias --- Ablation Result}
+
+The LLM agent performed significantly better on commodity tickers
+(PETR4, VALE3) than on bank stocks (ITUB4, BBDC4). We hypothesized
+that the commodity-heavy few-shot examples in the standard prompt were
+causing sectoral bias. To test this, we ran a controlled ablation:
+the standard prompt's five commodity-heavy examples were replaced with
+a sector-balanced set (two banks, one index, one agro, one commodity),
+keeping all decision rules identical.
+
+The ablation produced a bias score of $+1.43$pp. For reference, the
+inter-seed standard deviation of LLM returns on commodity tickers is
+$\pm$2.1pp on PETR4 bull\_2019 and $\pm$1.8pp on VALE3 bull\_2019 ---
+meaning the observed bias score falls well within the noise floor of
+the multi-seed runs themselves. The bias score is not statistically
+distinguishable from zero at this sample size. \textbf{Correct
+interpretation: we cannot detect a few-shot prompt bias effect at
+current sample sizes} ($N{=}3$ seeds, single-prompt-variant run).
+This is not equivalent to demonstrating absence of bias --- it means
+the experiment is insufficiently powered to detect effects smaller
+than $\sim$2pp. A properly powered ablation would require $N{\geq}10$
+seeds per prompt variant. The commodity--bank performance gap may
+reflect structural market conditions, prompt framing, or their
+interaction; the current evidence cannot distinguish between these.
+
+\subsection{LLM Agent: Gap Risk and Stop-Loss Limits}
+
+On 2021-02-22, PETR4 fell 17\% in a single session following a
+government announcement regarding the company's leadership. The LLM
+agent's stop-loss rule (R1: exit if unrealized return $< -8\%$) did
+not protect against this event because the threshold was crossed
+intraday. The agent's unrealized return moved from approximately $-3\%$
+to $-25\%$ in one bar, triggering R1 at $-25\%$ rather than the intended
+$-8\%$. This gap-risk limitation is structural: any stop-loss rule
+evaluated on end-of-day prices cannot protect against intraday news
+shocks. This type of event is more frequent in Brazilian equities than
+in U.S.\ markets due to higher political exposure of large-cap
+state-affiliated companies.
+
+\subsection{LLM Agent: \texttt{temperature=0} Non-Determinism --- Universal Across Providers}
+
+The complete empirical documentation is in Section~4.8
+(Table~\ref{tab:qwen_det}). Summary: under \textbf{default settings},
+neither cloud API agents (Claude Sonnet 4.6, 24pp variance) nor local
+open-weight agents (Qwen 2.5-7B, 81\% mean signal agreement, up to
+16.5pp return variance across 20 cells) are deterministic at
+\texttt{temperature=0}. With a server cold-start between runs,
+Qwen becomes byte-deterministic; cloud non-determinism is independent
+of this fix. The conclusion for benchmark practice: \textbf{single-shot
+LLM benchmarks under-report variance regardless of provider under
+default settings.} Benchmark papers must report multi-seed results
+with variance estimates. For local inference, restart the server;
+for cloud APIs, $N{\geq}3$ seeds remain necessary regardless.
+
+% -------------------------------------------------------
+\section{Limitations and Future Work}
+\label{sec:limitations}
+% -------------------------------------------------------
+
+\begin{enumerate}
+
+\item \textbf{Small seed count.} $N{=}3$ seeds per cell is the minimum
+viable count under API cost constraints. Multi-seed runs with $N{\geq}10$
+would yield tighter confidence intervals. The full $N{=}10$ run is
+estimated at $\sim$\$200.
+
+\item \textbf{Statistical power and study design.} The Hansen SPA
+bootstrap ($b{=}20$) on the crisis\_2020 series (80 trading days)
+yields only $\sim$4 effective independent blocks per ticker. \textbf{Explicit
+power analysis:} for a two-sided DM test at $\alpha{=}0.05$ with
+$T{=}80$ and HAC correction ($b{=}20$), the minimum detectable
+effect size is $\delta{\approx}0.31$\,pp/day (Cohen's $d{\approx}0.45$,
+power\,=\,0.80). The observed LLM--B\&H daily return differential is
+${\approx}0.005$\,pp --- 62$\times$ below the detection threshold.
+Benjamini-Hochberg FDR correction (applied to DM, Section~4.9) is
+more powerful than Bonferroni and reveals LLM outperformance of
+Momentum and Random in crisis\_2020; Buy-and-Hold remains
+non-significant under both corrections. Resolving the B\&H comparison
+requires $T{\approx}800$\,days per ticker --- achievable with 2023--2026
+regimes.
+
+\item \textbf{Regime definition robustness.} The four benchmark regimes
+are defined by hand based on macroeconomic events. While this makes
+them interpretable, it creates exposure to ex-post selection:
+a researcher who saw the data first could define regimes that favor
+one strategy. A robustness check using Hamilton (1989) Hidden Markov
+Model \cite{hamilton1989} regime detection on the same period would
+test whether conclusions are stable across regime definitions. Visual
+inspection of HMM-detected breakpoints on the Ibovespa (not formally
+reported) suggests broad alignment with the hand-defined dates, but
+formal documentation and sensitivity analysis should be included in
+a future version.
+
+\item \textbf{Single-asset simulation.} Each run allocates 100\% of
+capital to a single asset. Appendix~\ref{app:portfolio} provides an
+equal-weight portfolio estimate using existing data; full multi-asset
+simulation with correlation structure is left for future work.
+
+\item \textbf{Data source limitations.} Historical prices are sourced
+from yfinance with the \texttt{.SA} suffix for Brazilian assets.
+yfinance is adequate for reproducible academic benchmarks but has
+known limitations in production: gaps around Brazilian-specific
+holidays, inconsistent dividend adjustment methodology, and occasional
+errors in split ratios for B3-listed companies. These issues can
+introduce price discontinuities of 0.1--2\% on affected dates.
+For a production-grade benchmark, data from B3 directly or from
+commercial providers such as Economatica or Refinitiv Eikon would
+eliminate these inconsistencies. We chose yfinance to maximize
+reproducibility and recommend validation against a commercial source
+before any live trading application.
+
+\item \textbf{Survivorship bias.} We tested only liquid, continuously
+traded assets on B3. Companies that failed or were delisted during the
+benchmark period are absent. \textbf{Sensitivity bound:}
+\cite{lesmond1999} estimates 1--3pp annual upward distortion for
+liquid-only sets in U.S.\ emerging market data of the 1990s; the
+applicability to Brazilian equities of 2019--2022 is uncertain.
+Applied conservatively: even a 3pp/year correction over 4 years
+($\sim$12pp cumulative) does not reverse the LLM vs.\ B\&H ordering,
+but inflates absolute Sharpe ratios. Future work should include
+distressed assets (OIBR3, GOLL4, MGLU3) to bracket the effect
+empirically rather than relying on a cross-decade, cross-country
+estimate.
+
+\item \textbf{LLM pretraining memory leakage.} All four benchmark
+regimes (2019--2022) predate Claude Sonnet 4.6's training cutoff.
+The LLM agent may have implicit memory of market outcomes during these
+periods, constituting look-ahead leakage not present in live
+deployment. This is architecturally irresolvable with pre-2023 data.
+
+Section~4.11 reports two empirical probes. The \textbf{date-shuffle
+probe} (PETR4/crisis\_2020, $N{=}3$ seeds) shows that permuting the
+temporal order of OHLCV rows causes Claude to make zero trades
+($\Delta{=}{-21.4}$\,pp vs unshuffled). This is consistent with
+leakage but also with noise detection --- the two cannot be
+discriminated without a pre-2019 model comparator. The
+\textbf{OOS probe} (2025 H1, post-cutoff, $N{=}3$ seeds on 3 tickers)
+shows no meaningful edge: LLM $-1.25\%$ vs B\&H $+1.35\%$
+($\Delta{=}{-2.6}$\,pp). No persistent alpha survives into the
+post-cutoff period, consistent with the in-sample null result.
+
+\textbf{The only definitive resolution} is a pre-2019 model comparator
+or a purpose-built post-cutoff benchmark. BrazilBench v2 should add
+2023--2024 regimes with a model whose knowledge boundary is
+verifiably earlier.
+
+\item \textbf{Qwen multi-seed results.} Qwen 2.5-7B was run $N{=}3$
+times across all 20 evaluation cells (Section~4.8). Under default
+Ollama settings, 81\% mean signal agreement was observed. A causal
+test with server cold-start confirmed the non-determinism is entirely
+attributable to KV-cache state: with \texttt{OLLAMA\_KEEP\_ALIVE=0}
+and server restart, Qwen is byte-deterministic. Cloud API
+non-determinism (Claude) is a separate, unresolved mechanism.
+Larger open-weight models (Qwen 3.5-122B was time-probed at
+$\sim$75\,s/bar on Apple Silicon, yielding an estimated 33\,h for
+the full 20-cell grid) and alternative inference servers (vLLM,
+llama.cpp) are left for future work.
+
+\item \textbf{Random baseline: single realization.} The Random agent
+uses a fixed seed (seed=42) for reproducibility. This produces one
+specific realization of the random signal process, not an expected
+value over the random baseline distribution. Table~\ref{tab:random-n100}
+reports the full $N{=}100$-seed distribution: seed=42 sits at median
+percentile 37.0 and falls in a distribution tail in 4 of 20 cells.
+Single-seed Random is therefore a noisy but broadly representative
+estimate. Equal-weight portfolio comparisons (Table~\ref{tab:ew-baselines})
+use the $N{=}100$ mean instead of seed=42.
+
+\item \textbf{Model reproducibility.} The exact inference artifact
+for Qwen 2.5-7B was \texttt{qwen2.5:7b} via Ollama (model ID
+\texttt{845dbda0ea48}, 4.7\,GB). Claude Sonnet 4.6 was accessed via
+the Anthropic Messages API (\texttt{claude-sonnet-4-6}); API model
+weights may be updated silently by Anthropic between evaluations.
+The complete system prompt (Appendix~\ref{app:prompt}) and decision
+logs (JSONL format, available in the repository) enable partial
+replication; exact Claude outputs are not reproducible due to API
+non-determinism documented in Section~4.8.
+
+\item \textbf{Asset-specific slippage.} The benchmark uses 25\,bps
+for all tickers. A sensitivity analysis with liquidity premia
+(EGIE3/RADL3 $+5$\,bps; SLCE3/RENT3 $+10$\,bps) produces mean
+return deltas of $-0.25$\,pp and $-0.51$\,pp for mid-cap buckets
+--- small but non-negligible for high-turnover strategies. The
+realistic model is available via \texttt{slippage\_bps\_by\_ticker}.
+
+\item \textbf{Confidence calibration not evaluated.} Each LLM
+decision logs \texttt{confidence}\,$\in[0,1]$, but no calibration
+analysis was performed. A reliability diagram --- binning decisions
+by confidence and comparing realized win rate --- would reveal whether
+the model's self-reported uncertainty is informative. The data exists
+in the JSONL logs in the repository; this is an immediate zero-cost
+extension.
+
+\item \textbf{Macro feature ablation not performed.} The LLM receives
+SELIC, IPCA, and USD/BRL context; rule-based agents do not
+(Section~5.2). A 5-variant ablation (full macro; no SELIC; no IPCA;
+no USD/BRL; price-only) on crisis\_2020 would quantify which features
+drive LLM decisions. Estimated cost: $\sim$\$80 for 5 variants $\times$
+5 cells $\times$ 1 seed.
+
+\end{enumerate}
+
+% -------------------------------------------------------
+\section{Conclusion}
+% -------------------------------------------------------
+
+BrazilBench is the first trading agent benchmark for Brazilian equity
+markets, evaluating seven agents across four regimes and nine assets
+with multi-seed ($N{=}3$) LLM evaluation and two complementary
+significance tests.
+
+Three grouped findings: \textit{(i) Regime sensitivity of rule-based
+strategies:} MACD avoided the COVID crash via a single well-timed
+exit/re-entry (3 fills; PETR4 $+26.2\%$ vs.\ B\&H $-28.0\%$;
+the more generalizable number is \^{}BVSP $+9.8\%$ vs.\ $-23.9\%$);
+Momentum fails catastrophically under transaction costs in volatile
+regimes; no active strategy consistently beats Buy-and-Hold in
+sustained bull trends. \textit{(ii) LLM agent performance:}
+Claude Sonnet 4.6 achieves the highest sample mean return ($+0.1\%$)
+with a nuanced statistical picture: under Bonferroni (FWER), no
+comparison survives; under Benjamini-Hochberg (FDR\,=\,5\%), the LLM
+significantly outperforms Momentum (DM\,=\,$-3.11$, $p{=}0.002$) and
+Random (DM\,=\,$-2.87$, $p{=}0.004$) in crisis\_2020, but
+Buy-and-Hold remains non-significant under both corrections. The LLM
+can beat noisy and momentum-chasing baselines in the most volatile
+regime, but cannot improve upon zero-cost passive holding. \textit{(iii) Provider-agnostic non-determinism with identified mechanisms:}
+neither cloud APIs (Claude Sonnet 4.6, 24pp variance) nor local
+open-weight models (Qwen 2.5-7B default, 81\% mean signal agreement)
+are deterministic at \texttt{temperature=0} under default settings.
+However, a controlled causal test (server cold-start,
+\texttt{OLLAMA\_KEEP\_ALIVE=0}) confirms Qwen's non-determinism is
+entirely attributable to persistent Ollama KV-cache state: with server
+restart between runs, Qwen produces byte-identical outputs (100\% agreement,
+std\,=\,0.0). Cloud API non-determinism (Claude) is independent ---
+likely multi-shard GPU scheduling --- and cannot be eliminated by
+server restarts. Practical guidance: for local inference, restart the
+server between runs; for cloud APIs, $N{\geq}3$ seeds are necessary
+regardless.
+
+The last finding has direct practical implications: \textbf{all LLM
+benchmark papers should report multi-seed results with variance
+estimates --- cloud or local, closed or open-weight.} The
+\texttt{temperature} parameter does not control stochasticity in
+production inference environments; for local Ollama inference, server
+cold-start between runs eliminates the KV-cache artifact. We release
+the full codebase, prompts, and data to enable exact replication.
+These findings are bounded by $N{=}36$ evaluation cells and $N{=}3$
+seeds; absence of statistical significance should be read as
+\emph{no evidence of superiority at current sample sizes}, not as
+proof of no effect.
+
+The use of SELIC as the risk-free rate is not a minor detail. Using a
+country-appropriate risk-free rate is the difference between a meaningful
+and a misleading Sharpe ratio in any emerging-market benchmark.
+
+% -------------------------------------------------------
+\appendix
+\section{Equal-Weight Portfolio Approximation}
+\label{app:portfolio}
+% -------------------------------------------------------
+
+Table~\ref{tab:ew-baselines} reports equal-weight (1/5) portfolio
+returns across the five BR tickers for each rule-based agent and
+regime. Random uses the $N{=}100$-seed mean from
+Table~\ref{tab:random-n100} rather than seed=42, giving the expected
+uninformed return. \emph{LLM excluded:} sequential multi-seed
+evaluation prevents proper simultaneous portfolio construction ---
+see Section~5.2.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Agent (EW, \%)} & \textbf{bull\_2019} & \textbf{crisis\_2020}
+  & \textbf{recovery\_2021} & \textbf{hi\_rates\_2022} \\
+\midrule
+Buy \& Hold     & $+17.2$ & $-22.4$ & $+10.0$ & $+14.6$ \\
+MACD(12,26,9)   & $+4.9$  & $\mathbf{+6.9}$ & $+8.8$ & $+14.6$ \\
+SMA(50/200)     & $+11.2$ & $-26.0$ & $+8.0$  & $-11.0$ \\
+Momentum(60)    & $+4.5$  & $-4.5$  & $+3.1$  & $+12.2$ \\
+Random ($N{=}100$ mean) & $+9.7$ & $-12.3$ & $+6.2$ & $+6.3$ \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Equal-weight portfolio returns, rule-based agents only.}
+  Mean of per-ticker cumulative returns across PETR4, VALE3, ITUB4,
+  BBDC4, \texttt{\^{}BVSP}. Long-only, all-in/all-cash, frictionless;
+  indicators warm at each window's first bar. Random row $=$ $N{=}100$
+  seed mean (robust estimate; not seed=42).
+  MACD is the only strategy positive in crisis\_2020 ($+6.9\%$) while
+  Buy\,\&\,Hold ($-22.4\%$) and SMA ($-26.0\%$) are hit hardest;
+  Buy\,\&\,Hold dominates in bull\_2019 ($+17.2\%$) via pure trend.
+  Auto-generated by \texttt{scripts/run\_ew\_portfolio.py}.}
+\label{tab:ew-baselines}
+\end{table}
+
+% -------------------------------------------------------
+\section{LLM Agent System Prompt}
+\label{app:prompt}
+% -------------------------------------------------------
+
+The following is the complete system prompt used for the LLM agent
+(\texttt{claude-sonnet-4-6}, \texttt{temperature=0}) in all reported
+experiments. It is reproduced verbatim to enable exact replication.
+The user prompt template (compressed prices + macro context) is
+available in the benchmark repository.
+
+\textbf{Note on few-shot example selection.} The five examples below
+include one dated 2020-03-26 (COVID-19 trough, Example~1: BUY signal).
+This date was chosen \emph{ex post} as an instructive case of extreme
+oversold conditions, not because the agent would have known it was
+the bottom. The example teaches the format and decision structure (stop
+reference, SELIC context, momentum reasoning) --- not market timing.
+A controlled ablation replacing commodity-heavy examples with a
+sector-neutral set produced a bias score of $+1.43$pp (Section~5.2),
+within inter-seed noise, confirming the specific examples do not
+materially drive performance outcomes. Readers concerned about
+instructional hindsight bias are encouraged to re-run with the
+neutral prompt variant (\texttt{benchmark/llm/prompts\_neutral.py}).
+
+\begingroup
+\small
+\begin{verbatim}
+You are a quantitative trading analyst evaluating Brazilian and
+US equities on behalf of an institutional portfolio.
+
+For each market state, output EXACTLY this JSON and nothing else
+(no preamble, no markdown fences):
+{"signal": "BUY"|"SELL"|"HOLD",
+ "confidence": 0.0-1.0,
+ "reasoning": "<= 80 words>"}
+
+=== DECISION RULES ===
+- BUY only when you expect positive risk-adjusted return over
+  ~20 trading days relative to SELIC.
+- SELL when: (R1) unrealized return < -8% from entry price, OR
+  (R2) position is up > +15% AND 20d return has turned negative.
+- HOLD is the default. Prefer HOLD under high uncertainty.
+- For BR tickers: SELIC > 12% historically pressures equities;
+  IPCA > 6% signals inflation regime; USD/BRL > 5.50 adds FX risk.
+- Never base decisions on news outside the provided data.
+- Output ONLY the JSON object.
+
+=== FEW-SHOT EXAMPLES ===
+
+Example 1 (BUY — COVID recovery signal):
+Input: TICKER: PETR4 (BR), DATE: 2020-03-26
+  close: 12.10, 20d return: -52.3%, 60d return: -58.1%
+  20d vol: 94.2%, volume z-score: +3.1
+  SELIC: 3.75%, IPCA: 0.07%, USD/BRL: 5.42
+Output: {"signal": "BUY", "confidence": 0.78,
+  "reasoning": "Extreme oversold: -52% in 20d, vol spike +3.1
+  sigma. SELIC cut to 3.75% is accommodative. Risk/reward
+  favors entry at generational lows. Stop at -8%."}
+
+Example 2 (SELL — R1 stop-loss):
+Input: TICKER: VALE3 (BR), DATE: 2021-09-14
+  close: 68.20, unrealized_return: -11.3%
+  20d return: -18.4%, 60d return: -22.1%
+  SELIC: 5.25%, IPCA: 0.87%, USD/BRL: 5.28
+Output: {"signal": "SELL", "confidence": 0.97,
+  "reasoning": "R1 triggered: unrealized -11.3% below -8%
+  threshold. Continued downtrend (-18.4% 20d). Exit to
+  preserve capital."}
+
+Example 3 (SELL — R2 trailing exit):
+Input: TICKER: ITUB4 (BR), DATE: 2019-07-22
+  close: 34.80, unrealized_return: +19.4%
+  20d return: -3.1%, 60d return: +21.2%
+Output: {"signal": "SELL", "confidence": 0.82,
+  "reasoning": "R2 triggered: position +19.4% but 20d return
+  now -3.1% (reversal). Lock in gains before further
+  deterioration."}
+
+Example 4 (HOLD — high SELIC regime):
+Input: TICKER: ^BVSP (BR), DATE: 2022-08-10
+  close: 112450, 20d return: +4.2%, 60d return: +8.1%
+  SELIC: 13.75%, IPCA: 0.66%, USD/BRL: 5.11
+Output: {"signal": "HOLD", "confidence": 0.71,
+  "reasoning": "SELIC 13.75% makes risk-free rate high.
+  Modest positive trend but insufficient margin above
+  opportunity cost. Hold existing position."}
+
+Example 5 (HOLD — flat market, no signal):
+Input: TICKER: BBDC4 (BR), DATE: 2021-04-05
+  close: 22.15, 20d return: -1.2%, 60d return: +0.8%
+  20d vol: 24.1%, volume z-score: -0.3
+  SELIC: 2.75%, IPCA: 0.93%, USD/BRL: 5.68
+Output: {"signal": "HOLD", "confidence": 0.85,
+  "reasoning": "No clear trend: 20d return -1.2%, 60d +0.8%.
+  USD/BRL elevated at 5.68. Lack of direction warrants
+  patience."}
+\end{verbatim}
+\endgroup
+
+\noindent The user prompt template follows this structure for each
+trading day:
+
+\begingroup
+\small
+\begin{verbatim}
+TICKER: {ticker} ({market})  DATE: {date}
+
+RECENT PRICES (last 20 trading days, oldest to newest):
+{price_list}
+
+PRICE STATISTICS:
+- close: {close}
+- 20d return: {ret_20d}%  |  60d return: {ret_60d}%
+- 20d realized vol (annualized): {vol_20d}%
+- 20d high/low: {high_20d} / {low_20d}
+- volume z-score (20d): {vol_zscore}
+{position_block}
+MACRO CONTEXT:
+- SELIC: {selic}%
+- IPCA (monthly, last): {ipca}%
+- USD/BRL: {usdbrl}
+
+Output the JSON decision now.
+\end{verbatim}
+\endgroup
+
+\noindent The \texttt{position\_block} is injected only when a
+position is open:
+
+\begingroup
+\small
+\begin{verbatim}
+CURRENT POSITION:
+- entry_price: {entry}
+- unrealized_return: {pnl}%
+(Apply R1 if unrealized_return < -8%; apply R2 if
+unrealized_return > +15% AND 20d return < 0)
+\end{verbatim}
+\endgroup
+
+% -------------------------------------------------------
+
+\begin{thebibliography}{9}
+
+\bibitem{hansen2005}
+Hansen, P.R.
+\newblock A Test for Superior Predictive Ability.
+\newblock \textit{Journal of Business \& Economic Statistics},
+  23(4):365--380, 2005.
+
+\bibitem{dieboldmariano1995}
+Diebold, F.X. and Mariano, R.S.
+\newblock Comparing Predictive Accuracy.
+\newblock \textit{Journal of Business \& Economic Statistics},
+  13(3):253--263, 1995.
+
+\bibitem{tradingagents2024}
+Wang et al.
+\newblock TradingAgents: Multi-Agents LLM Financial Trading Framework.
+\newblock \textit{arXiv preprint arXiv:2412.20138}, 2024.
+
+\bibitem{finagent2024}
+Zhang, X., et al.
+\newblock FinAgent: A Multimodal Foundation Agent for Financial Trading.
+\newblock \textit{arXiv preprint arXiv:2402.18485}, 2024.
+
+\bibitem{chronos2024}
+Ansari, A.F., et al.
+\newblock Chronos: Learning the Language of Time Series.
+\newblock \textit{Transactions on Machine Learning Research}, 2024.
+  arXiv:2403.07815.
+
+\bibitem{backtrader2015}
+Molina, D.
+\newblock Backtrader: Python Backtesting Library.
+\newblock \url{https://github.com/mementum/backtrader}, 2015.
+
+\bibitem{quantconnect2013}
+QuantConnect.
+\newblock Lean Algorithmic Trading Engine.
+\newblock \url{https://github.com/QuantConnect/Lean}, 2013.
+
+\bibitem{hamilton1989}
+Hamilton, J.D.
+\newblock A New Approach to the Economic Analysis of Nonstationary Time Series
+  and the Business Cycle.
+\newblock \textit{Econometrica}, 57(2):357--384, 1989.
+
+\bibitem{angbekaert2002}
+Ang, A. and Bekaert, G.
+\newblock International Asset Allocation with Regime Shifts.
+\newblock \textit{Review of Financial Studies}, 15(4):1137--1187, 2002.
+
+\bibitem{lesmond1999}
+Lesmond, D.A., Ogden, J.P., and Trzcinka, C.A.
+\newblock A New Estimate of Transaction Costs.
+\newblock \textit{Review of Financial Studies}, 12(5):1113--1141, 1999.
+
+\bibitem{adlerdumas1983}
+Adler, M. and Dumas, B.
+\newblock International Portfolio Choice and Corporation Finance: A Synthesis.
+\newblock \textit{Journal of Finance}, 38(3):925--984, 1983.
+
+\bibitem{kronos2025}
+Shi, Y., Fu, Z., Chen, S., Zhao, B., Xu, W., Zhang, C., and Li, J.
+\newblock Kronos: A Foundation Model for the Language of Financial Markets.
+\newblock \textit{arXiv preprint arXiv:2508.02739}, 2025.
+  (Accepted at AAAI-26; proceedings forthcoming.)
+  \url{https://ojs.aaai.org/index.php/AAAI/article/view/39730}.
+
+\bibitem{fingpt2023}
+Yang et al.
+\newblock FinGPT: Open-Source Financial Large Language Models.
+\newblock \textit{AI4Finance Foundation}, 2023.
+
+\bibitem{harveyliuzhu2016}
+Harvey, C.R., Liu, Y., and Zhu, H.
+\newblock \ldots and the Cross-Section of Expected Returns.
+\newblock \textit{Review of Financial Studies}, 29(1):5--68, 2016.
+
+\bibitem{politisromano1994}
+Politis, D.N. and Romano, J.P.
+\newblock The Stationary Bootstrap.
+\newblock \textit{Journal of the American Statistical Association},
+  89(428):1303--1313, 1994.
+
+\bibitem{bacen}
+Banco Central do Brasil.
+\newblock Sistema Gerenciador de Series Temporais (SGS).
+\newblock \url{https://api.bcb.gov.br}, 2024.
+
+\bibitem{lopezdeprado2018}
+López de Prado, M.
+\newblock \textit{Advances in Financial Machine Learning}.
+\newblock Wiley, 2018.
+
+\bibitem{baileylopezdeprado2014}
+Bailey, D.H. and López de Prado, M.
+\newblock The Deflated Sharpe Ratio: Correcting for Selection Bias,
+  Backtest Overfitting and Non-Normality.
+\newblock \textit{Journal of Portfolio Management}, 40(5):94--107, 2014.
+
+\end{thebibliography}
+
+\end{document}
