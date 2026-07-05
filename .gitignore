@@ -229,5 +229,12 @@ __marimo__/
 
 # Research artifacts
 results/
+# Track benchmark result CSVs despite the results/ rule above. Git can't
+# un-ignore a file whose parent dir is excluded, so the directory path is
+# re-included first; the regenerable price cache stays ignored.
+!benchmark/results/
+!benchmark/results/**/
+!benchmark/results/**/*.csv
+benchmark/results/_price_cache/
 *.pkl
 data/raw/
