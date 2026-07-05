@@ -100,3 +100,21 @@ class SMACrossStrategy(_Strategy):
         sma_fast = close.rolling(self.fast).mean()
         sma_slow = close.rolling(self.slow).mean()
         return (sma_fast > sma_slow).fillna(False)
+
+
+class MomentumStrategy(_Strategy):
+    """Time-series momentum: long when the trailing ``lookback``-day return is
+    positive (close today > close ``lookback`` bars ago), else flat.
+
+    A standard uninformed trend-following baseline. The signal is purely
+    backward-looking (uses ``shift``), so no future bar is ever consulted.
+    """
+
+    name = "Momentum(60)"
+
+    def __init__(self, lookback: int = 60) -> None:
+        self.lookback = lookback
+
+    def signals(self, prices: pd.DataFrame) -> pd.Series:
+        close = prices["Close"].astype(float)
+        return (close > close.shift(self.lookback)).fillna(False)
