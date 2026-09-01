@@ -234,6 +234,22 @@ class BrazilBenchFixtureTests(unittest.TestCase):
             pre = df.loc[: "2019-01-01"]
             self.assertGreaterEqual(len(pre), 200, f"{ticker} missing SMA warmup")
 
+    def test_sma_uses_pre_window_warmup_on_frozen_petr4(self):
+        from tradingagents.backtest import brazilbench as bb
+        from tradingagents.backtest.baselines import SMACrossStrategy
+
+        prices = bb.load_close("PETR4", price_dir=PRICE_DIR)
+        warmed, win = bb.warm_window(prices, "bull_2019")
+        sma = SMACrossStrategy()
+        warm_sig = sma.signals(warmed).loc[win.index]
+        cold_sig = sma.signals(win)
+        self.assertTrue((warm_sig != cold_sig).any())
+        self.assertTrue(bool(warm_sig.iloc[0]))
+        self.assertFalse(bool(cold_sig.iloc[0]))
+        row = bb.run_cell(sma, prices, "bull_2019")
+        # Same cell as benchmark/results/baselines/per_cell_returns.csv (23.1564%).
+        self.assertAlmostEqual(row["cr"], 0.23156376649933502, places=10)
+
     def test_committed_matrix_stays_on_metrics_path(self):
         from tradingagents.backtest import brazilbench as bb
 

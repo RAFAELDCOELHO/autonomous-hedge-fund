@@ -2,7 +2,8 @@
 
 Universe: README Brazilian equities (ITUB4, BPAC11, PETR4, VALE3, WEGE3, RADL3).
 Strategies: Buy & Hold, MACD(12,26,9), SMA(50/200). No LLM. No API key.
-Prices: committed Close CSVs under benchmark/prices/.
+Prices: committed Close CSVs under benchmark/prices/ (Yahoo .SA, auto_adjusted,
+FETCH_START 2018-01-01 through FETCH_END 2023-01-15). Never downloads.
 """
 
 from __future__ import annotations

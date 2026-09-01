@@ -1,5 +1,5 @@
-# BrazilBench one-click path. Offline Close fixtures, frozen B3 splits.
-# Strategies: Buy & Hold, MACD(12,26,9), SMA(50/200). No API key. No LLM.
+# BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
+# No API key. No LLM. No TradingAgents graph.
 .PHONY: bench
 
 bench:
