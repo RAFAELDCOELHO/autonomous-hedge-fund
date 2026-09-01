@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it using the metadata from this file.
+title: Autonomous Hedge Fund
+type: software
+authors:
+  - family-names: Coelho
+    given-names: Rafael D.
+    email: rafael.d.cooelho@gmail.com
+license: Apache-2.0
+repository-code: "https://github.com/RAFAELDCOELHO/autonomous-hedge-fund"
+url: "https://github.com/RAFAELDCOELHO/autonomous-hedge-fund"
+date-released: 2026-09-01
+abstract: >-
+  A multi-agent LLM trading system that extends the TradingAgents
+  framework with an original Macro Economist Agent. BrazilBench runs
+  offline classical baselines on frozen B3 regime splits for ITUB4,
+  BPAC11, PETR4, VALE3, WEGE3, and RADL3.
