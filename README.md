@@ -1,5 +1,13 @@
 # Autonomous Hedge Fund: multi-agent LLM trading system
 
+BrazilBench (offline). Classical baselines on frozen B3 regime splits for ITUB4, BPAC11, PETR4, VALE3, WEGE3, RADL3. No API key. No LLM.
+
+```bash
+make bench
+```
+
+Prints CR / Sharpe / MDD for Buy & Hold, MACD(12,26,9), and SMA(50/200). The live multi-agent path (`uv run python main.py`) is separate and requires `ANTHROPIC_API_KEY`.
+
 > Does explicit macroeconomic reasoning matter more for LLM trading agents in emerging markets than in developed ones? This is an independent research project that extends the TradingAgents framework with an original Macro Economist Agent and a 2×2 factorial experiment to test that hypothesis.
 
 [![Tests](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/actions/workflows/tests.yml/badge.svg)](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/actions/workflows/tests.yml)
@@ -124,25 +132,27 @@ There are no multi-agent results yet; the H1 experiment has not been run. See [C
 ```bash
 git clone https://github.com/RAFAELDCOELHO/autonomous-hedge-fund.git
 cd autonomous-hedge-fund
-uv sync                                    # Python 3.12, all dependencies
-cp .env.example .env                       # add your ANTHROPIC_API_KEY
+make bench
+```
 
-# Run the multi-agent pipeline (one ticker, one trading day)
+`make bench` creates the project env with `uv sync` (Python 3.12) if `.venv` is missing, then runs offline BrazilBench baselines on committed Close fixtures. No API key.
+
+Optional live-agent path (needs a key):
+
+```bash
+cp .env.example .env                       # set ANTHROPIC_API_KEY
 uv run python main.py
-
-# Run the test suite — 56 tests, fully offline, no API key required
-uv run pytest tests/ --ignore=tests/test_api_smoke.py
-
-# Run baseline backtests (no LLM calls)
-uv run python run_backtest.py --ticker AAPL --start 2023-01-01 --end 2024-01-01 --skip-agents
 ```
 
 ## Repository structure
 
 ```
 autonomous-hedge-fund/
-├── main.py                  # Single-day pipeline entry point
-├── run_backtest.py          # Backtest CLI: baselines vs. agents
+├── Makefile                 # make bench: offline BrazilBench baselines
+├── main.py                  # Single-day pipeline entry point (needs a key)
+├── run_backtest.py          # Single-ticker backtest CLI: baselines vs. agents
+├── benchmark/prices/        # Committed Close fixtures for BrazilBench
+├── scripts/run_brazilbench.py
 ├── tradingagents/
 │   ├── agents/
 │   │   ├── analysts/        # Market, Social, News, Fundamentals, Macro Economist ★
@@ -153,10 +163,10 @@ autonomous-hedge-fund/
 │   │   └── utils/           # Agent tools, incl. macro_tools.py (brazilfi-backed)
 │   ├── graph/               # LangGraph orchestration, conditional logic, signal processing
 │   ├── dataflows/           # Data adapters: yfinance, Alpha Vantage, Kronos, FinGPT
-│   ├── backtest/            # baselines, metrics, runner, report, agent_integration
+│   ├── backtest/            # baselines, metrics, runner, report, brazilbench, agent_integration
 │   └── llm_clients/         # Provider-agnostic LLM client factory
 ├── cli/                     # Interactive terminal UI
-├── tests/                   # 56 unit tests: metrics, adapters, fallbacks, graph construction
+├── tests/                   # Offline unit tests: metrics, BrazilBench, adapters, fallbacks
 ├── docs/ARCHITECTURE.md     # Code-level system design
 ├── PAPER.md                 # Working research paper draft
 ├── ROADMAP.md               # Phased research plan
