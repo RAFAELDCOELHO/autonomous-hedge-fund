@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability docker-bench arena-help
+.PHONY: bench reproduce reliability multi-asset docker-bench arena-help
 
 PY = uv run python
 
@@ -19,6 +19,11 @@ reproduce: | .venv
 # committed mistral:7b logs + PETR4 fixture. Offline, stdlib only, no LLM call.
 reliability: | .venv
 	$(PY) scripts/reliability_diagram.py
+
+# P1.8: multi-asset portfolios (EW / inverse-vol / long-only min-variance) that
+# use the daily correlation structure of the paper-five fixtures. Offline.
+multi-asset: | .venv
+	$(PY) scripts/multi_asset_corr.py
 
 # `make reproduce` inside a container built from uv.lock. Outputs land in
 # ./benchmark/results and ./docs. No .env, no keys, no GPU.

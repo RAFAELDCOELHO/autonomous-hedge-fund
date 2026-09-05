@@ -659,8 +659,18 @@ a future version.
 
 \item \textbf{Single-asset simulation.} Each run allocates 100\% of
 capital to a single asset. Appendix~\ref{app:portfolio} provides an
-equal-weight portfolio estimate using existing data; full multi-asset
-simulation with correlation structure is left for future work.
+equal-weight portfolio estimate (mean of per-ticker terminal returns)
+using existing data. A companion artifact
+(\texttt{make multi-asset}; \texttt{scripts/multi\_asset\_corr.py};
+outputs under \texttt{benchmark/results/multi\_asset/}) builds daily
+constant-mix portfolios on the aligned daily-return matrix of the five
+assets, reports the per-regime Pearson correlation matrices, and
+compares equal-weight against inverse-volatility and long-only
+minimum-variance weights estimated on pre-regime warmup only (no
+look-ahead). It covers the rule-based agents only; the LLM pipeline
+is not evaluated in a multi-asset setting, and because four of the
+five assets are Ibovespa constituents the diversification benefit is
+small by construction.
 
 \item \textbf{Data source limitations.} Historical prices are sourced
 from yfinance with the \texttt{.SA} suffix for Brazilian assets.
