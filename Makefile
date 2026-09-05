@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability docker-bench arena-help
+.PHONY: bench reproduce reliability docs-smoke docker-bench arena-help
 
 PY = uv run python
 
@@ -19,6 +19,11 @@ reproduce: | .venv
 # committed mistral:7b logs + PETR4 fixture. Offline, stdlib only, no LLM call.
 reliability: | .venv
 	$(PY) scripts/reliability_diagram.py
+
+# Minimal offline docs smoke: required files exist and README links key
+# artifact entry points. No network, no API keys.
+docs-smoke: | .venv
+	$(PY) -m pytest -q tests/test_docs_smoke.py
 
 # `make reproduce` inside a container built from uv.lock. Outputs land in
 # ./benchmark/results and ./docs. No .env, no keys, no GPU.
