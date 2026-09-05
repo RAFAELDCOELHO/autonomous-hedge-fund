@@ -157,6 +157,8 @@ Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`
 
 ## Reproduce the paper tables (offline, no API key)
 
+**Reproducibility manifest (P0.2):** seeds, prompts, JSONL schemas, model versions, and which result dirs are on `main` vs still open PRs — [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md). `tests/test_repro_manifest.py` asserts the checklist paths exist.
+
 | Command | What it does |
 |---|---|
 | `make bench` | Fast printout of the baseline matrix: Buy & Hold / MACD / SMA × 6 tickers × 4 regimes. |
