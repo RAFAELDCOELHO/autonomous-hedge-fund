@@ -21,7 +21,8 @@ Offline: no LLM call, no download, no key. Regenerate and `git status` must be c
 | `win` | bool or null | BUY: `next_ret > 0`; SELL: `next_ret < 0`; HOLD: null |
 
 Rows are dropped, and counted on stdout, only if the signal is not one of the
-three or t+1 is missing from the fixture. Current run: 486 rows, 0 dropped.
+three or t+1 is missing from the fixture. The exact row count depends on the
+currently committed input logs; treat script stdout as the source of truth.
 
 ## `bins.csv` — one row per non-empty confidence bin
 
