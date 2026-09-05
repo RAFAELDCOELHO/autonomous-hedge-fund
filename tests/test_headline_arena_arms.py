@@ -28,6 +28,9 @@ class HeadlineArenaArmsTests(unittest.TestCase):
         self.assertIn("selected_analysts", arms["no_macro"])
         self.assertIn("macro", arms["macro"]["selected_analysts"])
         self.assertNotIn("macro", arms["no_macro"]["selected_analysts"])
+        macro_set = set(arms["macro"]["selected_analysts"])
+        no_macro_set = set(arms["no_macro"]["selected_analysts"])
+        self.assertEqual(macro_set - no_macro_set, {"macro"})
 
     def test_default_cli_lists_arms_without_key(self):
         completed = subprocess.run(
