@@ -27,7 +27,7 @@ class StatsCallbackHandlerTests(unittest.TestCase):
         handler = StatsCallbackHandler()
         message = AIMessage(
             content="ok",
-            usage_metadata={"input_tokens": 7, "output_tokens": 11},
+            usage_metadata={"input_tokens": 7, "output_tokens": 11, "total_tokens": 18},
         )
         generation = SimpleNamespace(message=message)
         response = SimpleNamespace(generations=[[generation]])
