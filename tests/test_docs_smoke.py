@@ -29,16 +29,19 @@ class DocsSmokeTests(unittest.TestCase):
 
     def test_neurips_checklist_rows_have_expected_status_values(self):
         checklist = (REPO / "docs/NEURIPS_CHECKLIST.md").read_text(encoding="utf-8")
-        rows = []
+        data_rows = []
         for line in checklist.splitlines():
             if not line.startswith("|") or line.startswith("|---"):
                 continue
             cells = [c.strip() for c in line.strip("|").split("|")]
-            if len(cells) < 3 or cells[1] not in {"Yes", "No", "NA"}:
+            if len(cells) < 3:
                 continue
-            rows.append((line, cells))
+            if cells[0] == "Item" and cells[1] == "Yes/No/NA":
+                continue
+            data_rows.append((line, cells))
+        rows = [row for row in data_rows if row[1][1] in {"Yes", "No", "NA"}]
         self.assertGreaterEqual(len(rows), 10, "expected at least 10 checklist rows")
-        for row, cells in rows:
+        for row, cells in data_rows:
             self.assertIn(cells[1], {"Yes", "No", "NA"}, f"invalid checklist status in row: {row}")
             self.assertNotIn("TODO", row)
             self.assertNotIn("TBD", row)
