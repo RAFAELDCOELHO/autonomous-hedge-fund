@@ -155,14 +155,34 @@ The 2×2 factorial above is backtest-only. [Headline Arena](https://headlinearen
 
 Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`). Registration and forecasting go through the [headlinearena agent plugin](https://github.com/headlinearena/headlinearena-agent-plugin) ([raw API](https://headlinearena.com/api/docs)). Listing arms costs $0 and needs no Anthropic API key; running an arm live does. Tracked in [issue #3](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3). No arena results yet.
 
+## Reproduce the paper tables (offline, no API key)
+
+| Command | What it does |
+|---|---|
+| `make bench` | Fast printout of the baseline matrix: Buy & Hold / MACD / SMA × 6 tickers × 4 regimes. |
+| `make reproduce` | Regenerates the committed paper artifacts from committed Close fixtures: `docs/paper_random_n100.tex` (Table `tab:random-n100`), `docs/paper_ew_portfolio_baselines.tex` (Table `tab:ew-baselines`), their CSVs under `benchmark/results/`, and `docs/brazilbench_baselines.md` (the `make bench` matrix). |
+| `make docker-bench` | `make reproduce` inside a container built from `uv.lock`; outputs are written back to `./benchmark/results` and `./docs`. |
+
+After `make reproduce`, a clean `git status` means the regenerated tables are byte-identical to the committed ones; `tests/test_reproduce.py` enforces the same contract in CI. None of these targets read `.env`, call an LLM, or download prices: the paper-five fixtures (PETR4, VALE3, ITUB4, BBDC4, ^BVSP) live in `benchmark/prices/paper/`, the README-six fixtures in `benchmark/prices/`.
+
+Not covered: the hand-typed tables in `docs/brazilbench.tex` (`tab:ibov`, `tab:return_bvsp`, `tab:sharpe_petr4`, `tab:cross_market`, and every LLM-agent table) come from an earlier price vintage and from LLM runs; `make reproduce` does not regenerate them.
+
+**Environment lock.** `uv.lock` plus `.python-version` (3.12.13) are the single source of truth. `make bench` / `make reproduce` run `uv sync` on first use; `Dockerfile.bench` installs the same interpreter and the same lock (minus the GPU-only torch/CUDA wheels that only the Kronos analyst imports). No GPU, `.env`, or key is needed:
+
+```bash
+make docker-bench
+```
+
+
 ## Repository structure
 
 ```
 autonomous-hedge-fund/
-├── Makefile                 # make bench: offline BrazilBench baselines
+├── Makefile                 # make bench / reproduce / docker-bench (offline)
+├── Dockerfile.bench         # Locked reproduction image (uv.lock, no keys)
 ├── main.py                  # Single-day pipeline entry point (needs a key)
 ├── run_backtest.py          # Single-ticker backtest CLI: baselines vs. agents
-├── benchmark/prices/        # Committed Close fixtures for BrazilBench
+├── benchmark/prices/        # Committed Close fixtures (README six; paper/ = paper five)
 ├── scripts/run_brazilbench.py
 ├── tradingagents/
 │   ├── agents/

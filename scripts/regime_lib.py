@@ -1,7 +1,10 @@
 """Shared library for the Brazilian regime benchmark (Tasks 1 & 2).
 
-Zero-cost by construction: prices come from yfinance (free, no API key) and
-every strategy is pure Python/NumPy. No LLM or paid API is ever called.
+Zero-cost and offline by construction: prices are committed Close fixtures
+under ``benchmark/prices/paper/`` (the exact vintage behind the paper tables)
+and every strategy is pure Python/NumPy. yfinance is only touched by
+``load_prices(force=True)`` to refresh a fixture. No LLM or paid API is ever
+called.
 
 Design (fixed by the study):
     * Tickers: PETR4, VALE3, ITUB4, BBDC4 (B3 single names, queried with the
@@ -29,7 +32,10 @@ import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
-CACHE_DIR = REPO / "benchmark" / "results" / "_price_cache"
+# Committed paper-five fixtures (PETR4, VALE3, ITUB4, BBDC4, ^BVSP as IDX_BVSP).
+# Not the README-six set in benchmark/prices/: different download vintage, so
+# auto-adjusted Closes differ slightly. The paper tables were built from these.
+CACHE_DIR = REPO / "benchmark" / "prices" / "paper"
 
 # Exact study windows (inclusive), YYYY-MM-DD.
 REGIMES: dict[str, tuple[str, str]] = {
@@ -66,7 +72,8 @@ def _cache_path(ticker: str) -> Path:
 
 def load_prices(ticker: str, *, force: bool = False) -> pd.DataFrame:
     """Return a DatetimeIndex DataFrame with a 'Close' column over the fetch
-    window. Downloads once via yfinance, then serves from a CSV cache.
+    window. Serves the committed fixture; only downloads via yfinance when the
+    fixture is missing or ``force=True`` (refreshing changes the paper tables).
     """
     path = _cache_path(ticker)
     if path.exists() and not force:
