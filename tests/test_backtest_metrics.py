@@ -146,6 +146,8 @@ class RunnerTests(unittest.TestCase):
 
             eq = run_agent_strategy(flaky_decider, "AAPL", "2024-01-01", "2024-12-31", 500.0)
         self.assertEqual(call_count["n"], len(prices))
+        self.assertEqual(len(eq), len(prices))
+        self.assertEqual(eq.index.tolist(), prices.index.tolist())
         self.assertTrue(np.allclose(eq.values, 500.0))
 
 
