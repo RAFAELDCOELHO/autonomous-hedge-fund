@@ -90,6 +90,15 @@ class ReliabilityTests(unittest.TestCase):
                                      mean_confidence=0.975, win_rate=0.5)])
         self.assertEqual(rd.ece(bins), 0.475)
 
+    def test_runs_helper_prefixes_key_and_is_one_indexed(self):
+        rd = _load()
+        obj = {"warm_outputs": ["a", "b"], "cold_runs": ["x"]}
+        self.assertEqual(
+            list(rd._runs(obj, "warm_outputs")),
+            [("warm_1", "a"), ("warm_2", "b")],
+        )
+        self.assertEqual(list(rd._runs(obj, "cold_runs")), [("cold_1", "x")])
+
 
 if __name__ == "__main__":
     unittest.main()
