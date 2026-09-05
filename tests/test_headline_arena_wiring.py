@@ -48,6 +48,7 @@ class HeadlineArenaWiringTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(OUT.is_file())
         data = json.loads(OUT.read_text(encoding="utf-8"))
+        self.assertEqual(data["generated_at"], "2026-01-01T00:00:00+00:00")
         self.assertEqual(data["mode"], "dry_run")
         self.assertFalse(data["network"])
         self.assertEqual(set(data["arms"]), {"macro", "no_macro"})

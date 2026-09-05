@@ -17,13 +17,13 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "config" / "headline_arena.example.yaml"
 LOCAL = REPO / "config" / "headline_arena.local.yaml"
 OUT = REPO / "benchmark" / "results" / "headline_arena" / "dry_run.json"
+FIXTURE_GENERATED_AT = "2026-01-01T00:00:00+00:00"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -136,7 +136,9 @@ def build_dry_run_payload(cfg: dict) -> dict:
             },
         }
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        # Keep the committed offline fixture deterministic so smoke tests do not
+        # rewrite it on every run.
+        "generated_at": FIXTURE_GENERATED_AT,
         "mode": "dry_run",
         "network": False,
         "issue": "https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3",
