@@ -1,8 +1,17 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability docker-bench arena-help
+.PHONY: help bench reproduce reliability docker-bench arena-help
 
 PY = uv run python
+
+help:
+	@echo 'AHF make targets'
+	@echo '  help         Show this command summary.'
+	@echo '  bench        Offline ($$0): print BrazilBench matrix from committed fixtures.'
+	@echo '  reproduce    Offline ($$0): regenerate paper artifacts from committed fixtures.'
+	@echo '  reliability  Offline ($$0): build reliability diagram from committed local logs.'
+	@echo '  docker-bench Offline ($$0): run reproduce in locked Docker image.'
+	@echo '  arena-help   $$0 to list setup steps; live forecasts require ANTHROPIC_API_KEY.'
 
 # Fast printout: 3 strategies x 6 tickers x 4 regimes.
 bench: | .venv
