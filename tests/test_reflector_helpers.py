@@ -4,12 +4,9 @@ import importlib.util
 import unittest
 from pathlib import Path
 
-_MODULE_PATH = Path(__file__).resolve().parents[1] / "tradingagents" / "graph" / "reflection.py"
-_SPEC = importlib.util.spec_from_file_location("reflection_module_for_tests", _MODULE_PATH)
-_MODULE = importlib.util.module_from_spec(_SPEC)
-assert _SPEC is not None and _SPEC.loader is not None
-_SPEC.loader.exec_module(_MODULE)
-Reflector = _MODULE.Reflector
+_MODULE_PATH = (
+    Path(__file__).resolve().parents[1] / "tradingagents" / "graph" / "reflection.py"
+)
 
 
 class _DummyLLM:
@@ -20,9 +17,28 @@ class _DummyLLM:
         return _Response()
 
 
+class _DummyMemory:
+    def __init__(self):
+        self.records = []
+
+    def add_situations(self, situations):
+        self.records.extend(situations)
+
+
 class ReflectorHelperTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "reflection_module_for_tests", _MODULE_PATH
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Unable to load module spec from {_MODULE_PATH}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cls.reflector_cls = module.Reflector
+
     def test_extract_current_situation_combines_reports_in_expected_order(self):
-        reflector = Reflector(_DummyLLM())
+        reflector = self.reflector_cls(_DummyLLM())
         state = {
             "market_report": "market",
             "sentiment_report": "sentiment",
@@ -34,24 +50,29 @@ class ReflectorHelperTests(unittest.TestCase):
 
         self.assertEqual(out, "market\n\nsentiment\n\nnews\n\nfundamentals")
 
-    def test_extract_current_situation_preserves_each_report_content(self):
-        reflector = Reflector(_DummyLLM())
+    def test_reflect_trader_persists_joined_situation_and_model_output(self):
+        reflector = self.reflector_cls(_DummyLLM())
+        memory = _DummyMemory()
         state = {
             "market_report": "MKT: uptrend",
             "sentiment_report": "SENT: mixed",
             "news_report": "NEWS: earnings beat",
             "fundamentals_report": "FUND: FCF improving",
+            "trader_investment_plan": "BUY 100% allocation",
         }
 
-        out = reflector._extract_current_situation(state)
+        reflector.reflect_trader(state, returns_losses="+2.4%", trader_memory=memory)
 
-        self.assertIn("MKT: uptrend", out)
-        self.assertIn("SENT: mixed", out)
-        self.assertIn("NEWS: earnings beat", out)
-        self.assertIn("FUND: FCF improving", out)
+        self.assertEqual(len(memory.records), 1)
+        situation, reflection = memory.records[0]
+        self.assertEqual(
+            situation,
+            "MKT: uptrend\n\nSENT: mixed\n\nNEWS: earnings beat\n\nFUND: FCF improving",
+        )
+        self.assertEqual(reflection, "HOLD")
 
     def test_extract_current_situation_raises_keyerror_when_required_key_missing(self):
-        reflector = Reflector(_DummyLLM())
+        reflector = self.reflector_cls(_DummyLLM())
         incomplete_state = {
             "market_report": "market",
             "sentiment_report": "sentiment",
