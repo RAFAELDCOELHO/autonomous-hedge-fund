@@ -164,6 +164,8 @@ Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`
 | `make reliability` | P1.6: reliability diagram (stated confidence vs realised next-day win rate) from the committed mistral:7b logs and the PETR4 fixture, into `benchmark/results/reliability/` (`decisions.jsonl`, `bins.csv`, `reliability.svg`). Offline, stdlib only. Schema and caveats: `benchmark/results/reliability/SCHEMA.md`. Only one unique prompt in the logs carries a confidence, so the diagram is a scaffold, not a calibration result. |
 | `make docker-bench` | `make reproduce` inside a container built from `uv.lock`; outputs are written back to `./benchmark/results` and `./docs`. |
 
+Artifact schemas for committed outputs under `benchmark/results/` are documented in `benchmark/results/SCHEMA.md` (plus reliability-specific caveats in `benchmark/results/reliability/SCHEMA.md`).
+
 After `make reproduce`, a clean `git status` means the regenerated tables are byte-identical to the committed ones; `tests/test_reproduce.py` enforces the same contract in CI. None of these targets read `.env`, call an LLM, or download prices: the paper-five fixtures (PETR4, VALE3, ITUB4, BBDC4, ^BVSP) live in `benchmark/prices/paper/`, the README-six fixtures in `benchmark/prices/`.
 
 Not covered: the hand-typed classical tables in `docs/brazilbench.tex` (`tab:ibov`, `tab:return_bvsp`, `tab:sharpe_petr4`, `tab:cross_market`) and its figures come from an earlier price vintage; `make reproduce` does not regenerate them. The paper draft reports **no LLM-agent results**: LLM evaluation (Claude, open-weight models, significance tests, leakage probes) needs paid or GPU inference, is outside the $0 reproduce path, and is listed as future work in the paper's Limitations section.
