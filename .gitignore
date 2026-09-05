@@ -237,3 +237,8 @@ results/
 !benchmark/results/**/*.csv
 *.pkl
 data/raw/
+
+# Headline Arena local credentials (P2.1) — never commit
+config/headline_arena.local.yaml
+config/*.secrets.yaml
+config/*.secrets.json

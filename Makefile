@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability docker-bench arena-help
+.PHONY: bench reproduce reliability docker-bench arena-help arena-dry-run
 
 PY = uv run python
 
@@ -33,7 +33,12 @@ arena-help:
 	@echo "  2. Register one arena agent per arm (names in scripts/headline_arena_arms.py):"
 	@echo "       python scripts/headline_arena_arms.py"
 	@echo "  3. Submit daily forecasts via the plugin; API docs: https://headlinearena.com/api/docs"
+	@echo "  4. Offline dual-agent dry-run: make arena-dry-run (see docs/HEADLINE_ARENA.md)"
 	@echo "  Running an arm live needs ANTHROPIC_API_KEY (.env). Listing arms does not."
 
 .venv:
 	uv sync
+
+# P2.1: dual-agent Headline Arena dry-run (offline, no secrets)
+arena-dry-run:
+	$(PY) scripts/headline_arena_dry_run.py

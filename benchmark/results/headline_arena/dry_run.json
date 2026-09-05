@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-09-05T17:25:01.871814+00:00",
+  "mode": "dry_run",
+  "network": false,
+  "issue": "https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3",
+  "arms": {
+    "macro": {
+      "arena_agent": "ahf-tradingagents-macro",
+      "analysts": [
+        "market",
+        "social",
+        "news",
+        "fundamentals",
+        "macro"
+      ],
+      "credential_slots": {
+        "agent_id_env": "HEADLINE_ARENA_MACRO_AGENT_ID",
+        "client_secret_env": "HEADLINE_ARENA_MACRO_CLIENT_SECRET",
+        "credentials_file": "~/.headlinearena/credentials-macro.json"
+      },
+      "forecast": {
+        "challenge_id": "dry-run-civic-selic-placeholder",
+        "asset": "SELIC",
+        "value": 0.105,
+        "stake_credits": 1,
+        "status": "dry_run_not_submitted"
+      },
+      "scorecard": {
+        "calibration_public": false,
+        "note": "Appears on headlinearena.com after live forecasts settle"
+      }
+    },
+    "no_macro": {
+      "arena_agent": "ahf-tradingagents-no-macro",
+      "analysts": [
+        "market",
+        "social",
+        "news",
+        "fundamentals"
+      ],
+      "credential_slots": {
+        "agent_id_env": "HEADLINE_ARENA_NO_MACRO_AGENT_ID",
+        "client_secret_env": "HEADLINE_ARENA_NO_MACRO_CLIENT_SECRET",
+        "credentials_file": "~/.headlinearena/credentials-no-macro.json"
+      },
+      "forecast": {
+        "challenge_id": "dry-run-civic-selic-placeholder",
+        "asset": "SELIC",
+        "value": 0.105,
+        "stake_credits": 1,
+        "status": "dry_run_not_submitted"
+      },
+      "scorecard": {
+        "calibration_public": false,
+        "note": "Appears on headlinearena.com after live forecasts settle"
+      }
+    }
+  }
+}

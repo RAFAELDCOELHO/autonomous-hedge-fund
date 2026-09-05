@@ -153,7 +153,7 @@ The 2×2 factorial above is backtest-only. [Headline Arena](https://headlinearen
 | `macro` | market, social, news, fundamentals, **macro** |
 | `no_macro` | market, social, news, fundamentals |
 
-Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`). Registration and forecasting go through the [headlinearena agent plugin](https://github.com/headlinearena/headlinearena-agent-plugin) ([raw API](https://headlinearena.com/api/docs)). Listing arms costs $0 and needs no Anthropic API key; running an arm live does. Tracked in [issue #3](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3). No arena results yet.
+Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`). Dual-agent wiring, credential placeholders, and `$0` dry-run: [`docs/HEADLINE_ARENA.md`](docs/HEADLINE_ARENA.md) / `make arena-dry-run`. Registration and forecasting go through the [headlinearena agent plugin](https://github.com/headlinearena/headlinearena-agent-plugin) ([raw API](https://headlinearena.com/api/docs)). Listing arms costs $0 and needs no Anthropic API key; running an arm live does. Tracked in [issue #3](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3). No arena results yet.
 
 ## Reproduce the paper tables (offline, no API key)
 
