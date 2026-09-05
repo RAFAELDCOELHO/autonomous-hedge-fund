@@ -15,3 +15,11 @@ abstract: >-
   framework with an original Macro Economist Agent. BrazilBench runs
   offline classical baselines on frozen B3 regime splits for ITUB4,
   BPAC11, PETR4, VALE3, WEGE3, and RADL3.
+preferred-citation:
+  type: article
+  title: "BrazilBench: A Reproducible Multi-Regime Benchmark for Trading Agents on Brazilian Equities"
+  authors:
+    - family-names: Coelho
+      given-names: Rafael D.
+  year: 2026
+  url: "https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/blob/main/docs/brazilbench.tex"

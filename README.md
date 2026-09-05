@@ -8,6 +8,13 @@ make bench
 
 Prints CR / Sharpe / MDD for Buy & Hold, MACD(12,26,9), and SMA(50/200). The live multi-agent path (`uv run python main.py`) is separate and requires `ANTHROPIC_API_KEY`.
 
+## Paper artifact and submission-readiness docs
+
+- Paper source (NeurIPS preprint style): [`docs/brazilbench.tex`](docs/brazilbench.tex)
+- Filled Datasets & Benchmarks checklist: [`docs/NEURIPS_CHECKLIST.md`](docs/NEURIPS_CHECKLIST.md)
+- Repro instructions on `main`: see [Reproduce the paper tables (offline, no API key)](#reproduce-the-paper-tables-offline-no-api-key) in this README using `make reproduce`.
+- Note: `docs/REPRODUCIBILITY.md` is not present on current `main`; reproducibility guidance is consolidated here.
+
 > Does explicit macroeconomic reasoning matter more for LLM trading agents in emerging markets than in developed ones? This is an independent research project that extends the TradingAgents framework with an original Macro Economist Agent and a 2×2 factorial experiment to test that hypothesis.
 
 [![Tests](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/actions/workflows/tests.yml/badge.svg)](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/actions/workflows/tests.yml)
