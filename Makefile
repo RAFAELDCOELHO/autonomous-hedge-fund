@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability docker-bench arena-help
+.PHONY: bench reproduce reliability survivorship docker-bench arena-help
 
 PY = uv run python
 
@@ -19,6 +19,11 @@ reproduce: | .venv
 # committed mistral:7b logs + PETR4 fixture. Offline, stdlib only, no LLM call.
 reliability: | .venv
 	$(PY) scripts/reliability_diagram.py
+
+# P1.9: survivorship bracket. Classical baselines on distressed OIBR3/MGLU3/
+# AMER3 (GOLL4 unavailable on Yahoo) vs the liquid paper-five. Offline fixtures.
+survivorship: | .venv
+	$(PY) scripts/survivorship_distress.py
 
 # `make reproduce` inside a container built from uv.lock. Outputs land in
 # ./benchmark/results and ./docs. No .env, no keys, no GPU.
