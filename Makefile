@@ -21,9 +21,9 @@ reliability: | .venv
 	$(PY) scripts/reliability_diagram.py
 
 # Minimal offline docs smoke: required files exist and README links key
-# artifact entry points. No network, no API keys.
-docs-smoke: | .venv
-	$(PY) -m pytest -q tests/test_docs_smoke.py
+# artifact entry points. No network, no API keys, no third-party deps.
+docs-smoke:
+	python3 -m unittest -q tests/test_docs_smoke.py
 
 # `make reproduce` inside a container built from uv.lock. Outputs land in
 # ./benchmark/results and ./docs. No .env, no keys, no GPU.
