@@ -53,13 +53,42 @@ window.
 
 ## Key delta (distressed vs liquid mean CR by regime)
 
-[PENDING] Artifacts were not generated in the authoring session: the sandbox
-blocked Python execution. Run `make survivorship` and paste the `summary.csv`
-rows here. Do not fill this table by hand.
+From `summary.csv` after `make survivorship`. Positive `gap_pp` = liquid
+universe flatters that agent in that regime (liquid mean CR higher).
 
 | regime | agent | liquid mean CR % | distressed mean CR % | gap pp |
 |---|---|---|---|---|
-| [PENDING] | | | | |
+| bull_2019 | buy_and_hold | 17.23 | 40.73 | -23.50 |
+| crisis_2020 | buy_and_hold | -22.37 | 6.48 | -28.85 |
+| recovery_2021 | buy_and_hold | 9.95 | -21.23 | +31.18 |
+| hi_rates_2022 | buy_and_hold | 14.61 | -68.22 | +82.83 |
+| bull_2019 | macd | 4.92 | 6.12 | -1.20 |
+| crisis_2020 | macd | 6.94 | 40.09 | -33.15 |
+| recovery_2021 | macd | 8.79 | -7.01 | +15.81 |
+| hi_rates_2022 | macd | 14.57 | -34.92 | +49.49 |
+| bull_2019 | sma_crossover | 11.17 | 38.97 | -27.79 |
+| crisis_2020 | sma_crossover | -26.03 | 12.86 | -38.89 |
+| recovery_2021 | sma_crossover | 8.03 | -13.87 | +21.90 |
+| hi_rates_2022 | sma_crossover | -11.01 | 0.00 | -11.01 |
+| bull_2019 | momentum | 4.48 | 29.31 | -24.83 |
+| crisis_2020 | momentum | -4.51 | -18.58 | +14.08 |
+| recovery_2021 | momentum | 3.09 | -22.18 | +25.27 |
+| hi_rates_2022 | momentum | 12.23 | -32.35 | +44.58 |
+| bull_2019 | random | 9.70 | 18.51 | -8.81 |
+| crisis_2020 | random | -12.27 | 5.90 | -18.17 |
+| recovery_2021 | random | 6.22 | -8.96 | +15.18 |
+| hi_rates_2022 | random | 6.27 | -42.77 | +49.04 |
+
+Regime-mean gap (avg across 5 agents):
+
+| regime | mean gap pp |
+|---|---|
+| bull_2019 | -17.23 |
+| crisis_2020 | -21.00 |
+| recovery_2021 | +21.87 |
+| hi_rates_2022 | +42.98 |
+
+Overall mean gap_pp across 20 cells: **+6.66** pp.
 
 ## Caveats
 
