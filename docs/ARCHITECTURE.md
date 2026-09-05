@@ -56,7 +56,7 @@ LLM clients (tradingagents/llm_clients/)
   factory.py + {anthropic,openai,google,azure}_client.py   Provider-agnostic client construction
   model_catalog.py, validators.py              Model registry and config validation
 
-Tests (tests/)                                 Offline unit tests (metrics, adapters, fallbacks, graph construction); check current count with `python -m pytest --collect-only -q`
+Tests (tests/)                                 Offline unit tests (metrics, adapters, fallbacks, graph construction). Docs intentionally avoid fixed test counts; check the live inventory with `python -m pytest --collect-only -q`
 ```
 
 ## 2. Data Flow
