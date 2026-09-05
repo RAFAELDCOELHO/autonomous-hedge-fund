@@ -130,6 +130,26 @@ class RunnerTests(unittest.TestCase):
             eq = run_agent_strategy(lambda d, w: "HOLD", "AAPL", "2024-01-01", "2024-12-31", 500.0)
         self.assertTrue(np.allclose(eq.values, 500.0))
 
+    def test_run_agent_strategy_decider_exception_falls_back_to_hold(self):
+        prices = _linear_prices(5, start=100.0, step=1.0)
+        with patch("tradingagents.backtest.runner.load_ohlcv") as load:
+            df = prices.reset_index().rename(columns={"index": "Date"})
+            load.return_value = df
+
+            call_count = {"n": 0}
+
+            def flaky_decider(_date_str, _window):
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    raise RuntimeError("boom")
+                return "HOLD"
+
+            eq = run_agent_strategy(flaky_decider, "AAPL", "2024-01-01", "2024-12-31", 500.0)
+        self.assertEqual(call_count["n"], len(prices))
+        self.assertEqual(len(eq), len(prices))
+        self.assertEqual(eq.index.tolist(), prices.index.tolist())
+        self.assertTrue(np.allclose(eq.values, 500.0))
+
 
 class ReportTests(unittest.TestCase):
     def test_build_comparison_table_columns(self):
