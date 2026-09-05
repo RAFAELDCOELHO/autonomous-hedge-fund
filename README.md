@@ -165,7 +165,7 @@ Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`
 
 After `make reproduce`, a clean `git status` means the regenerated tables are byte-identical to the committed ones; `tests/test_reproduce.py` enforces the same contract in CI. None of these targets read `.env`, call an LLM, or download prices: the paper-five fixtures (PETR4, VALE3, ITUB4, BBDC4, ^BVSP) live in `benchmark/prices/paper/`, the README-six fixtures in `benchmark/prices/`.
 
-Not covered: the hand-typed tables in `docs/brazilbench.tex` (`tab:ibov`, `tab:return_bvsp`, `tab:sharpe_petr4`, `tab:cross_market`, and every LLM-agent table) come from an earlier price vintage and from LLM runs; `make reproduce` does not regenerate them.
+Not covered: the hand-typed classical tables in `docs/brazilbench.tex` (`tab:ibov`, `tab:return_bvsp`, `tab:sharpe_petr4`, `tab:cross_market`) and its figures come from an earlier price vintage; `make reproduce` does not regenerate them. The paper draft reports **no LLM-agent results**: LLM evaluation (Claude, open-weight models, significance tests, leakage probes) needs paid or GPU inference, is outside the $0 reproduce path, and is listed as future work in the paper's Limitations section.
 
 **Environment lock.** `uv.lock` plus `.python-version` (3.12.13) are the single source of truth. `make bench` / `make reproduce` run `uv sync` on first use; `Dockerfile.bench` installs the same interpreter and the same lock (minus the GPU-only torch/CUDA wheels that only the Kronos analyst imports). No GPU, `.env`, or key is needed:
 
