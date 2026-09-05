@@ -3,7 +3,6 @@
 import sys
 import types
 import unittest
-from unittest.mock import patch
 
 
 class BacktestInitGetattrTests(unittest.TestCase):
@@ -25,13 +24,22 @@ class BacktestInitGetattrTests(unittest.TestCase):
         return fake
 
     def test_known_lazy_exports_resolve_from_runner_module(self):
-        import tradingagents.backtest as backtest
-
         fake_runner = self._fake_runner_module()
-        with patch.dict(sys.modules, {"tradingagents.backtest.runner": fake_runner}):
-            self.assertIs(backtest.run_strategy, fake_runner.run_strategy)
-            self.assertIs(backtest.run_buy_and_hold, fake_runner.run_buy_and_hold)
-            self.assertIs(backtest.run_agent_strategy, fake_runner.run_agent_strategy)
+        original_runner = sys.modules.get("tradingagents.backtest.runner")
+        sys.modules["tradingagents.backtest.runner"] = fake_runner
+        try:
+            import tradingagents.backtest as backtest
+
+            # Force module-level lookup path to execute __getattr__.
+            backtest.__dict__.pop("runner", None)
+            for name in ("run_strategy", "run_buy_and_hold", "run_agent_strategy"):
+                backtest.__dict__.pop(name, None)
+                self.assertIs(getattr(backtest, name), getattr(fake_runner, name))
+        finally:
+            if original_runner is None:
+                sys.modules.pop("tradingagents.backtest.runner", None)
+            else:
+                sys.modules["tradingagents.backtest.runner"] = original_runner
 
     def test_unknown_attribute_raises_attribute_error(self):
         import tradingagents.backtest as backtest
