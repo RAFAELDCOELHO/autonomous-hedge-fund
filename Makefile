@@ -1,6 +1,7 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability docker-bench arena-help arena-dry-run docs-smoke
+.PHONY: bench reproduce reliability docker-bench arena-help
+.PHONY: docs-smoke
 
 PY = uv run python
 
