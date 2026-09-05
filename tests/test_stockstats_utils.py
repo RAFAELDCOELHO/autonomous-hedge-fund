@@ -34,7 +34,7 @@ class CleanDataFrameTests(unittest.TestCase):
             ["2024-01-01", "2024-01-04"],
         )
         self.assertEqual(cleaned["Close"].tolist(), [10.5, 13.5])
-        # Volume gap in surviving rows is backfilled
+        # Volume gap in surviving rows is filled from neighboring rows.
         self.assertEqual(cleaned["Volume"].tolist(), [1000.0, 1000.0])
 
 
