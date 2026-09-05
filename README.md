@@ -144,6 +144,17 @@ cp .env.example .env                       # set ANTHROPIC_API_KEY
 uv run python main.py
 ```
 
+### Headline Arena (forward-only live arm)
+
+The 2×2 factorial above is backtest-only. [Headline Arena](https://headlinearena.com) adds a forward-only leg: agents forecast macro assets daily, forecasts lock before outcomes exist, settlement is mechanical, and per-agent calibration is public. We register the two factorial arms as two arena agents and read the public delta between them:
+
+| Arm | Analysts |
+|-----|----------|
+| `macro` | market, social, news, fundamentals, **macro** |
+| `no_macro` | market, social, news, fundamentals |
+
+Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`). Registration and forecasting go through the [headlinearena agent plugin](https://github.com/headlinearena/headlinearena-agent-plugin) ([raw API](https://headlinearena.com/api/docs)). Listing arms costs $0 and needs no Anthropic API key; running an arm live does. Tracked in [issue #3](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3). No arena results yet.
+
 ## Reproduce the paper tables (offline, no API key)
 
 | Command | What it does |
@@ -161,6 +172,7 @@ Not covered: the hand-typed tables in `docs/brazilbench.tex` (`tab:ibov`, `tab:r
 ```bash
 make docker-bench
 ```
+
 
 ## Repository structure
 
