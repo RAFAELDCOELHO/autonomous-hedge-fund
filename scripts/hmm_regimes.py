@@ -2,8 +2,7 @@
 
 Offline and $0 by construction: reads the committed ^BVSP fixture through
 ``regime_lib.load_prices`` (no download), fits a two-state Gaussian hidden
-Markov model on daily log returns with Baum-Welch in plain NumPy (no
-hmmlearn/statsmodels/scipy), and writes the alignment between the smoothed
+Markov model on daily log returns with Baum-Welch in plain NumPy (no third-party HMM/stats packages), and writes the alignment between the smoothed
 HMM state path and the four hand-dated regime windows.
 
 State labelling is canonical: state 0 = "calm" (lower return variance),
