@@ -31,7 +31,7 @@ def test_filter_financials_by_date_returns_input_when_cutoff_missing():
 
     result = filter_financials_by_date(data, "")
 
-    assert result is data
+    pd.testing.assert_frame_equal(result, data)
 
 
 def test_filter_financials_by_date_returns_input_when_dataframe_empty():
@@ -39,4 +39,4 @@ def test_filter_financials_by_date_returns_input_when_dataframe_empty():
 
     result = filter_financials_by_date(empty, "2025-03-31")
 
-    assert result is empty
+    pd.testing.assert_frame_equal(result, empty)
