@@ -153,7 +153,7 @@ The 2×2 factorial above is backtest-only. [Headline Arena](https://headlinearen
 | `macro` | market, social, news, fundamentals, **macro** |
 | `no_macro` | market, social, news, fundamentals |
 
-Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`). Dual-agent wiring, credential placeholders, and `$0` dry-run: [`docs/HEADLINE_ARENA.md`](docs/HEADLINE_ARENA.md) / `make arena-dry-run`. Registration and forecasting go through the [headlinearena agent plugin](https://github.com/headlinearena/headlinearena-agent-plugin) ([raw API](https://headlinearena.com/api/docs)). Listing arms costs $0 and needs no Anthropic API key; running an arm live does. Tracked in [issue #3](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3). No arena results yet.
+Both arms are defined in `scripts/headline_arena_arms.py` with dual-agent wiring in `config/headline_arena.example.yaml` (see `make arena-help`, `make arena-dry-run`, and the runbook [`docs/HEADLINE_ARENA.md`](docs/HEADLINE_ARENA.md)). Register **each** arm with **separate** Headline Arena credentials (Kopei / issue #3). Registration and forecasting go through the [headlinearena agent plugin](https://github.com/headlinearena/headlinearena-agent-plugin) ([raw API](https://headlinearena.com/api/docs)). Listing arms and `make arena-dry-run` cost $0 and need no Anthropic API key; running an arm live does. Tracked in [issue #3](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3). No live arena results yet.
 
 ## Reproduce the paper tables (offline, no API key)
 
@@ -161,6 +161,7 @@ Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`
 |---|---|
 | `make bench` | Fast printout of the baseline matrix: Buy & Hold / MACD / SMA × 6 tickers × 4 regimes. |
 | `make reproduce` | Regenerates the committed paper artifacts from committed Close fixtures: `docs/paper_random_n100.tex` (Table `tab:random-n100`), `docs/paper_ew_portfolio_baselines.tex` (Table `tab:ew-baselines`), their CSVs under `benchmark/results/`, and `docs/brazilbench_baselines.md` (the `make bench` matrix). |
+| `make arena-dry-run` | P2.1: load `config/headline_arena.example.yaml`, validate distinct macro/no_macro credential slots, write offline forecast+scorecard fixture to `benchmark/results/headline_arena/dry_run.json`. $0, no network. Runbook: `docs/HEADLINE_ARENA.md`. |
 | `make reliability` | P1.6: reliability diagram (stated confidence vs realised next-day win rate) from the committed mistral:7b logs and the PETR4 fixture, into `benchmark/results/reliability/` (`decisions.jsonl`, `bins.csv`, `reliability.svg`). Offline, stdlib only. Schema and caveats: `benchmark/results/reliability/SCHEMA.md`. Only one unique prompt in the logs carries a confidence, so the diagram is a scaffold, not a calibration result. |
 | `make docker-bench` | `make reproduce` inside a container built from `uv.lock`; outputs are written back to `./benchmark/results` and `./docs`. |
 

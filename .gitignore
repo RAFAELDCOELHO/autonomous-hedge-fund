@@ -238,7 +238,18 @@ results/
 *.pkl
 data/raw/
 
-# Headline Arena local credentials (P2.1) — never commit
+# Headline Arena local credentials (P2.1) — never commit real secrets
 config/headline_arena.local.yaml
-config/*.secrets.yaml
-config/*.secrets.json
+config/headline_arena.local.json
+*.secrets.yaml
+*.secrets.json
+config/secrets/
+
+# Allow Headline Arena dry-run fixtures (json/md) under benchmark/results
+!benchmark/results/headline_arena/
+!benchmark/results/headline_arena/**
+
+# Plugin-style local credential copies if placed under the repo
+**/credentials-macro.json
+**/credentials-no-macro.json
+.headlinearena/
