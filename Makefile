@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability docker-bench arena-help
+.PHONY: bench reproduce reliability docker-bench arena-help chronos
 
 PY = uv run python
 
@@ -34,6 +34,11 @@ arena-help:
 	@echo "       python scripts/headline_arena_arms.py"
 	@echo "  3. Submit daily forecasts via the plugin; API docs: https://headlinearena.com/api/docs"
 	@echo "  Running an arm live needs ANTHROPIC_API_KEY (.env). Listing arms does not."
+
+# P1.10: Chronos-t5-tiny comparator on paper fixtures (optional extra).
+# Downloads HF weights once on first run; writes benchmark/results/chronos/.
+chronos: | .venv
+	uv run --extra chronos python scripts/chronos_comparator.py
 
 .venv:
 	uv sync
