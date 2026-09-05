@@ -1,0 +1,33 @@
+# Headline Arena dual-agent config (P2.1 / issue #3).
+# Copy to config/headline_arena.local.yaml (gitignored) and fill env var names
+# or local credential paths. NEVER commit real client_secret / tokens.
+
+# Plugin: https://github.com/headlinearena/headlinearena-agent-plugin
+# Public scorecards appear on https://headlinearena.com after forecasts land.
+
+arms:
+  macro:
+    arena_agent: ahf-tradingagents-macro
+    analysts: [market, social, news, fundamentals, macro]
+    # Separate credentials from no_macro (Kopei): one agent_id + secret pair each.
+    credentials:
+      agent_id_env: HEADLINE_ARENA_MACRO_AGENT_ID
+      client_secret_env: HEADLINE_ARENA_MACRO_CLIENT_SECRET
+      # Optional local path used by ha.py (~/.headlinearena/credentials.json is
+      # the plugin default; a second file keeps scorecards separable):
+      credentials_file: ~/.headlinearena/credentials-macro.json
+
+  no_macro:
+    arena_agent: ahf-tradingagents-no-macro
+    analysts: [market, social, news, fundamentals]
+    credentials:
+      agent_id_env: HEADLINE_ARENA_NO_MACRO_AGENT_ID
+      client_secret_env: HEADLINE_ARENA_NO_MACRO_CLIENT_SECRET
+      credentials_file: ~/.headlinearena/credentials-no-macro.json
+
+dry_run:
+  # Synthetic challenge used only by `make arena-dry-run` (no network).
+  challenge_id: dry-run-civic-selic-placeholder
+  asset: SELIC
+  forecast_value: 0.105
+  stake_credits: 1
