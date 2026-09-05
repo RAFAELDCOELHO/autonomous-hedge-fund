@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability docker-bench arena-help
+.PHONY: bench reproduce reliability hmm-regimes docker-bench arena-help
 
 PY = uv run python
 
@@ -19,6 +19,11 @@ reproduce: | .venv
 # committed mistral:7b logs + PETR4 fixture. Offline, stdlib only, no LLM call.
 reliability: | .venv
 	$(PY) scripts/reliability_diagram.py
+
+# P1.7: Hamilton HMM regimes vs the hand-defined regimes on the committed
+# ^BVSP fixture. NumPy-only Baum-Welch, offline, no LLM call.
+hmm-regimes: | .venv
+	$(PY) scripts/hmm_regimes.py
 
 # `make reproduce` inside a container built from uv.lock. Outputs land in
 # ./benchmark/results and ./docs. No .env, no keys, no GPU.

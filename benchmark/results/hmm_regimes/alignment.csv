@@ -1,0 +1,7 @@
+regime,days,share_turbulent,majority_state,purity,mean_daily_logret,daily_vol
+bull_2019,248,0.0,calm,1.0,0.001118,0.01133
+crisis_2020,80,0.45,calm,0.55,-0.003295,0.045771
+recovery_2021,122,0.0,calm,1.0,0.000499,0.012646
+hi_rates_2022,250,0.0,calm,1.0,0.000194,0.013259
+(unlabelled gaps),547,0.0,calm,1.0,0.000421,0.014024
+(all days),1247,0.0289,calm,0.9711,0.000283,0.017265
