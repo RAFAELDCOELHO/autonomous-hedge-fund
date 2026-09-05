@@ -1,31 +1,30 @@
+"""Unit tests for ``create_llm_client`` provider routing.
+
+Offline by design: every provider client class is patched, so no SDK is imported
+for real and no network call is made. The optional ``langchain_*`` packages are
+stubbed so the factory module imports even when they are not installed.
+"""
+
 import sys
 import types
 import unittest
 from unittest.mock import patch
 
-# Stub optional provider SDK imports so this test stays offline and dependency-light.
-_ORIGINAL_MODULES = {
-    name: sys.modules.get(name)
-    for name in ("langchain_openai", "langchain_anthropic", "langchain_google_genai")
+_SDK_STUBS = {
+    "langchain_openai": ("ChatOpenAI", "AzureChatOpenAI"),
+    "langchain_anthropic": ("ChatAnthropic",),
+    "langchain_google_genai": ("ChatGoogleGenerativeAI",),
 }
+_ORIGINAL_MODULES = {name: sys.modules.get(name) for name in _SDK_STUBS}
 
-if "langchain_openai" not in sys.modules:
-    langchain_openai = types.ModuleType("langchain_openai")
-    langchain_openai.ChatOpenAI = type("ChatOpenAI", (), {})
-    langchain_openai.AzureChatOpenAI = type("AzureChatOpenAI", (), {})
-    sys.modules["langchain_openai"] = langchain_openai
+for _name, _classes in _SDK_STUBS.items():
+    if _name not in sys.modules:
+        _stub = types.ModuleType(_name)
+        for _cls in _classes:
+            setattr(_stub, _cls, type(_cls, (), {}))
+        sys.modules[_name] = _stub
 
-if "langchain_anthropic" not in sys.modules:
-    langchain_anthropic = types.ModuleType("langchain_anthropic")
-    langchain_anthropic.ChatAnthropic = type("ChatAnthropic", (), {})
-    sys.modules["langchain_anthropic"] = langchain_anthropic
-
-if "langchain_google_genai" not in sys.modules:
-    langchain_google = types.ModuleType("langchain_google_genai")
-    langchain_google.ChatGoogleGenerativeAI = type("ChatGoogleGenerativeAI", (), {})
-    sys.modules["langchain_google_genai"] = langchain_google
-
-from tradingagents.llm_clients.factory import create_llm_client
+from tradingagents.llm_clients.factory import _OPENAI_COMPATIBLE, create_llm_client
 
 
 def tearDownModule():
@@ -37,19 +36,26 @@ def tearDownModule():
 
 
 class CreateLLMClientTests(unittest.TestCase):
-    def test_openai_compatible_provider_routes_to_openai_client(self):
-        with patch("tradingagents.llm_clients.factory.OpenAIClient") as openai_client:
-            sentinel = object()
-            openai_client.return_value = sentinel
+    """Each provider name must reach exactly one client class with args passed through."""
 
-            out = create_llm_client(
-                provider="DeepSeek",
-                model="deepseek-chat",
-                base_url="https://api.deepseek.com",
-                timeout=30,
-            )
+    def _patch_client(self, class_name):
+        patcher = patch(f"tradingagents.llm_clients.factory.{class_name}")
+        client_cls = patcher.start()
+        self.addCleanup(patcher.stop)
+        client_cls.return_value = object()
+        return client_cls
 
-        self.assertIs(out, sentinel)
+    def test_openai_compatible_provider_forwards_args_and_normalized_provider(self):
+        openai_client = self._patch_client("OpenAIClient")
+
+        out = create_llm_client(
+            provider="DeepSeek",
+            model="deepseek-chat",
+            base_url="https://api.deepseek.com",
+            timeout=30,
+        )
+
+        self.assertIs(out, openai_client.return_value)
         openai_client.assert_called_once_with(
             "deepseek-chat",
             "https://api.deepseek.com",
@@ -57,45 +63,44 @@ class CreateLLMClientTests(unittest.TestCase):
             timeout=30,
         )
 
+    def test_every_openai_compatible_provider_routes_to_openai_client(self):
+        openai_client = self._patch_client("OpenAIClient")
+
+        for provider in _OPENAI_COMPATIBLE:
+            with self.subTest(provider=provider):
+                openai_client.reset_mock()
+                create_llm_client(provider, "m")
+                openai_client.assert_called_once_with("m", None, provider=provider)
+
     def test_anthropic_provider_routes_to_anthropic_client(self):
-        with patch("tradingagents.llm_clients.factory.AnthropicClient") as anthropic_client:
-            sentinel = object()
-            anthropic_client.return_value = sentinel
+        anthropic_client = self._patch_client("AnthropicClient")
 
-            out = create_llm_client("anthropic", "claude-sonnet-4-6", max_tokens=4000)
+        out = create_llm_client("anthropic", "claude-sonnet-4-6", max_tokens=4000)
 
-        self.assertIs(out, sentinel)
-        anthropic_client.assert_called_once_with(
-            "claude-sonnet-4-6",
-            None,
-            max_tokens=4000,
-        )
+        self.assertIs(out, anthropic_client.return_value)
+        anthropic_client.assert_called_once_with("claude-sonnet-4-6", None, max_tokens=4000)
 
     def test_google_provider_routes_to_google_client(self):
-        with patch("tradingagents.llm_clients.factory.GoogleClient") as google_client:
-            sentinel = object()
-            google_client.return_value = sentinel
+        google_client = self._patch_client("GoogleClient")
 
-            out = create_llm_client("google", "gemini-3-flash")
+        out = create_llm_client("google", "gemini-3-flash")
 
-        self.assertIs(out, sentinel)
+        self.assertIs(out, google_client.return_value)
         google_client.assert_called_once_with("gemini-3-flash", None)
 
     def test_azure_provider_routes_to_azure_client(self):
-        with patch("tradingagents.llm_clients.factory.AzureOpenAIClient") as azure_client:
-            sentinel = object()
-            azure_client.return_value = sentinel
+        azure_client = self._patch_client("AzureOpenAIClient")
 
-            out = create_llm_client("azure", "gpt-5")
+        out = create_llm_client("AZURE", "gpt-5")
 
-        self.assertIs(out, sentinel)
+        self.assertIs(out, azure_client.return_value)
         azure_client.assert_called_once_with("gpt-5", None)
 
-    def test_unsupported_provider_raises_value_error(self):
+    def test_unsupported_provider_raises_value_error_naming_original_input(self):
         with self.assertRaises(ValueError) as ctx:
-            create_llm_client("not-a-provider", "model")
+            create_llm_client("Not-A-Provider", "model")
 
-        self.assertIn("Unsupported LLM provider: not-a-provider", str(ctx.exception))
+        self.assertEqual(str(ctx.exception), "Unsupported LLM provider: Not-A-Provider")
 
 
 if __name__ == "__main__":
