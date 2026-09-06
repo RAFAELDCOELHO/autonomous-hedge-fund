@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No paid LLM (qwen-n10 is local Ollama). No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability qwen-n10 docker-bench arena-help
+.PHONY: bench reproduce reliability qwen-n10 hmm-regimes docker-bench arena-help
 
 PY = uv run python
 
@@ -25,6 +25,11 @@ reliability: | .venv
 # benchmark/results/qwen_n10/. Needs `ollama` + qwen2.5:7b pulled; no key, $0.
 qwen-n10: | .venv
 	$(PY) scripts/qwen_coldstart_n10.py
+
+# P1.7: Hamilton HMM regimes vs the hand-defined regimes on the committed
+# ^BVSP fixture. NumPy-only Baum-Welch, offline, no LLM call.
+hmm-regimes: | .venv
+	$(PY) scripts/hmm_regimes.py
 
 # `make reproduce` inside a container built from uv.lock. Outputs land in
 # ./benchmark/results and ./docs. No .env, no keys, no GPU.
