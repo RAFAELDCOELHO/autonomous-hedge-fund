@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
-# No API key. No LLM. No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability survivorship docker-bench arena-help
+# No API key. No paid LLM (qwen-n10 is local Ollama). No TradingAgents graph. Env lock: uv.lock + .python-version.
+.PHONY: bench reproduce reliability qwen-n10 hmm-regimes survivorship docker-bench arena-help
 
 PY = uv run python
 
@@ -19,6 +19,17 @@ reproduce: | .venv
 # committed mistral:7b logs + PETR4 fixture. Offline, stdlib only, no LLM call.
 reliability: | .venv
 	$(PY) scripts/reliability_diagram.py
+
+# P1.5: Qwen 2.5-7B via local Ollama, N=10 independent cold-start sessions per
+# critical PETR4/crisis_2020 date (server killed between runs), mean +/- std into
+# benchmark/results/qwen_n10/. Needs `ollama` + qwen2.5:7b pulled; no key, $0.
+qwen-n10: | .venv
+	$(PY) scripts/qwen_coldstart_n10.py
+
+# P1.7: Hamilton HMM regimes vs the hand-defined regimes on the committed
+# ^BVSP fixture. NumPy-only Baum-Welch, offline, no LLM call.
+hmm-regimes: | .venv
+	$(PY) scripts/hmm_regimes.py
 
 # P1.9: survivorship bracket. Classical baselines on distressed OIBR3/MGLU3/
 # AMER3 (GOLL4 unavailable on Yahoo) vs the liquid paper-five. Offline fixtures.

@@ -651,11 +651,15 @@ them interpretable, it creates exposure to ex-post selection:
 a researcher who saw the data first could define regimes that favor
 one strategy. A robustness check using Hamilton (1989) Hidden Markov
 Model \cite{hamilton1989} regime detection on the same period would
-test whether conclusions are stable across regime definitions. Visual
-inspection of HMM-detected breakpoints on the Ibovespa (not formally
-reported) suggests broad alignment with the hand-defined dates, but
-formal documentation and sensitivity analysis should be included in
-a future version.
+test whether conclusions are stable across regime definitions. A
+zero-cost label-alignment check ships with the repository
+(\texttt{make hmm-regimes}): a two-state Gaussian HMM fitted by
+Baum--Welch on Ibovespa daily log returns is compared with the four
+hand windows, reporting per-window state purity, the adjusted Rand
+index and the distance from each hand boundary to the nearest HMM
+switch (\texttt{benchmark/results/hmm\_regimes/}). It documents label
+agreement only; re-running the strategy tables under HMM-defined
+windows is left to a future version.
 
 \item \textbf{Single-asset simulation.} Each run allocates 100\% of
 capital to a single asset. Appendix~\ref{app:portfolio} provides an
