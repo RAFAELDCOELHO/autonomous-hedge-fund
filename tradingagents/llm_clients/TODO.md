@@ -1,15 +1,14 @@
 # LLM Clients - Consistency Improvements
 
-## Issues to Fix
+## Open
 
-### 1. `validate_model()` is never called
-- Add validation call in `get_llm()` with warning (not error) for unknown models
+_None._
 
-### 2. ~~Inconsistent parameter handling~~ (Fixed)
-- GoogleClient now accepts unified `api_key` and maps it to `google_api_key`
+## Fixed
 
-### 3. ~~`base_url` accepted but ignored~~ (Fixed)
-- All clients now pass `base_url` to their respective LLM constructors
+1. ~~`validate_model()` is never called~~ — every client's `get_llm()` calls `warn_if_unknown_model()`, which warns (not errors) on unknown models. Covered by `tests/test_model_validation.py`.
+2. ~~Inconsistent parameter handling~~ — GoogleClient accepts unified `api_key` and maps it to `google_api_key`.
+3. ~~`base_url` accepted but ignored~~ — all clients pass `base_url` to their LLM constructors.
+4. ~~Update validators.py with models from CLI~~ — synced in v0.2.2.
 
-### 4. ~~Update validators.py with models from CLI~~ (Fixed)
-- Synced in v0.2.2
+Provider routing in `factory.py` is covered offline by `tests/test_llm_client_factory.py`.

@@ -197,9 +197,9 @@ autonomous-hedge-fund/
 │   ├── graph/               # LangGraph orchestration, conditional logic, signal processing
 │   ├── dataflows/           # Data adapters: yfinance, Alpha Vantage, Kronos, FinGPT
 │   ├── backtest/            # baselines, metrics, runner, report, brazilbench, agent_integration
-│   └── llm_clients/         # Provider-agnostic LLM client factory
+│   └── llm_clients/         # create_llm_client: provider name → client class
 ├── cli/                     # Interactive terminal UI
-├── tests/                   # Offline unit tests: metrics, BrazilBench, adapters, fallbacks
+├── tests/                   # Offline unit tests: metrics, BrazilBench, adapters, LLM factory routing
 ├── docs/ARCHITECTURE.md     # Code-level system design
 ├── PAPER.md                 # Working research paper draft
 ├── ROADMAP.md               # Phased research plan
