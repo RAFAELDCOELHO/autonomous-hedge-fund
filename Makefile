@@ -1,6 +1,6 @@
 # BrazilBench: frozen B3 Close fixtures, Buy & Hold / MACD / SMA only.
 # No API key. No paid LLM (qwen-n10 is local Ollama). No TradingAgents graph. Env lock: uv.lock + .python-version.
-.PHONY: bench reproduce reliability qwen-n10 hmm-regimes docker-bench arena-help
+.PHONY: bench reproduce reliability qwen-n10 hmm-regimes survivorship docker-bench arena-help
 
 PY = uv run python
 
@@ -30,6 +30,11 @@ qwen-n10: | .venv
 # ^BVSP fixture. NumPy-only Baum-Welch, offline, no LLM call.
 hmm-regimes: | .venv
 	$(PY) scripts/hmm_regimes.py
+
+# P1.9: survivorship bracket. Classical baselines on distressed OIBR3/MGLU3/
+# AMER3 (GOLL4 unavailable on Yahoo) vs the liquid paper-five. Offline fixtures.
+survivorship: | .venv
+	$(PY) scripts/survivorship_distress.py
 
 # `make reproduce` inside a container built from uv.lock. Outputs land in
 # ./benchmark/results and ./docs. No .env, no keys, no GPU.

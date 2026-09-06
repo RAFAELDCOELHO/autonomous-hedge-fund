@@ -686,10 +686,19 @@ benchmark period are absent. \textbf{Sensitivity bound:}
 liquid-only sets in U.S.\ emerging market data of the 1990s; the
 applicability to Brazilian equities of 2019--2022 is uncertain.
 Such a correction would inflate absolute Sharpe ratios but applies
-equally to all agents on the same asset. Future work should include
-distressed assets (OIBR3, GOLL4, MGLU3) to bracket the effect
-empirically rather than relying on a cross-decade, cross-country
-estimate.
+equally to all agents on the same asset. To bracket the effect
+empirically rather than rely on a cross-decade, cross-country estimate,
+the repository ships \texttt{make survivorship}
+(\texttt{benchmark/results/survivorship/}), which runs the same
+classical baselines (Buy \& Hold, MACD, SMA, Momentum, Random $N{=}100$
+mean) on distressed B3 names---OIBR3, MGLU3 and AMER3---over the four
+regimes and reports the liquid-minus-distressed mean CR gap per (agent,
+regime) cell alongside the paper-five. GOLL4, originally planned, is
+unavailable on Yahoo Finance (\texttt{YFTzMissingError}: delisted, no
+timezone metadata), so AMER3 (Americanas) substitutes; no GOLL4 prices
+are imputed. The gap is a three-name bracket, not an estimate, and the
+regime windows are sub-annual, so the 1--3pp/yr band must be scaled
+before comparison.
 
 \item \textbf{Random baseline: single realization.} The Random agent
 uses a fixed seed (seed=42) for reproducibility. This produces one
