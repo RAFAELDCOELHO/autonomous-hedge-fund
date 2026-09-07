@@ -137,7 +137,8 @@ distinct market regimes?} A model with high forecasting accuracy can
 still lose money once transaction costs, position sizing, and regime
 shifts are introduced --- the gap between forecast accuracy and
 tradeable alpha is precisely what BrazilBench is designed to measure.
-Evaluating Kronos and Chronos as comparator agents is left as future
+A first Chronos-t5-tiny comparator on committed paper fixtures (PETR4 and \textasciicircum BVSP, all four regimes, long-if-mean-forecast-up rule, frictionless) is committed under
+\texttt{benchmark/results/chronos/}; it is a forecast-sign baseline with honest limits (no costs, possible pretraining overlap, tiny checkpoint only), not a claim of foundation-model alpha. Evaluating Kronos, and richer Chronos variants, remains future
 work.
 
 \textbf{LLM financial language tasks.}
