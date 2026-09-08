@@ -1,0 +1,9 @@
+regime,boundary,hand_date,nearest_hmm_switch,switch_to,distance_days
+bull_2019,start,2019-01-02,2020-02-26,turbulent,285
+bull_2019,end,2019-12-31,2020-02-26,turbulent,38
+crisis_2020,start,2020-02-03,2020-02-26,turbulent,15
+crisis_2020,end,2020-05-29,2020-05-04,calm,-19
+recovery_2021,start,2021-01-04,2020-05-04,calm,-166
+recovery_2021,end,2021-06-30,2020-05-04,calm,-287
+hi_rates_2022,start,2022-01-03,2020-05-04,calm,-413
+hi_rates_2022,end,2022-12-30,2020-05-04,calm,-662
