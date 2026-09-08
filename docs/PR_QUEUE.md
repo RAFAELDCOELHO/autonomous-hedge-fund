@@ -37,4 +37,5 @@ branch is pushed only on its day. Upgrades are prepared locally on `up/<N>` bran
 | 2026-10-05 | #42 | LLM client factory tests/docs | drop its hard-coded test count edits; RESEARCH_LOG Track B summary | Docs truth |
 
 Conflicts with `main` (README, Makefile `.PHONY`, ROADMAP) are expected and resolved locally on the day.
+Day-of checklist for #21: when resolving the Makefile conflict, add `bench-costs` (#17) and `factorial-classical` (#20) to the `make help` listing.
 Every upgrade is offline, needs no API key, and never changes bytes of artifacts pinned by `tests/test_reproduce.py`.
