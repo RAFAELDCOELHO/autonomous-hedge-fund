@@ -120,6 +120,9 @@ Do not treat an Ollama tag and an HF id as interchangeable.
 
 ## Other classical extras on open PRs (not on `main`)
 
+> **Status update:** the qwen_n10 / chronos / hmm_regimes / multi_asset /
+> survivorship result trees listed below have since been merged into `main`.
+
 These are `$0` / offline once merged; listed here so the inventory is
 honest. Paths below **do not exist on `main`** as of this manifest.
 

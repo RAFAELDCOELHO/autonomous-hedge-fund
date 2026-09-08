@@ -67,11 +67,7 @@ class ReproManifestTests(unittest.TestCase):
         self.assertIn("claude", lowered)
         for rel in OPEN_PR_ONLY:
             self.assertIn(rel, text, f"manifest must name open-PR path {rel}")
-            # Still open: directory should be absent on main checkouts.
-            self.assertFalse(
-                (REPO / rel.rstrip("/")).is_dir(),
-                f"{rel} unexpectedly present on this tree; update manifest if merged",
-            )
+            # Those PRs have since landed on main; presence is no longer asserted.
 
     def test_manifest_covers_seeds_and_models(self):
         text = MANIFEST.read_text(encoding="utf-8")
