@@ -3,6 +3,7 @@
 # P0.2 audit map (seeds, JSONL schemas, model versions, open-PR gaps):
 #   docs/REPRODUCIBILITY.md  —  pinned by tests/test_repro_manifest.py
 .PHONY: bench reproduce reliability qwen-n10 hmm-regimes multi-asset survivorship chronos docker-bench arena-help arena-dry-run
+.PHONY: docs-smoke
 
 PY = uv run python
 
@@ -21,6 +22,11 @@ reproduce: | .venv
 # committed mistral:7b logs + PETR4 fixture. Offline, stdlib only, no LLM call.
 reliability: | .venv
 	$(PY) scripts/reliability_diagram.py
+
+# Minimal offline docs smoke: required files exist and README links key
+# artifact entry points. No network, no API keys, no third-party deps.
+docs-smoke:
+	python3 -m unittest -q tests/test_docs_smoke.py
 
 # P1.5: Qwen 2.5-7B via local Ollama, N=10 independent cold-start sessions per
 # critical PETR4/crisis_2020 date (server killed between runs), mean +/- std into
@@ -42,7 +48,6 @@ multi-asset: | .venv
 # AMER3 (GOLL4 unavailable on Yahoo) vs the liquid paper-five. Offline fixtures.
 survivorship: | .venv
 	$(PY) scripts/survivorship_distress.py
-
 
 # `make reproduce` inside a container built from uv.lock. Outputs land in
 # ./benchmark/results and ./docs. No .env, no keys, no GPU.
