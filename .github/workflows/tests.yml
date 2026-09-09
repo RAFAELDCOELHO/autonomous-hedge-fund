@@ -30,3 +30,12 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ci-dummy-key
         run: uv run pytest tests/ --ignore=tests/test_api_smoke.py
+
+      - name: Enforce make reproduce contract
+        run: |
+          make reproduce
+          git diff --exit-code -- \
+            benchmark/results \
+            docs/brazilbench_baselines.md \
+            docs/paper_random_n100.tex \
+            docs/paper_ew_portfolio_baselines.tex
