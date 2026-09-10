@@ -8,6 +8,14 @@ make bench
 
 Prints CR / Sharpe / MDD for Buy & Hold, MACD(12,26,9), and SMA(50/200). The live multi-agent path (`uv run python main.py`) is separate and requires `ANTHROPIC_API_KEY`.
 
+## Paper artifact and submission-readiness docs
+
+- Paper source (NeurIPS preprint style): [`docs/brazilbench.tex`](docs/brazilbench.tex)
+- Filled Datasets & Benchmarks checklist: [`docs/NEURIPS_CHECKLIST.md`](docs/NEURIPS_CHECKLIST.md)
+- Repro instructions on `main`: see [Reproduce the paper tables (offline, no API key)](#reproduce-the-paper-tables-offline-no-api-key) in this README using `make reproduce`.
+- Reproducibility manifest (seeds, JSONL schemas, model versions): [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md)
+- Daily PR queue and what each remaining PR contributes to the paper: [`docs/PR_QUEUE.md`](docs/PR_QUEUE.md)
+
 > Does explicit macroeconomic reasoning matter more for LLM trading agents in emerging markets than in developed ones? This is an independent research project that extends the TradingAgents framework with an original Macro Economist Agent and a 2×2 factorial experiment to test that hypothesis.
 
 [![Tests](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/actions/workflows/tests.yml/badge.svg)](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/actions/workflows/tests.yml)
@@ -153,20 +161,28 @@ The 2×2 factorial above is backtest-only. [Headline Arena](https://headlinearen
 | `macro` | market, social, news, fundamentals, **macro** |
 | `no_macro` | market, social, news, fundamentals |
 
-Both arms are defined in `scripts/headline_arena_arms.py` (see `make arena-help`). Registration and forecasting go through the [headlinearena agent plugin](https://github.com/headlinearena/headlinearena-agent-plugin) ([raw API](https://headlinearena.com/api/docs)). Listing arms costs $0 and needs no Anthropic API key; running an arm live does. Tracked in [issue #3](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3). No arena results yet.
+Both arms are defined in `scripts/headline_arena_arms.py` with dual-agent wiring in `config/headline_arena.example.yaml` (see `make arena-help`, `make arena-dry-run`, and the runbook [`docs/HEADLINE_ARENA.md`](docs/HEADLINE_ARENA.md)). Register **each** arm with **separate** Headline Arena credentials (Kopei / issue #3). Registration and forecasting go through the [headlinearena agent plugin](https://github.com/headlinearena/headlinearena-agent-plugin) ([raw API](https://headlinearena.com/api/docs)). Listing arms and `make arena-dry-run` cost $0 and need no Anthropic API key; running an arm live does. Tracked in [issue #3](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/issues/3). No live arena results yet.
 
 ## Reproduce the paper tables (offline, no API key)
+
+**Reproducibility manifest (P0.2):** seeds, prompts, JSONL schemas, model versions, and which result dirs are on `main` vs still open PRs — [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md). `tests/test_repro_manifest.py` asserts the checklist paths exist.
 
 | Command | What it does |
 |---|---|
 | `make bench` | Fast printout of the baseline matrix: Buy & Hold / MACD / SMA × 6 tickers × 4 regimes. |
 | `make reproduce` | Regenerates the committed paper artifacts from committed Close fixtures: `docs/paper_random_n100.tex` (Table `tab:random-n100`), `docs/paper_ew_portfolio_baselines.tex` (Table `tab:ew-baselines`), their CSVs under `benchmark/results/`, and `docs/brazilbench_baselines.md` (the `make bench` matrix). |
+| `make arena-dry-run` | P2.1: load `config/headline_arena.example.yaml`, validate distinct macro/no_macro credential slots, write offline forecast+scorecard fixture to `benchmark/results/headline_arena/dry_run.json`. $0, no network. Runbook: `docs/HEADLINE_ARENA.md`. |
 | `make reliability` | P1.6: reliability diagram (stated confidence vs realised next-day win rate) from the committed mistral:7b logs and the PETR4 fixture, into `benchmark/results/reliability/` (`decisions.jsonl`, `bins.csv`, `reliability.svg`). Offline, stdlib only. Schema and caveats: `benchmark/results/reliability/SCHEMA.md`. Only one unique prompt in the logs carries a confidence, so the diagram is a scaffold, not a calibration result. |
+| `make qwen-n10` | P1.5: Qwen 2.5-7B via **local Ollama**, N=10 independent cold-start sessions (server killed and restarted between runs, cold-ness asserted via `/api/ps`) on three critical PETR4/crisis_2020 dates built from the committed fixture, temperature 0. Writes `runs.jsonl`, `summary.csv`, `summary.json` (signal agreement, confidence mean ± sample std) into `benchmark/results/qwen_n10/`. Needs `ollama` with `qwen2.5:7b` pulled; no key, $0. Not part of `make reproduce` (it is a live local-inference run, not a fixture replay). |
+| `make hmm-regimes` | P1.7: Hamilton (1989) two-state Gaussian HMM on ^BVSP daily log returns vs the four hand-defined regimes, into `benchmark/results/hmm_regimes/` (`states.csv`, `alignment.csv`, `breakpoints.csv`, generated `README.md` with the day-weighted purity, adjusted Rand index and boundary distances). NumPy-only Baum-Welch, offline, deterministic. Label alignment only; no strategy or LLM results are re-run under HMM regimes. |
+| `make multi-asset` | P1.8: daily multi-asset portfolios over the paper-five fixtures that use the correlation structure of daily returns: equal-weight, inverse-vol and long-only min-variance weights (the latter two estimated on warmup only, no look-ahead) for Buy & Hold / MACD / SMA / Momentum / Random(N=100), into `benchmark/results/multi_asset/` (`corr_by_regime.csv`, `weights.csv`, `portfolio_summary.csv`, `README.md` with deltas vs the Appendix EW number and limitations). Offline, numpy/pandas only, rule-based agents only. |
+| `make survivorship` | P1.9: survivorship bracket. Runs Buy & Hold / MACD / SMA / Momentum / Random (N=100 mean) on distressed OIBR3, MGLU3, AMER3 across the four regimes and side by side on the liquid paper-five, into `benchmark/results/survivorship/` (`per_cell.csv`, `summary.csv`). GOLL4 is unavailable on Yahoo (`YFTzMissingError`, delisted), so AMER3 (Americanas) substitutes; no GOLL4 prices are invented. Offline fixtures, no download. Method and Lesmond 1–3pp sensitivity note: `benchmark/results/survivorship/README.md`. |
+| `make chronos` | P1.10: Chronos-t5-tiny comparator on paper fixtures (PETR4, ^BVSP × 4 regimes) into `benchmark/results/chronos/` (`per_cell.csv`, `summary.csv`, `README.md`). Optional `[chronos]` extra (`uv run --extra chronos`); `CHRONOS_SKIP=1` exits 0. Not part of the $0 `make reproduce` path (first run may download HF weights). |
 | `make docker-bench` | `make reproduce` inside a container built from `uv.lock`; outputs are written back to `./benchmark/results` and `./docs`. |
 
 Artifact schemas for committed outputs under `benchmark/results/` are documented in `benchmark/results/SCHEMA.md` (plus reliability-specific caveats in `benchmark/results/reliability/SCHEMA.md`).
 
-After `make reproduce`, a clean `git status` means the regenerated tables are byte-identical to the committed ones; `tests/test_reproduce.py` enforces the same contract in CI. None of these targets read `.env`, call an LLM, or download prices: the paper-five fixtures (PETR4, VALE3, ITUB4, BBDC4, ^BVSP) live in `benchmark/prices/paper/`, the README-six fixtures in `benchmark/prices/`.
+After `make reproduce`, a clean `git status` means the regenerated tables are byte-identical to the committed ones; `tests/test_reproduce.py` enforces the same contract in CI. None of these targets read `.env` or download prices, and only `make qwen-n10` calls an LLM (a local Ollama model, no paid API): the paper-five fixtures (PETR4, VALE3, ITUB4, BBDC4, ^BVSP) live in `benchmark/prices/paper/`, the README-six fixtures in `benchmark/prices/`.
 
 Not covered: the hand-typed classical tables in `docs/brazilbench.tex` (`tab:ibov`, `tab:return_bvsp`, `tab:sharpe_petr4`, `tab:cross_market`) and its figures come from an earlier price vintage; `make reproduce` does not regenerate them. The paper draft reports **no LLM-agent results**: LLM evaluation (Claude, open-weight models, significance tests, leakage probes) needs paid or GPU inference, is outside the $0 reproduce path, and is listed as future work in the paper's Limitations section.
 
