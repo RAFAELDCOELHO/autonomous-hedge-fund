@@ -180,6 +180,8 @@ Both arms are defined in `scripts/headline_arena_arms.py` with dual-agent wiring
 | `make chronos` | P1.10: Chronos-t5-tiny comparator on paper fixtures (PETR4, ^BVSP × 4 regimes) into `benchmark/results/chronos/` (`per_cell.csv`, `summary.csv`, `README.md`). Optional `[chronos]` extra (`uv run --extra chronos`); `CHRONOS_SKIP=1` exits 0. Not part of the $0 `make reproduce` path (first run may download HF weights). |
 | `make docker-bench` | `make reproduce` inside a container built from `uv.lock`; outputs are written back to `./benchmark/results` and `./docs`. |
 
+Artifact schemas for committed outputs under `benchmark/results/` are documented in `benchmark/results/SCHEMA.md` (plus reliability-specific caveats in `benchmark/results/reliability/SCHEMA.md`).
+
 After `make reproduce`, a clean `git status` means the regenerated tables are byte-identical to the committed ones; `tests/test_reproduce.py` enforces the same contract in CI. None of these targets read `.env` or download prices, and only `make qwen-n10` calls an LLM (a local Ollama model, no paid API): the paper-five fixtures (PETR4, VALE3, ITUB4, BBDC4, ^BVSP) live in `benchmark/prices/paper/`, the README-six fixtures in `benchmark/prices/`.
 
 Not covered: the hand-typed classical tables in `docs/brazilbench.tex` (`tab:ibov`, `tab:return_bvsp`, `tab:sharpe_petr4`, `tab:cross_market`) and its figures come from an earlier price vintage; `make reproduce` does not regenerate them. The paper draft reports **no LLM-agent results**: LLM evaluation (Claude, open-weight models, significance tests, leakage probes) needs paid or GPU inference, is outside the $0 reproduce path, and is listed as future work in the paper's Limitations section.
