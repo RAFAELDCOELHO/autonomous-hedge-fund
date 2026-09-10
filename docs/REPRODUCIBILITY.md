@@ -114,7 +114,7 @@ Do not treat an Ollama tag and an HF id as interchangeable.
 |---|---|
 | `benchmark/results/reliability/decisions.jsonl` | **`benchmark/results/reliability/SCHEMA.md`** (fields, types, caveats) |
 | `benchmark/results/qwen_n10/runs.jsonl` | Documented in P1.5 script docstring / `summary.json` metadata (**PR #8 only**) |
-| Classical CSVs (`random_n100`, `baselines`, `brazilbench`) | Column meanings in producing scripts + paper table captions; not JSONL |
+| Classical CSVs (`random_n100`, `baselines`, `brazilbench`) | [`benchmark/results/SCHEMA.md`](../benchmark/results/SCHEMA.md) (fields, types); also producing scripts + paper table captions; not JSONL |
 
 ---
 
@@ -165,6 +165,7 @@ benchmark/results/random_n100/per_seed_returns.csv
 benchmark/results/baselines/ew_returns.csv
 benchmark/results/baselines/per_cell_returns.csv
 benchmark/results/brazilbench/matrix.csv
+benchmark/results/SCHEMA.md
 benchmark/results/reliability/SCHEMA.md
 benchmark/results/reliability/decisions.jsonl
 benchmark/results/reliability/bins.csv

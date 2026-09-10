@@ -20,6 +20,7 @@ REQUIRED_ON_MAIN = [
     "benchmark/results/baselines/ew_returns.csv",
     "benchmark/results/baselines/per_cell_returns.csv",
     "benchmark/results/brazilbench/matrix.csv",
+    "benchmark/results/SCHEMA.md",
     "benchmark/results/reliability/SCHEMA.md",
     "benchmark/results/reliability/decisions.jsonl",
     "benchmark/results/reliability/bins.csv",
