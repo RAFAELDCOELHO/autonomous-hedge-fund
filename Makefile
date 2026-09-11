@@ -2,10 +2,39 @@
 # No API key. No paid LLM (qwen-n10 is local Ollama). No TradingAgents graph. Env lock: uv.lock + .python-version.
 # P0.2 audit map (seeds, JSONL schemas, model versions, open-PR gaps):
 #   docs/REPRODUCIBILITY.md  —  pinned by tests/test_repro_manifest.py
-.PHONY: bench reproduce reliability qwen-n10 hmm-regimes multi-asset survivorship chronos docker-bench arena-help arena-dry-run
+# Keep .PHONY one-target-per-line to reduce merge collisions when other
+# branches add new targets independently.
+.PHONY: help
+.PHONY: bench
+.PHONY: reproduce
+.PHONY: reliability
+.PHONY: qwen-n10
+.PHONY: hmm-regimes
+.PHONY: multi-asset
+.PHONY: survivorship
+.PHONY: chronos
+.PHONY: docker-bench
+.PHONY: arena-help
+.PHONY: arena-dry-run
 .PHONY: docs-smoke
 
 PY = uv run python
+
+help:
+	@echo 'AHF make targets'
+	@echo '  help          Show this command summary.'
+	@echo '  bench         Offline ($$0): print BrazilBench matrix from committed fixtures.'
+	@echo '  reproduce     Offline ($$0): regenerate paper artifacts from committed fixtures.'
+	@echo '  reliability   Offline ($$0): build reliability diagram from committed local logs.'
+	@echo '  docs-smoke    Offline ($$0): required docs exist and README links artifact entry points.'
+	@echo '  qwen-n10      Offline ($$0): local Ollama Qwen 2.5-7B N=10 cold-start mean±std.'
+	@echo '  hmm-regimes   Offline ($$0): Hamilton HMM vs hand-defined regimes on ^BVSP fixture.'
+	@echo '  multi-asset   Offline ($$0): EW / inverse-vol / min-variance on paper-five fixtures.'
+	@echo '  survivorship  Offline ($$0): classical baselines on distressed vs liquid fixtures.'
+	@echo '  chronos       Offline (no key): Chronos-t5-tiny comparator; downloads HF weights once.'
+	@echo '  docker-bench  Offline ($$0): run reproduce in locked Docker image.'
+	@echo '  arena-help    $$0 to list setup steps; live forecasts require ANTHROPIC_API_KEY.'
+	@echo '  arena-dry-run Offline ($$0): validate dual-arm example config + write dry_run.json.'
 
 # Fast printout: 3 strategies x 6 tickers x 4 regimes.
 bench: | .venv
