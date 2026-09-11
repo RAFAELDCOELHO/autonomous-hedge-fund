@@ -1,0 +1,7 @@
+agent,ticker,mean_cr_pct,min_cr_pct,max_cr_pct,gap_vs_bh_pct
+chronos,PETR4,1.6806,-37.2777,28.133,-8.7965
+chronos,^BVSP,-1.8656,-15.7814,9.5571,-5.9898
+buy_and_hold,PETR4,10.4771,-27.8212,34.9021,0.0
+buy_and_hold,^BVSP,4.1242,-23.7514,27.4162,0.0
+momentum,PETR4,4.634,-14.4493,26.0319,-5.8432
+momentum,^BVSP,2.0058,-7.7738,18.2767,-2.1184

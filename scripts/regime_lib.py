@@ -48,6 +48,12 @@ REGIME_ORDER: list[str] = list(REGIMES)
 
 TICKERS: list[str] = ["PETR4", "VALE3", "ITUB4", "BBDC4", "^BVSP"]
 
+# P1.9 survivorship bracket: distressed / delisted-during-window B3 names.
+# Kept separate from TICKERS so the paper-five tables are untouched. AMER3
+# (Americanas) stands in for GOLL4: Yahoo returns YFTzMissingError for
+# GOLL4.SA (delisted, no timezone metadata), so no GOLL4 fixture exists.
+DISTRESSED: list[str] = ["OIBR3", "MGLU3", "AMER3"]
+
 # One download per ticker covers every regime plus >= 1 year of warmup.
 FETCH_START = "2018-01-01"
 FETCH_END = "2023-01-15"
