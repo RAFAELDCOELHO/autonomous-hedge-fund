@@ -137,7 +137,8 @@ distinct market regimes?} A model with high forecasting accuracy can
 still lose money once transaction costs, position sizing, and regime
 shifts are introduced --- the gap between forecast accuracy and
 tradeable alpha is precisely what BrazilBench is designed to measure.
-Evaluating Kronos and Chronos as comparator agents is left as future
+A first Chronos-t5-tiny comparator on committed paper fixtures (PETR4 and \textasciicircum BVSP, all four regimes, long-if-mean-forecast-up rule, frictionless) is committed under
+\texttt{benchmark/results/chronos/}; it is a forecast-sign baseline with honest limits (no costs, possible pretraining overlap, tiny checkpoint only), not a claim of foundation-model alpha. Evaluating Kronos, and richer Chronos variants, remains future
 work.
 
 \textbf{LLM financial language tasks.}
@@ -651,16 +652,30 @@ them interpretable, it creates exposure to ex-post selection:
 a researcher who saw the data first could define regimes that favor
 one strategy. A robustness check using Hamilton (1989) Hidden Markov
 Model \cite{hamilton1989} regime detection on the same period would
-test whether conclusions are stable across regime definitions. Visual
-inspection of HMM-detected breakpoints on the Ibovespa (not formally
-reported) suggests broad alignment with the hand-defined dates, but
-formal documentation and sensitivity analysis should be included in
-a future version.
+test whether conclusions are stable across regime definitions. A
+zero-cost label-alignment check ships with the repository
+(\texttt{make hmm-regimes}): a two-state Gaussian HMM fitted by
+Baum--Welch on Ibovespa daily log returns is compared with the four
+hand windows, reporting per-window state purity, the adjusted Rand
+index and the distance from each hand boundary to the nearest HMM
+switch (\texttt{benchmark/results/hmm\_regimes/}). It documents label
+agreement only; re-running the strategy tables under HMM-defined
+windows is left to a future version.
 
 \item \textbf{Single-asset simulation.} Each run allocates 100\% of
 capital to a single asset. Appendix~\ref{app:portfolio} provides an
-equal-weight portfolio estimate using existing data; full multi-asset
-simulation with correlation structure is left for future work.
+equal-weight portfolio estimate (mean of per-ticker terminal returns)
+using existing data. A companion artifact
+(\texttt{make multi-asset}; \texttt{scripts/multi\_asset\_corr.py};
+outputs under \texttt{benchmark/results/multi\_asset/}) builds daily
+constant-mix portfolios on the aligned daily-return matrix of the five
+assets, reports the per-regime Pearson correlation matrices, and
+compares equal-weight against inverse-volatility and long-only
+minimum-variance weights estimated on pre-regime warmup only (no
+look-ahead). It covers the rule-based agents only; the LLM pipeline
+is not evaluated in a multi-asset setting, and because four of the
+five assets are Ibovespa constituents the diversification benefit is
+small by construction.
 
 \item \textbf{Data source limitations.} Historical prices are sourced
 from yfinance with the \texttt{.SA} suffix for Brazilian assets.
@@ -682,10 +697,19 @@ benchmark period are absent. \textbf{Sensitivity bound:}
 liquid-only sets in U.S.\ emerging market data of the 1990s; the
 applicability to Brazilian equities of 2019--2022 is uncertain.
 Such a correction would inflate absolute Sharpe ratios but applies
-equally to all agents on the same asset. Future work should include
-distressed assets (OIBR3, GOLL4, MGLU3) to bracket the effect
-empirically rather than relying on a cross-decade, cross-country
-estimate.
+equally to all agents on the same asset. To bracket the effect
+empirically rather than rely on a cross-decade, cross-country estimate,
+the repository ships \texttt{make survivorship}
+(\texttt{benchmark/results/survivorship/}), which runs the same
+classical baselines (Buy \& Hold, MACD, SMA, Momentum, Random $N{=}100$
+mean) on distressed B3 names---OIBR3, MGLU3 and AMER3---over the four
+regimes and reports the liquid-minus-distressed mean CR gap per (agent,
+regime) cell alongside the paper-five. GOLL4, originally planned, is
+unavailable on Yahoo Finance (\texttt{YFTzMissingError}: delisted, no
+timezone metadata), so AMER3 (Americanas) substitutes; no GOLL4 prices
+are imputed. The gap is a three-name bracket, not an estimate, and the
+regime windows are sub-annual, so the 1--3pp/yr band must be scaled
+before comparison.
 
 \item \textbf{Random baseline: single realization.} The Random agent
 uses a fixed seed (seed=42) for reproducibility. This produces one

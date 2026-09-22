@@ -57,7 +57,7 @@ LLM clients (tradingagents/llm_clients/)
   {openai,anthropic,google,azure}_client.py    One class per SDK; OpenAI-compatible providers share OpenAIClient
   model_catalog.py, validators.py              Model registry and config validation
 
-Tests (tests/)                                 83 offline unit tests (metrics, adapters, fallbacks, graph construction, LLM factory routing)
+Tests (tests/)                                 Offline unit tests (metrics, adapters, fallbacks, graph construction, LLM factory routing). Docs intentionally avoid fixed test counts; check the live inventory with `python -m pytest --collect-only -q`
 ```
 
 ## 2. Data Flow

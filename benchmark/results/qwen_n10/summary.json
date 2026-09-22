@@ -1,0 +1,73 @@
+{
+  "model": "qwen2.5:7b",
+  "model_digest": "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
+  "options": {
+    "temperature": 0
+  },
+  "protocol": "cold-start",
+  "cold_start": "pkill ollama; ollama serve (OLLAMA_KEEP_ALIVE=0); assert /api/ps empty; one call",
+  "ticker": "PETR4",
+  "regime": "crisis_2020",
+  "n_per_date": 10,
+  "macro": {
+    "selic": 4.25,
+    "ipca": 0.42,
+    "usdbrl": 4.87
+  },
+  "fixture": "benchmark/prices/PETR4.csv",
+  "fixture_note": "auto-adjusted Close; no volume line in prompt",
+  "system_prompt_sha256": "08d01a92b96ca7bb9bf68141c92de5db81ff7cacf21246c4fe78552da43493f9",
+  "user_prompt_sha256": {
+    "2020-03-06": "4e103627c5564cbf0dc7997fa6016020063da7ebcd255b1a1f56909b30b613d9",
+    "2020-03-18": "46d63ade191c673f2cbfea50fa44d1e303fc97aa9ee20a3fb4593db57c47b65c",
+    "2020-04-30": "d4bd4086ac39bcae962d65fe6658aba49f8051343e0c2832150f0a84bf027f59"
+  },
+  "std": "sample std (n-1); null when n_parsed < 2",
+  "per_date": [
+    {
+      "date": "2020-03-06",
+      "n": 10,
+      "n_parsed": 10,
+      "n_unique_responses": 1,
+      "majority_signal": "BUY",
+      "agreement": 1.0,
+      "n_buy": 10,
+      "n_sell": 0,
+      "n_hold": 0,
+      "confidence_mean": 0.7,
+      "confidence_std": 0.0,
+      "load_duration_mean_s": 1.1,
+      "total_duration_mean_s": 4.8628
+    },
+    {
+      "date": "2020-03-18",
+      "n": 10,
+      "n_parsed": 10,
+      "n_unique_responses": 1,
+      "majority_signal": "BUY",
+      "agreement": 1.0,
+      "n_buy": 10,
+      "n_sell": 0,
+      "n_hold": 0,
+      "confidence_mean": 0.7,
+      "confidence_std": 0.0,
+      "load_duration_mean_s": 1.1003,
+      "total_duration_mean_s": 4.8319
+    },
+    {
+      "date": "2020-04-30",
+      "n": 10,
+      "n_parsed": 10,
+      "n_unique_responses": 1,
+      "majority_signal": "BUY",
+      "agreement": 1.0,
+      "n_buy": 10,
+      "n_sell": 0,
+      "n_hold": 0,
+      "confidence_mean": 0.7,
+      "confidence_std": 0.0,
+      "load_duration_mean_s": 1.1046,
+      "total_duration_mean_s": 4.3219
+    }
+  ]
+}

@@ -9,7 +9,7 @@ Everything needed to run the experiment exists and is validated. See PAPER.md §
 - [x] Macro Economist Agent — fifth analyst, brazilfi-backed tools, opt-in via `selected_analysts`
 - [x] Backtest runner with look-ahead prevention by construction (`prices.iloc[:i+1]`)
 - [x] Agent integration layer — 5→3 signal mapping, dependency-injected `decide_fn` factory
-- [x] Test suite green: 40/40 at phase close (since grown to 56 offline tests; see [README.md](README.md))
+- [x] Test suite green at phase close (current offline count intentionally not hard-coded; check live inventory with `python -m pytest --collect-only -q` in the project env)
 - [x] Neutrality validation — mock always-BUY agent numerically identical to BuyAndHold (PAPER.md Table 1)
 
 ## Phase 2: H1 Experiment 🔄 (in progress)
