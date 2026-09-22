@@ -53,10 +53,11 @@ Backtest (tradingagents/backtest/)
   report.py                                    Comparison tables and equity curves
 
 LLM clients (tradingagents/llm_clients/)
-  factory.py + {anthropic,openai,google,azure}_client.py   Provider-agnostic client construction
+  factory.py                                   create_llm_client — routes provider name to a client class
+  {openai,anthropic,google,azure}_client.py    One class per SDK; OpenAI-compatible providers share OpenAIClient
   model_catalog.py, validators.py              Model registry and config validation
 
-Tests (tests/)                                 Offline unit tests (metrics, adapters, fallbacks, graph construction). Docs intentionally avoid fixed test counts; check the live inventory with `python -m pytest --collect-only -q`
+Tests (tests/)                                 Offline unit tests (metrics, adapters, fallbacks, graph construction, LLM factory routing). Docs intentionally avoid fixed test counts; check the live inventory with `python -m pytest --collect-only -q`
 ```
 
 ## 2. Data Flow

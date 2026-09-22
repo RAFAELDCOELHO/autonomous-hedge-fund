@@ -1,3 +1,11 @@
+"""Provider-name -> client-class routing for LLM clients.
+
+``create_llm_client`` is the single construction entry point. OpenAI-compatible
+providers (see ``_OPENAI_COMPATIBLE``) share ``OpenAIClient``; Anthropic, Google
+and Azure each get their own class. Routing is covered offline by
+``tests/test_llm_client_factory.py`` (client classes patched, no SDK/network).
+"""
+
 from typing import Optional
 
 from .base_client import BaseLLMClient
