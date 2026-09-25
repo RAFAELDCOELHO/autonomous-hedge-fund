@@ -20,8 +20,6 @@ from typing import Any, Callable, Dict, Optional
 
 import pandas as pd
 
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-
 from .runner import run_agent_strategy
 
 
@@ -96,6 +94,8 @@ def make_decide_fn(
         A decide_fn closure suitable for run_agent_strategy.
     """
     if propagate_fn is None:
+        from tradingagents.graph.trading_graph import TradingAgentsGraph
+
         ta = TradingAgentsGraph(debug=debug, config=config)
         _propagate = ta.propagate
     else:
