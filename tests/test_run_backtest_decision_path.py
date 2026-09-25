@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
 from unittest.mock import patch
 
-import run_backtest
+
+REPO = Path(__file__).resolve().parents[1]
+TARGET = REPO / "run_backtest.py"
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location("run_backtest", TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_run_backtest_uses_map_signal_for_verbose_llm_output():
+    run_backtest = _load_module()
+
     class FakeGraph:
         def propagate(self, ticker: str, curr_date: str):
             assert ticker == "AAPL"
@@ -21,8 +34,8 @@ def test_run_backtest_uses_map_signal_for_verbose_llm_output():
         captured["args"] = (ticker, start, end, capital)
         return "equity-curve"
 
-    with patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch(
-        "run_backtest.run_agent_strategy", side_effect=fake_runner
+    with patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch.object(
+        run_backtest, "run_agent_strategy", side_effect=fake_runner
     ):
         result = run_backtest._run_agent_decider(
             ticker="AAPL",
