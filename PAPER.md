@@ -49,21 +49,21 @@ The Macro Economist Agent follows the same factory pattern as the four existing 
 ```python
 from brazilfi import Bacen, IBGE
 
-# Tools exposed to the agent
-def get_selic(last_days: int = 90) -> pd.DataFrame:
-    return Bacen().selic(last=last_days).to_dataframe()
+# Tools exposed to the agent; trade_date is injected from graph state
+def get_selic(trade_date, last_days: int = 90) -> pd.DataFrame:
+    return Bacen().selic(start=..., end=trade_date - 1 day)   # date < trade_date
 
-def get_inflation(last_months: int = 12) -> pd.DataFrame:
-    return Bacen().ipca(last=last_months).to_dataframe()
+def get_inflation(trade_date, last_months: int = 12) -> pd.DataFrame:
+    return Bacen().ipca(...)  # month M kept only if trade_date >= 15th of M+1
 
-def get_gdp(last_quarters: int = 8) -> pd.DataFrame:
-    return IBGE().pib(last=last_quarters).to_dataframe()
+def get_gdp(trade_date, last_quarters: int = 8) -> pd.DataFrame:
+    return IBGE().pib(...)    # quarter kept only if trade_date >= quarter end + 90 days
 
-def get_exchange_rate(last_days: int = 90) -> pd.DataFrame:
-    return Bacen().dolar(last=last_days).to_dataframe()
+def get_exchange_rate(trade_date, last_days: int = 90) -> pd.DataFrame:
+    return Bacen().dolar(start=..., end=trade_date - 1 day)   # date < trade_date
 ```
 
-**Listing 1.** The agent's complete data layer. Without brazilfi, each function would require custom parsers for heterogeneous government APIs (Bacen's SGS endpoints, IBGE's SIDRA nested JSON); with it, the tool layer is four typed, tested wrapper functions. brazilfi (v0.3.0), developed independently by the same author and distributed on PyPI, unifies Bacen (the central bank), IBGE (the statistics institute), Tesouro Direto, and B3 (the exchange) behind Pydantic-typed, CI-validated models.
+**Listing 1.** The agent's complete data layer (simplified; see `tradingagents/agents/utils/macro_tools.py`). The tools are point-in-time: each returns only observations that would have been public before the open on `trade_date`, using conservative publication lags for IPCA and GDP. Without brazilfi, each function would require custom parsers for heterogeneous government APIs (Bacen's SGS endpoints, IBGE's SIDRA nested JSON); with it, the tool layer is four typed, tested wrapper functions. brazilfi (v0.3.0), developed independently by the same author and distributed on PyPI, unifies Bacen (the central bank), IBGE (the statistics institute), Tesouro Direto, and B3 (the exchange) behind Pydantic-typed, CI-validated models.
 
 The system prompt encodes an analysis procedure rather than free-form instructions: first establish the monetary policy environment (SELIC and inflation), then assess currency pressure, optionally pulling GDP for cycle context; classify the macro regime (tightening, easing, stagflation risk, or stable); and derive sector implications. Banks benefit from high SELIC via interest margins, commodity and industrial exporters from a weaker BRL, and defensive consumer names are comparatively insensitive. The output is a structured macro report written into a new `macro_report` state field, consumed by the Bull/Bear researchers alongside the other four reports.
 
