@@ -117,6 +117,22 @@ def test_exclusion_rules(tmp_path):
     assert result["n_valid_runs"] == 76  # 90 rows - 7 row exclusions - PETR4's 7 remaining runs
 
 
+def test_zero_days_is_decision_errors_exclusion(tmp_path):
+    rows = _rows(0.2, 0.0, seed=13)
+    for r in rows:
+        if r["ticker"] == "AAPL":
+            r["n_days"] = 0
+            r["n_decision_errors"] = 0
+    result = _run(tmp_path, rows)
+    assert result["exclusion_counts"]["decision_errors"] == 10
+    assert {
+        "ticker": "AAPL",
+        "arm": "present",
+        "seed": 0,
+        "reason": "decision_errors",
+    } in result["excluded"]
+
+
 def test_clear_positive_effect_rejects_h0(tmp_path):
     result = _run(tmp_path, _rows(effect_br=1.0, effect_us=0.0))
     primary = result["primary"]
@@ -160,3 +176,57 @@ def test_deterministic_json_output(tmp_path, capsys):
     assert json.loads(outs[0])["rng_seed"] == h1.RNG_SEED
     printed = capsys.readouterr().out
     assert "PRIMARY D =" in printed and "S1_br_sensitive_delta_gt_0" in printed
+
+
+def test_deterministic_with_shuffled_rows(tmp_path):
+    rows = _rows(0.3, 0.1, seed=7)
+    shuffled = list(rows)
+    np.random.default_rng(99).shuffle(shuffled)
+    a = _write(tmp_path / "cells_a.csv", rows)
+    b = _write(tmp_path / "cells_b.csv", shuffled)
+    assert h1.main([str(a), "--out", str(tmp_path / "a.json")]) == 0
+    assert h1.main([str(b), "--out", str(tmp_path / "b.json")]) == 0
+    assert (tmp_path / "a.json").read_text(encoding="utf-8") == (tmp_path / "b.json").read_text(encoding="utf-8")
+
+
+def test_primary_exact_permutation_p_two_over_56():
+    deltas = {
+        "ITUB4": -1.0,
+        "BPAC11": 0.0,
+        "PETR4": 0.0,
+        "VALE3": 0.0,
+        "WEGE3": 0.0,
+        "AAPL": -2.0,
+        "GOOGL": -2.0,
+        "AMZN": -1.0,
+    }
+    primary = h1.primary_test(deltas)
+    assert primary["n_permutations"] == 56
+    assert primary["p_value"] == pytest.approx(2 / 56)
+
+
+def test_primary_ties_count_as_ge_observed():
+    deltas = {
+        "ITUB4": 1.0,
+        "BPAC11": 1.0,
+        "PETR4": 1.0,
+        "VALE3": 0.0,
+        "WEGE3": 0.0,
+        "AAPL": 0.0,
+        "GOOGL": 0.0,
+        "AMZN": 0.0,
+    }
+    primary = h1.primary_test(deltas)
+    assert primary["p_value"] == pytest.approx(10 / 56)
+
+
+def test_report_marks_underpowered_primary(tmp_path):
+    rows = _rows(1.0, 0.0, seed=5)
+    for r in rows:
+        if r["ticker"] in {"GOOGL", "AMZN"}:
+            r["status"] = "failed"
+            r["sharpe"] = ""
+    result = _run(tmp_path, rows)
+    assert result["primary"]["evaluable"] is True
+    assert result["primary"]["underpowered"] is True
+    assert "não rejeitado (sem poder)" in h1.report(result)

@@ -24,7 +24,8 @@ Exclusion rules, applied in this order and all reported:
     1. status == failed                              -> ``failed``
     2. sharpe missing / non-finite                   -> ``missing_sharpe``
     3. n_days below the ticker's max n_days          -> ``truncated``
-    4. n_decision_errors / n_days > MAX_ERROR_RATE   -> ``decision_errors``
+    4. n_days == 0 or n_decision_errors / n_days > MAX_ERROR_RATE
+                                                    -> ``decision_errors``
     5. a ticker with < MIN_VALID_SEEDS valid runs in either arm is dropped
        from every analysis (both arms)               -> ``ticker_dropped``
 
@@ -123,7 +124,7 @@ def load_cells(path: Path) -> list[dict]:
 
 
 def apply_exclusions(rows: list[dict]) -> tuple[dict, list[dict]]:
-    """Return ({ticker: {arm: [sharpe, ...]}}, excluded rows with reasons)."""
+    """Return ({ticker: {arm: [{"seed": int, "sharpe": float}, ...]}}, excluded rows)."""
     excluded = []
     max_days = {}
     for r in rows:
@@ -141,7 +142,9 @@ def apply_exclusions(rows: list[dict]) -> tuple[dict, list[dict]]:
         elif r["n_days"] == 0 or r["n_decision_errors"] / r["n_days"] > MAX_ERROR_RATE:
             reason = "decision_errors"
         else:
-            valid.setdefault(r["ticker"], {a: [] for a in ARMS})[r["arm"]].append(r["sharpe"])
+            valid.setdefault(r["ticker"], {a: [] for a in ARMS})[r["arm"]].append(
+                {"seed": r["seed"], "sharpe": r["sharpe"]}
+            )
             continue
         excluded.append({"ticker": r["ticker"], "arm": r["arm"], "seed": r["seed"], "reason": reason})
 
@@ -151,12 +154,17 @@ def apply_exclusions(rows: list[dict]) -> tuple[dict, list[dict]]:
         if min(len(arms[a]) for a in ARMS) < MIN_VALID_SEEDS:
             excluded.append({"ticker": ticker, "arm": None, "seed": None, "reason": "ticker_dropped"})
         else:
+            for arm in ARMS:
+                arms[arm].sort(key=lambda r: r["seed"])
             kept[ticker] = arms
     return kept, excluded
 
 
 def _delta(arms: dict) -> float:
-    return float(np.mean(arms["present"]) - np.mean(arms["absent"]))
+    return float(
+        np.mean([r["sharpe"] for r in arms["present"]])
+        - np.mean([r["sharpe"] for r in arms["absent"]])
+    )
 
 
 def primary_test(deltas: dict) -> dict:
@@ -176,12 +184,14 @@ def primary_test(deltas: dict) -> dict:
     observed = stat(tuple(range(len(br), len(pool))))
     perms = [stat(c) for c in itertools.combinations(range(len(pool)), n_us)]
     p = sum(s >= observed - EPS for s in perms) / len(perms)
+    min_attainable_p = 1 / len(perms)
     return {
         "evaluable": True,
         "statistic": observed,
         "p_value": p,
         "n_permutations": len(perms),
-        "min_attainable_p": 1 / len(perms),
+        "min_attainable_p": min_attainable_p,
+        "underpowered": min_attainable_p > ALPHA,
         "br_tickers": br,
         "us_tickers": us,
         "reject_h0": p <= ALPHA,
@@ -191,7 +201,13 @@ def primary_test(deltas: dict) -> dict:
 def _within_ticker_perm(kept: dict, tickers: list[str], rng, two_sided: bool) -> dict:
     """Mean delta over ``tickers``; arm labels shuffled within each ticker."""
     observed = float(np.mean([_delta(kept[t]) for t in tickers]))
-    pools = [(np.array(kept[t]["absent"] + kept[t]["present"]), len(kept[t]["present"])) for t in tickers]
+    pools = []
+    for t in tickers:
+        absent = sorted(kept[t]["absent"], key=lambda r: r["seed"])
+        present = sorted(kept[t]["present"], key=lambda r: r["seed"])
+        pools.append(
+            (np.array([r["sharpe"] for r in absent + present], dtype=float), len(present))
+        )
     null = np.empty(N_RESAMPLES)
     for b in range(N_RESAMPLES):
         ds = []
@@ -223,21 +239,23 @@ def analyze(rows: list[dict]) -> dict:
             "role": "control" if t in BR_CONTROL else "primary",
             "n_absent": len(kept[t]["absent"]),
             "n_present": len(kept[t]["present"]),
-            "mean_sharpe_absent": float(np.mean(kept[t]["absent"])),
-            "mean_sharpe_present": float(np.mean(kept[t]["present"])),
+            "mean_sharpe_absent": float(np.mean([x["sharpe"] for x in kept[t]["absent"]])),
+            "mean_sharpe_present": float(np.mean([x["sharpe"] for x in kept[t]["present"]])),
             "delta_sharpe": deltas[t],
         }
         for t in TICKERS if t in kept
     ]
 
-    rng = np.random.default_rng(RNG_SEED)
     secondary = []
-    for name, tickers, two_sided in (
+    for k, (name, tickers, two_sided) in enumerate((
         ("S1_br_sensitive_delta_gt_0", [t for t in BR_SENSITIVE if t in kept], False),
         ("S2_us_delta_ne_0", [t for t in US_TICKERS if t in kept], True),
-    ):
+    )):
         if tickers:
-            secondary.append({"name": name, "tickers": tickers, **_within_ticker_perm(kept, tickers, rng, two_sided)})
+            rng = np.random.default_rng([RNG_SEED, k])
+            secondary.append(
+                {"name": name, "tickers": tickers, **_within_ticker_perm(kept, tickers, rng, two_sided)}
+            )
         else:
             secondary.append({"name": name, "tickers": [], "statistic": None, "p_value": None})
     testable = [s for s in secondary if s["p_value"] is not None]
@@ -279,11 +297,14 @@ def report(result: dict) -> str:
     p = result["primary"]
     lines.append("")
     if p["evaluable"]:
+        conclusion = "REJECT H0" if p["reject_h0"] else "do not reject H0"
+        if p.get("underpowered") and not p["reject_h0"]:
+            conclusion = "não rejeitado (sem poder)"
         lines.append(
             f"PRIMARY D = mean dSharpe(BR sensitive) - mean dSharpe(US) = {p['statistic']:+.4f}; "
             f"exact one-sided permutation p = {p['p_value']:.4f} "
             f"({p['n_permutations']} relabelings, min attainable p = {p['min_attainable_p']:.4f}) -> "
-            f"{'REJECT H0' if p['reject_h0'] else 'do not reject H0'}"
+            f"{conclusion}"
         )
     else:
         lines.append(f"PRIMARY not evaluable: {p['reason']} -> do not reject H0")

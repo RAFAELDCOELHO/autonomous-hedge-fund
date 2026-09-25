@@ -98,12 +98,12 @@ The rules are applied in this order. Every exclusion is counted and reported by 
 | E1 | `status = failed` | `failed` |
 | E2 | `sharpe` missing or non-finite on an `ok` run | `missing_sharpe` |
 | E3 | `n_days` below the maximum `n_days` observed for that ticker (a truncated curve from missing price bars or an early stop) | `truncated` |
-| E4 | `n_decision_errors / n_days > 0.05` (more than 5% of decisions were silent HOLD fallbacks) | `decision_errors` |
+| E4 | `n_days == 0` **or** `n_decision_errors / n_days > 0.05` (more than 5% of decisions were silent HOLD fallbacks) | `decision_errors` |
 | E5 | fewer than 3 valid runs in **either** arm of a ticker: the ticker is dropped from all analyses, both arms | `ticker_dropped` |
 
 - **Re-runs.** A run excluded under E1 or E4 because of infrastructure failure (API outage, rate limit, network) may be re-run **once** under a new, previously unused seed index. The failed row stays in `cells.csv`. Runs that completed and passed E1–E4 are never re-run or replaced.
 - **Missing market data** (a ticker's price series is unavailable for the window) removes the ticker from both arms through E5 and is reported.
-- **Reduced primary test.** If E5 drops tickers, the primary test runs on the remaining tickers with the same procedure. The number of relabelings and the minimum attainable p are reported. With 5 BR + 2 US tickers the minimum p is 1/21 ≈ 0.048, so the test can still reject. With one US ticker left it cannot reject at α = 0.05, and that outcome is reported as "not rejected (underpowered)".
+- **Reduced primary test.** If E5 drops tickers, the primary test runs on the remaining tickers with the same procedure. The number of relabelings and the minimum attainable p are reported. With 5 BR + 2 US tickers the minimum p is 1/21 ≈ 0.048, so the test can still reject. With one US ticker left it cannot reject at α = 0.05, and that outcome is reported as **"não rejeitado (sem poder)"**.
 - No other data-dependent exclusion (e.g. outlier Sharpe) is permitted.
 
 ## 6. Statistical tests
@@ -130,14 +130,14 @@ The enumeration is exact, so there is no random resampling and no seed.
 
 ### 6.2 Secondary tests (confirmatory, Holm-corrected)
 
-These tests condition on the tickers studied, so they support claims about *these tickers in this window*, not about markets. Each uses a within-ticker permutation of arm labels: in every ticker of the group, the valid Sharpe values of both arms are pooled and relabeled with the arm sizes preserved, and the statistic is the mean Δ_t over the group. The procedure uses 10,000 Monte Carlo resamples, `numpy.random.default_rng(20260925)`, and p = (1 + #{T* ≥ T_obs}) / (10,000 + 1).
+These tests condition on the tickers studied, so they support claims about *these tickers in this window*, not about markets. Each uses a within-ticker permutation of arm labels: in every ticker of the group, valid Sharpe values are first ordered by `seed`, then pooled across arms with arm sizes preserved, and the statistic is the mean Δ_t over the group. The procedure uses 10,000 Monte Carlo resamples and one independent RNG per test: `numpy.random.default_rng([20260925, k])`, where `k=0` for S1 and `k=1` for S2.
 
 | ID | Statistic | Alternative | Question |
 |---|---|---|---|
 | S1 | mean Δ_t over BR macro-sensitive tickers | one-sided, > 0 | Does the Macro Agent improve Sharpe on BR macro-sensitive names at all? |
-| S2 | mean Δ_t over US tickers | two-sided, ≠ 0 | Does the Brazil-specific macro context help or hurt US names? (PAPER.md §5 predicts ≈ 0) |
+| S2 | mean Δ_t over US tickers | two-sided, ≠ 0 | Does the Brazil-specific macro context help or hurt US names? (PAPER.md §5 predicts ≈ 0). Computed exactly as \(p_{S2}=(1+\#\{|T^*|\ge|T_{obs}|-10^{-12}\})/(10{,}000+1)\). |
 
-Holm's step-down correction is applied across {S1, S2} at family-wise α = 0.05, and adjusted p-values are reported. The primary test is not part of this family: it is tested alone at α = 0.05. The paper's §7 patterns map to these tests as follows. Pattern (a) is primary rejected and S1 rejected. Pattern (b) is S1 and S2 both positive with the primary not rejected. Pattern (c) is S1 not rejected.
+Holm's step-down correction is applied across the evaluable subset of {S1, S2} at family-wise α = 0.05, and adjusted p-values are reported. If only one secondary test is evaluable, Holm uses \(m=1\), so \(p_{Holm}=p_{raw}\) for that test. The primary test is not part of this family: it is tested alone at α = 0.05. The paper's §7 patterns map to these tests as follows. Pattern (a) is primary rejected and S1 rejected. Pattern (b) is S1 and S2 both positive with the primary not rejected. Pattern (c) is S1 not rejected.
 
 ### 6.3 Reporting
 
