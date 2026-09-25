@@ -20,7 +20,7 @@ Execute the 2×2 factorial (Market: US vs. Brazil × Macro Agent: absent vs. pre
 - [ ] Full baseline: 9 tickers × Jan–Mar 2024, four-analyst pipeline (no Macro Agent)
 - [ ] Full H1: 9 tickers × Jan–Mar 2024, with Macro Agent
 - [ ] Results table: 2×2 factorial Sharpe / CR / MDD per cell, with per-ticker ΔSharpe and the RADL3 control comparison
-- [ ] Statistical significance: t-test on ΔSharpe (macro present − absent), criterion specified before execution per PAPER.md §8
+- [ ] Statistical significance: pre-registered test on ΔSharpe (macro present − absent), specified before execution per PAPER.md §8. Draft in [docs/PREREGISTRATION.md](docs/PREREGISTRATION.md) (`scripts/h1_stats.py`), awaiting author sign-off
 
 ## Phase 3: Paper Submission 📝 (planned)
 

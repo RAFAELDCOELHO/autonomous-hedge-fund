@@ -14,7 +14,8 @@ Prints CR / Sharpe / MDD for Buy & Hold, MACD(12,26,9), and SMA(50/200). The liv
 - Filled Datasets & Benchmarks checklist: [`docs/NEURIPS_CHECKLIST.md`](docs/NEURIPS_CHECKLIST.md)
 - Repro instructions on `main`: see [Reproduce the paper tables (offline, no API key)](#reproduce-the-paper-tables-offline-no-api-key) in this README using `make reproduce`.
 - Reproducibility manifest (seeds, JSONL schemas, model versions): [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md)
-- Daily PR queue and what each remaining PR contributes to the paper: [`docs/PR_QUEUE.md`](docs/PR_QUEUE.md)
+- H1 statistical criterion (pre-registration draft, awaiting sign-off): [`docs/PREREGISTRATION.md`](docs/PREREGISTRATION.md)
+- Superseded daily PR plan (historical; its upgrades never landed): [`docs/archive/PR_QUEUE.md`](docs/archive/PR_QUEUE.md)
 
 > Does explicit macroeconomic reasoning matter more for LLM trading agents in emerging markets than in developed ones? This is an independent research project that extends the TradingAgents framework with an original Macro Economist Agent and a 2×2 factorial experiment to test that hypothesis.
 

@@ -1,3 +1,12 @@
+> **Archived 2026-09-25, historical plan only.** PRs #15–#43 were squash-merged into `main` (last:
+> `591db91`, #42) carrying only the "Keeps (original)" column below: offline helper tests, the
+> Makefile contract test, `benchmark/results/SCHEMA.md`, `make help`, test-count wording, and PAPER.md
+> §6A (#43). **None of the "Adds (upgrade)" deliverables reached `main`.** Transaction costs, seeds,
+> factorial fixtures, the `macro_tools` ablation switch, SELIC risk-free, bootstrap/deflated
+> Sharpe/Holm, `factorial_table.py`, decision logging and `make check` do not exist there. The #18
+> pre-registration is re-done in [`docs/PREREGISTRATION.md`](../PREREGISTRATION.md) (P3.3); the other
+> items are open. Do not use this table as a status source.
+
 # PR queue — one squash-merge per day, each one moving the paper
 
 Open PRs #17–#42 were generated as "residual polish" (small offline tests for upstream helpers). They stay
