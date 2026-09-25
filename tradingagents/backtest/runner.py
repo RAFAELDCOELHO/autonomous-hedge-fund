@@ -14,16 +14,23 @@ import pandas as pd
 
 from tradingagents.dataflows.stockstats_utils import load_ohlcv
 
+from .baselines import _simulate
+
 logger = logging.getLogger(__name__)
 
 
-def load_price_window(ticker: str, start: str, end: str) -> pd.DataFrame:
-    """Load OHLCV for [start, end] indexed by date (ascending)."""
+def load_price_history(ticker: str, end: str) -> pd.DataFrame:
+    """Load all cached OHLCV up to and including `end`, indexed by date (ascending)."""
     df = load_ohlcv(ticker, end)
     df = df.copy()
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.sort_values("Date").set_index("Date")
-    df = df.loc[pd.to_datetime(start): pd.to_datetime(end)]
+    return df.loc[: pd.to_datetime(end)]
+
+
+def load_price_window(ticker: str, start: str, end: str) -> pd.DataFrame:
+    """Load OHLCV for [start, end] indexed by date (ascending)."""
+    df = load_price_history(ticker, end).loc[pd.to_datetime(start):]
     if df.empty:
         raise ValueError(f"No price data for {ticker} in {start}..{end}")
     return df
@@ -36,8 +43,17 @@ def run_strategy(
     end: str,
     initial_capital: float = 100_000.0,
 ) -> pd.Series:
-    prices = load_price_window(ticker, start, end)
-    return strategy.run(prices, initial_capital)
+    """Signals see pre-window history (indicator warm-up); equity covers [start, end] only.
+
+    Same semantics as brazilbench.run_cell: the curve starts at `initial_capital`
+    on the first window bar, so Buy & Hold still buys on `start`.
+    """
+    history = load_price_history(ticker, end)
+    prices = history.loc[pd.to_datetime(start):]
+    if prices.empty:
+        raise ValueError(f"No price data for {ticker} in {start}..{end}")
+    sig = strategy.signals(history).loc[prices.index]
+    return _simulate(prices, sig, initial_capital)
 
 
 def run_buy_and_hold(ticker: str, start: str, end: str, initial_capital: float = 100_000.0) -> pd.Series:
