@@ -75,6 +75,16 @@ class MapSignalTests(unittest.TestCase):
         self.assertEqual(self.mod.map_signal("  overweight "), "BUY")
         self.assertEqual(self.mod.map_signal("\nUnderWeight\t"), "SELL")
 
+    def test_verbose_outputs_extract_first_valid_label(self):
+        self.assertEqual(self.mod.map_signal("**BUY**"), "BUY")
+        self.assertEqual(self.mod.map_signal("Rating: OVERWEIGHT."), "BUY")
+        self.assertEqual(self.mod.map_signal("Action => underweight!"), "SELL")
+        self.assertEqual(self.mod.map_signal("hOlD (confidence 0.54)"), "HOLD")
+
+    def test_first_label_wins_when_multiple_labels_appear(self):
+        self.assertEqual(self.mod.map_signal("SELL then BUY"), "SELL")
+        self.assertEqual(self.mod.map_signal("Hold / then overweight"), "HOLD")
+
     def test_unknown_or_blank_signal_is_defensive_hold(self):
         self.assertEqual(self.mod.map_signal(""), "HOLD")
         self.assertEqual(self.mod.map_signal("   "), "HOLD")

@@ -15,6 +15,7 @@ Key functions:
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, Optional
 
 import pandas as pd
@@ -31,13 +32,20 @@ _SIGNAL_MAP: Dict[str, str] = {
     "UNDERWEIGHT": "SELL",
     "SELL": "SELL",
 }
+_SIGNAL_PATTERN = re.compile(
+    r"\b(BUY|OVERWEIGHT|HOLD|UNDERWEIGHT|SELL)\b",
+    flags=re.IGNORECASE,
+)
 
 
 def map_signal(raw: Optional[str]) -> str:
-    """Normalize a SignalProcessor output to BUY/HOLD/SELL.
+    """Normalize a raw LLM/SignalProcessor output to BUY/HOLD/SELL.
 
-    SignalProcessor returns one of:
-        BUY, OVERWEIGHT, HOLD, UNDERWEIGHT, SELL
+    SignalProcessor should return one of:
+        BUY, OVERWEIGHT, HOLD, UNDERWEIGHT, SELL.
+    In practice, LLM output can be verbose markdown/text such as
+    "**BUY**" or "Rating: OVERWEIGHT.". We defensively extract the first
+    valid label and map it to the 3-class action space.
 
     run_agent_strategy only accepts:
         BUY, HOLD, SELL
@@ -50,8 +58,13 @@ def map_signal(raw: Optional[str]) -> str:
     """
     if raw is None:
         return "HOLD"
-    cleaned = raw.strip().upper()
-    return _SIGNAL_MAP.get(cleaned, "HOLD")
+    text = str(raw).strip()
+    if not text:
+        return "HOLD"
+    match = _SIGNAL_PATTERN.search(text)
+    if not match:
+        return "HOLD"
+    return _SIGNAL_MAP.get(match.group(1).upper(), "HOLD")
 
 
 def make_decide_fn(
