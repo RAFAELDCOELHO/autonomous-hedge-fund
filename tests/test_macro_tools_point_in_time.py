@@ -96,3 +96,77 @@ def test_trade_date_is_injected_from_graph_state_and_hidden_from_llm():
     out = ToolNode(tools).invoke(state)
     assert "2024-06-11" in out["messages"][0].content
     assert "2024-06-12" not in out["messages"][0].content
+
+
+def test_ipca_year_rollover_december_is_visible_only_from_january_15():
+    rows = _rows(get_inflation.invoke({"trade_date": "2025-01-14", "last_months": 2}))
+    assert rows == ["2024-10-01 00:00:00", "2024-11-01 00:00:00"]
+    rows = _rows(get_inflation.invoke({"trade_date": "2025-01-15", "last_months": 2}))
+    assert rows == ["2024-11-01 00:00:00", "2024-12-01 00:00:00"]
+
+
+def test_gdp_year_rollover_q4_is_visible_only_after_90_days():
+    rows = _rows(get_gdp.invoke({"trade_date": "2025-03-30", "last_quarters": 2}))
+    assert rows == ["2024Q2", "2024Q3"]
+    rows = _rows(get_gdp.invoke({"trade_date": "2025-03-31", "last_quarters": 2}))
+    assert rows == ["2024Q3", "2024Q4"]
+
+
+@pytest.mark.parametrize("tool", [get_selic, get_exchange_rate])
+def test_daily_series_weekend_trade_date_uses_last_business_day(tool):
+    rows = _rows(tool.invoke({"trade_date": "2024-06-16", "last_days": 3}))
+    assert rows == [
+        "2024-06-12 00:00:00",
+        "2024-06-13 00:00:00",
+        "2024-06-14 00:00:00",
+    ]
+
+
+@pytest.mark.parametrize("tool", [get_selic, get_exchange_rate])
+def test_daily_series_holiday_gap_uses_previous_available_business_day(tool, monkeypatch):
+    class _HolidayGapBacen(_FakeBacen):
+        daily = _FakeBacen.daily.drop(pd.Timestamp("2024-06-20"))
+
+    monkeypatch.setattr(macro_tools, "Bacen", _HolidayGapBacen)
+    rows = _rows(tool.invoke({"trade_date": "2024-06-21", "last_days": 2}))
+    assert rows == ["2024-06-18 00:00:00", "2024-06-19 00:00:00"]
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        (get_selic, {"trade_date": "2024-01-01", "last_days": 5}),
+        (get_exchange_rate, {"trade_date": "2024-01-01", "last_days": 5}),
+        (get_inflation, {"trade_date": "2022-01-01", "last_months": 5}),
+        (get_gdp, {"trade_date": "2021-01-01", "last_quarters": 2}),
+    ],
+)
+def test_empty_series_before_cutoff_returns_clear_message(tool, args):
+    out = tool.invoke(args)
+    assert "No data available" in out
+
+
+@pytest.mark.parametrize(
+    "trade_date",
+    ["2024-06-12", "2024-06-15", "2024-06-29", "2025-01-15"],
+)
+def test_no_output_row_leaks_beyond_trade_date_for_multiple_cutoffs(trade_date):
+    cutoff = pd.Timestamp(trade_date)
+
+    for row in _rows(get_selic.invoke({"trade_date": trade_date, "last_days": 30})):
+        assert pd.Timestamp(row) < cutoff
+
+    for row in _rows(get_exchange_rate.invoke({"trade_date": trade_date, "last_days": 30})):
+        assert pd.Timestamp(row) < cutoff
+
+    for row in _rows(get_inflation.invoke({"trade_date": trade_date, "last_months": 24})):
+        month = pd.Timestamp(row)
+        publication = month + pd.DateOffset(months=1, days=macro_tools.IPCA_RELEASE_DAY - 1)
+        assert publication <= cutoff
+
+    gdp_rows = _rows(get_gdp.invoke({"trade_date": trade_date, "last_quarters": 12}))
+    for row in gdp_rows:
+        assert row == str(pd.Period(row, freq="Q"))
+        quarter = pd.Period(row, freq="Q")
+        publication = quarter.end_time.normalize() + pd.Timedelta(days=macro_tools.GDP_LAG_DAYS)
+        assert publication <= cutoff
