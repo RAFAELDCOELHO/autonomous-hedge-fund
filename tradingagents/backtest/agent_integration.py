@@ -30,10 +30,25 @@ _SIGNAL_MAP: Dict[str, str] = {
     "UNDERWEIGHT": "SELL",
     "SELL": "SELL",
 }
-_SIGNAL_PATTERN = re.compile(
-    r"\b(BUY|OVERWEIGHT|HOLD|UNDERWEIGHT|SELL)\b",
-    flags=re.IGNORECASE,
+
+_TEXT_SIGNAL_PATTERN = re.compile(
+    r"\b(?P<buy>OVER\s+WEIGHT|OVERWEIGHT|BUY(?:ING)?)\b"
+    r"|\b(?P<hold>HOLD(?:ING)?)\b"
+    r"|\b(?P<sell>UNDER\s+WEIGHT|UNDERWEIGHT|SELL(?:ING)?)\b"
 )
+_NEGATION_PATTERN = re.compile(
+    r"\b(?:DO\s+NOT|DON'T|DONT|NOT|NO|NEVER|AVOID|AVOIDING)\b"
+    r"(?:\s+[A-Z']+){0,2}\s*$"
+)
+
+
+def _is_negated_label(text: str, label_start: int) -> bool:
+    """Return True when a short negation appears right before a label."""
+    # Keep the check local to the current clause, then inspect only a short
+    # window of words before the label to stay lightweight and predictable.
+    clause_start = max(text.rfind(ch, 0, label_start) for ch in ".!?;\n")
+    local_prefix = text[clause_start + 1 : label_start]
+    return _NEGATION_PATTERN.search(local_prefix) is not None
 
 
 def map_signal(raw: Optional[str]) -> str:
@@ -56,13 +71,24 @@ def map_signal(raw: Optional[str]) -> str:
     """
     if raw is None:
         return "HOLD"
-    text = str(raw).strip()
-    if not text:
+    cleaned = raw.strip().upper()
+    if not cleaned:
         return "HOLD"
-    match = _SIGNAL_PATTERN.search(text)
-    if not match:
+
+    mapped = _SIGNAL_MAP.get(cleaned)
+    if mapped is not None:
+        return mapped
+
+    normalized_text = cleaned.replace("_", " ").replace("-", " ")
+    for match in _TEXT_SIGNAL_PATTERN.finditer(normalized_text):
+        if _is_negated_label(normalized_text, match.start()):
+            continue
+        if match.lastgroup == "buy":
+            return "BUY"
+        if match.lastgroup == "sell":
+            return "SELL"
         return "HOLD"
-    return _SIGNAL_MAP.get(match.group(1).upper(), "HOLD")
+    return "HOLD"
 
 
 def make_decide_fn(

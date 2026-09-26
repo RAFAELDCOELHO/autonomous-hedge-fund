@@ -85,10 +85,26 @@ class MapSignalTests(unittest.TestCase):
         self.assertEqual(self.mod.map_signal("SELL then BUY"), "SELL")
         self.assertEqual(self.mod.map_signal("Hold / then overweight"), "HOLD")
 
+    def test_underscore_and_hyphen_are_treated_like_spaces(self):
+        self.assertEqual(self.mod.map_signal("STRONG_BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("STRONG-BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("under-weight"), "SELL")
+
+    def test_negated_labels_are_ignored(self):
+        self.assertEqual(self.mod.map_signal("do not BUY"), "HOLD")
+        self.assertEqual(self.mod.map_signal("don't sell"), "HOLD")
+        self.assertEqual(self.mod.map_signal("not a buy"), "HOLD")
+        self.assertEqual(self.mod.map_signal("avoid buying"), "HOLD")
+        self.assertEqual(self.mod.map_signal("no BUY"), "HOLD")
+
+    def test_negated_label_falls_through_to_next_valid_label(self):
+        self.assertEqual(self.mod.map_signal("do not BUY, SELL"), "SELL")
+        self.assertEqual(self.mod.map_signal("FINAL: HOLD, not SELL"), "HOLD")
+
     def test_unknown_or_blank_signal_is_defensive_hold(self):
         self.assertEqual(self.mod.map_signal(""), "HOLD")
         self.assertEqual(self.mod.map_signal("   "), "HOLD")
-        self.assertEqual(self.mod.map_signal("STRONG_BUY"), "HOLD")
+        self.assertEqual(self.mod.map_signal("WAIT"), "HOLD")
 
 
 if __name__ == "__main__":
