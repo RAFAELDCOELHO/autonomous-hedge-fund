@@ -143,7 +143,7 @@ def test_daily_series_holiday_gap_uses_previous_available_business_day(tool, mon
 )
 def test_empty_series_before_cutoff_returns_clear_message(tool, args):
     out = tool.invoke(args)
-    assert "No data available" in out
+    assert out == f"No data available before trade_date={args['trade_date']}."
 
 
 @pytest.mark.parametrize(
