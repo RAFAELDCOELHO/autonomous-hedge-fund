@@ -37,7 +37,8 @@ dependencies = [
     "einops>=0.8.2",
     "safetensors>=0.7.0",
     "python-dotenv>=1.1.0",
-    "brazilfi>=0.2.1",
+    "brazilfi>=0.2.1,<0.4",
+    "tabulate>=0.10.0",
 ]
 
 [project.urls]
