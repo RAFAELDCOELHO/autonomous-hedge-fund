@@ -15,11 +15,10 @@ Key functions:
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, Optional
 
 import pandas as pd
-
-from tradingagents.graph.trading_graph import TradingAgentsGraph
 
 from .runner import run_agent_strategy
 
@@ -32,12 +31,40 @@ _SIGNAL_MAP: Dict[str, str] = {
     "SELL": "SELL",
 }
 
+_TEXT_SIGNAL_PATTERN = re.compile(
+    r"\b(?P<buy>OVER\s+WEIGHT|OVERWEIGHT|BUY)\b"
+    r"|\b(?P<hold>HOLD)\b"
+    r"|\b(?P<sell>UNDER\s+WEIGHT|UNDERWEIGHT|SELL)\b"
+)
+_LABEL_BOUNDARY_PATTERN = re.compile(r"[.!?;:\n]|(?:\s-\s)")
+_NON_NEGATING_PHRASES_PATTERN = re.compile(
+    r"(?:\bNO\s+DOUBT\b|\bNOT\s+ONLY\b|\bNO\s+REASON\s+NOT\s+TO\b)\s*$"
+)
+_NEGATION_PATTERN = re.compile(
+    r"\b(?:DO\s+NOT|DON['’]?T|CANNOT|CAN['’]?T|NOT|NO|NEVER|AVOID)\b"
+    r"(?:\s+[A-Z'’]+){0,2}\s*$"
+)
+
+
+def _is_negated_label(text: str, label_start: int, previous_label_end: int) -> bool:
+    """Return True when a short negation appears right before a label."""
+    window_start = previous_label_end
+    for boundary_match in _LABEL_BOUNDARY_PATTERN.finditer(text, previous_label_end, label_start):
+        window_start = boundary_match.end()
+    local_prefix = text[window_start:label_start]
+    if _NON_NEGATING_PHRASES_PATTERN.search(local_prefix):
+        return False
+    return _NEGATION_PATTERN.search(local_prefix) is not None
+
 
 def map_signal(raw: Optional[str]) -> str:
-    """Normalize a SignalProcessor output to BUY/HOLD/SELL.
+    """Normalize a raw LLM/SignalProcessor output to BUY/HOLD/SELL.
 
-    SignalProcessor returns one of:
-        BUY, OVERWEIGHT, HOLD, UNDERWEIGHT, SELL
+    SignalProcessor should return one of:
+        BUY, OVERWEIGHT, HOLD, UNDERWEIGHT, SELL.
+    In practice, LLM output can be verbose markdown/text such as
+    "**BUY**" or "Rating: OVERWEIGHT.". We defensively extract the first
+    valid label and map it to the 3-class action space.
 
     run_agent_strategy only accepts:
         BUY, HOLD, SELL
@@ -50,8 +77,27 @@ def map_signal(raw: Optional[str]) -> str:
     """
     if raw is None:
         return "HOLD"
-    cleaned = raw.strip().upper()
-    return _SIGNAL_MAP.get(cleaned, "HOLD")
+    cleaned = str(raw).strip().upper()
+    if not cleaned:
+        return "HOLD"
+
+    mapped = _SIGNAL_MAP.get(cleaned)
+    if mapped is not None:
+        return mapped
+
+    normalized_text = cleaned.replace("_", " ")
+    normalized_text = re.sub(r"(?<=[A-Z])-(?=[A-Z])", " ", normalized_text)
+    previous_label_end = 0
+    for match in _TEXT_SIGNAL_PATTERN.finditer(normalized_text):
+        if _is_negated_label(normalized_text, match.start(), previous_label_end):
+            previous_label_end = match.end()
+            continue
+        if match.lastgroup == "buy":
+            return "BUY"
+        if match.lastgroup == "sell":
+            return "SELL"
+        return "HOLD"
+    return "HOLD"
 
 
 def make_decide_fn(
@@ -83,6 +129,8 @@ def make_decide_fn(
         A decide_fn closure suitable for run_agent_strategy.
     """
     if propagate_fn is None:
+        from tradingagents.graph.trading_graph import TradingAgentsGraph
+
         ta = TradingAgentsGraph(debug=debug, config=config)
         _propagate = ta.propagate
     else:

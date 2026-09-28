@@ -75,10 +75,63 @@ class MapSignalTests(unittest.TestCase):
         self.assertEqual(self.mod.map_signal("  overweight "), "BUY")
         self.assertEqual(self.mod.map_signal("\nUnderWeight\t"), "SELL")
 
+    def test_verbose_outputs_extract_first_valid_label(self):
+        self.assertEqual(self.mod.map_signal("**BUY**"), "BUY")
+        self.assertEqual(self.mod.map_signal("Rating: OVERWEIGHT."), "BUY")
+        self.assertEqual(self.mod.map_signal("Action => underweight!"), "SELL")
+        self.assertEqual(self.mod.map_signal("hOlD (confidence 0.54)"), "HOLD")
+
+    def test_first_label_wins_when_multiple_labels_appear(self):
+        self.assertEqual(self.mod.map_signal("SELL then BUY"), "SELL")
+        self.assertEqual(self.mod.map_signal("Hold / then overweight"), "HOLD")
+
+    def test_underscore_and_hyphen_are_treated_like_spaces(self):
+        self.assertEqual(self.mod.map_signal("STRONG_BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("STRONG-BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("under-weight"), "SELL")
+
+    def test_negated_labels_are_ignored(self):
+        self.assertEqual(self.mod.map_signal("do not BUY"), "HOLD")
+        self.assertEqual(self.mod.map_signal("don't sell"), "HOLD")
+        self.assertEqual(self.mod.map_signal("don’t sell"), "HOLD")
+        self.assertEqual(self.mod.map_signal("cannot BUY"), "HOLD")
+        self.assertEqual(self.mod.map_signal("can’t SELL"), "HOLD")
+        self.assertEqual(self.mod.map_signal("not a buy"), "HOLD")
+        self.assertEqual(self.mod.map_signal("avoid BUY"), "HOLD")
+        self.assertEqual(self.mod.map_signal("no BUY"), "HOLD")
+
+    def test_negated_label_falls_through_to_next_valid_label(self):
+        self.assertEqual(self.mod.map_signal("do not BUY, SELL"), "SELL")
+        self.assertEqual(self.mod.map_signal("FINAL: HOLD, not SELL"), "HOLD")
+        self.assertEqual(self.mod.map_signal("NOT A HOLD - SELL"), "SELL")
+        self.assertEqual(self.mod.map_signal("Not a SELL, not a HOLD - BUY"), "BUY")
+
+    def test_idioms_and_double_negation_are_not_treated_as_negation(self):
+        self.assertEqual(self.mod.map_signal("no doubt BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("not only BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("no reason not to BUY"), "BUY")
+
+    def test_ing_words_are_not_signal_labels(self):
+        self.assertEqual(self.mod.map_signal("Buying the dip is risky. SELL"), "SELL")
+        self.assertEqual(self.mod.map_signal("Selling pressure eased; BUY"), "BUY")
+        self.assertEqual(
+            self.mod.map_signal("Insider buying noted. Rating: HOLD"), "HOLD"
+        )
+        self.assertEqual(self.mod.map_signal("Still holding for now. SELL"), "SELL")
+
+    def test_non_text_inputs_do_not_raise_and_fallback_reasonably(self):
+        self.assertEqual(self.mod.map_signal(None), "HOLD")
+        self.assertEqual(self.mod.map_signal([]), "HOLD")
+        self.assertEqual(self.mod.map_signal({}), "HOLD")
+        self.assertEqual(self.mod.map_signal(42), "HOLD")
+
+    def test_loose_hyphen_keeps_following_label_searchable(self):
+        self.assertEqual(self.mod.map_signal(" - SELL"), "SELL")
+
     def test_unknown_or_blank_signal_is_defensive_hold(self):
         self.assertEqual(self.mod.map_signal(""), "HOLD")
         self.assertEqual(self.mod.map_signal("   "), "HOLD")
-        self.assertEqual(self.mod.map_signal("STRONG_BUY"), "HOLD")
+        self.assertEqual(self.mod.map_signal("WAIT"), "HOLD")
 
 
 if __name__ == "__main__":

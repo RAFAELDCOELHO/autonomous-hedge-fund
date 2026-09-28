@@ -104,6 +104,25 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(len(eq), 20)
         self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * (119.0 / 100.0), places=2)
 
+    def test_run_strategy_warms_indicators_before_window(self):
+        prices = _linear_prices(400, start=100.0, step=0.5)
+        start, end = prices.index[300], prices.index[359]
+        warmed = prices.loc[:end, "Close"]
+        for n in (26, 50, 200):
+            self.assertFalse(warmed.rolling(n).mean().loc[start:].isna().any())
+        self.assertTrue(prices.loc[start:end, "Close"].rolling(200).mean().isna().all())
+
+        ret = prices.loc[end, "Close"] / prices.loc[start, "Close"]
+        df = prices.rename_axis("Date").reset_index()
+        with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
+            for strategy in (BuyAndHold(), SMACrossStrategy(), MACDStrategy()):
+                eq = run_strategy(strategy, "X", str(start.date()), str(end.date()), 1_000.0)
+                self.assertEqual(eq.index[0], start)
+                self.assertEqual(eq.index[-1], end)
+                self.assertEqual(len(eq), 60)
+                self.assertAlmostEqual(eq.iloc[0], 1_000.0)
+                self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * ret, places=6)
+
     def test_run_agent_strategy_full_position(self):
         prices = _linear_prices(10, start=100.0, step=1.0)
         with patch("tradingagents.backtest.runner.load_ohlcv") as load:

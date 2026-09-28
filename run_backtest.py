@@ -23,6 +23,7 @@ from tradingagents.backtest import (
     run_strategy,
     run_agent_strategy,
 )
+from tradingagents.backtest.agent_integration import map_signal
 
 
 def _run_agent_decider(ticker: str, start: str, end: str, capital: float):
@@ -41,10 +42,7 @@ def _run_agent_decider(ticker: str, start: str, end: str, capital: float):
     def decide(curr_date: str, _prices):
         try:
             _, signal = graph.propagate(ticker, curr_date)
-            action = (signal or "HOLD").upper()
-            if action not in {"BUY", "SELL", "HOLD"}:
-                action = "HOLD"
-            return action
+            return map_signal(signal)
         except Exception as e:
             logging.warning("Agent decision failed on %s: %s", curr_date, e)
             return "HOLD"
