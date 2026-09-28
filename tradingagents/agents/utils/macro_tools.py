@@ -30,6 +30,12 @@ IPCA_RELEASE_DAY = 15
 GDP_LAG_DAYS = 90
 
 
+def _render(df: pd.DataFrame, trade_date: str) -> str:
+    if df.empty:
+        return f"No data available before trade_date={trade_date}."
+    return df.to_markdown()
+
+
 def _daily_before(fetch, trade_date: str, last_days: int) -> pd.DataFrame:
     cutoff = pd.Timestamp(trade_date)
     start = cutoff - pd.Timedelta(days=2 * last_days + 10)
@@ -52,9 +58,10 @@ def get_selic(trade_date: TradeDate, last_days: int = 90) -> str:
         last_days: Number of most recent business days to retrieve. Default 90.
 
     Returns:
-        Markdown-formatted table with date and daily SELIC rate (in percent).
+        Markdown-formatted table with date and daily SELIC rate (in percent),
+        or a clear no-data message if nothing is available before trade_date.
     """
-    return _daily_before(Bacen().selic, trade_date, last_days).to_markdown()
+    return _render(_daily_before(Bacen().selic, trade_date, last_days), trade_date)
 
 
 @tool
@@ -76,13 +83,14 @@ def get_inflation(trade_date: TradeDate, last_months: int = 12) -> str:
 
     Returns:
         Markdown-formatted table with date (first day of each month) and
-        monthly inflation rate (in percent).
+        monthly inflation rate (in percent), or a clear no-data message if
+        nothing is available before trade_date.
     """
     cutoff = pd.Timestamp(trade_date)
     start = cutoff - pd.DateOffset(months=last_months + 3)
     df = Bacen().ipca(start=start.date(), end=cutoff.date()).to_dataframe()
     published = df.index + pd.DateOffset(months=1, days=IPCA_RELEASE_DAY - 1)
-    return df[published <= cutoff].tail(last_months).to_markdown()
+    return _render(df[published <= cutoff].tail(last_months), trade_date)
 
 
 @tool
@@ -103,10 +111,11 @@ def get_gdp(trade_date: TradeDate, last_quarters: int = 8) -> str:
         last_quarters: Number of most recent quarters to retrieve. Default 8 (two years).
 
     Returns:
-        Markdown-formatted table with quarterly GDP data, indexed by quarter.
+        Markdown-formatted table with quarterly GDP data, indexed by quarter,
+        or a clear no-data message if nothing is available before trade_date.
     """
     cutoff = pd.Timestamp(trade_date)
-    n =last_quarters + (pd.Timestamp.today() - cutoff).days // 90 + 2
+    n = last_quarters + (pd.Timestamp.today() - cutoff).days // 90 + 2
     df = IBGE().pib(last=max(n, last_quarters)).to_dataframe()
     quarters = pd.PeriodIndex(
         [pd.Period(year=d.year, quarter=d.month, freq="Q") for d in df.index],
@@ -114,7 +123,7 @@ def get_gdp(trade_date: TradeDate, last_quarters: int = 8) -> str:
     )
     published = quarters.end_time.normalize() + pd.Timedelta(days=GDP_LAG_DAYS)
     df = df.set_axis(quarters.astype(str))
-    return df[published <= cutoff].tail(last_quarters).to_markdown()
+    return _render(df[published <= cutoff].tail(last_quarters), trade_date)
 
 
 @tool
@@ -134,6 +143,7 @@ def get_exchange_rate(trade_date: TradeDate, last_days: int = 90) -> str:
         last_days: Number of most recent business days to retrieve. Default 90.
 
     Returns:
-        Markdown-formatted table with date and BRL per USD.
+        Markdown-formatted table with date and BRL per USD, or a clear
+        no-data message if nothing is available before trade_date.
     """
-    return _daily_before(Bacen().dolar, trade_date, last_days).to_markdown()
+    return _render(_daily_before(Bacen().dolar, trade_date, last_days), trade_date)
