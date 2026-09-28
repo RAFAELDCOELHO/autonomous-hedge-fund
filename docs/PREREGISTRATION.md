@@ -7,7 +7,7 @@
 | Scope | Phase 2 factorial experiment (ROADMAP.md), PAPER.md §5 and §8 |
 | Analysis code | [`scripts/h1_stats.py`](../scripts/h1_stats.py), tests in [`tests/test_h1_stats.py`](../tests/test_h1_stats.py) |
 
-This document fixes how H1 will be tested **before** any factorial run. PAPER.md §8 says the word "significantly" in H1 has no pre-registered criterion yet. This document supplies one. Nothing here is a result. None of the choices below is approved until the author signs off. Every choice that still needs the author is listed in [Decisões em aberto para o autor](#decisões-em-aberto-para-o-autor). Once the author signs off, record the sign-off commit hash below. Any later change must be logged in the amendment log, with the reason and date, before data are seen.
+This document fixes how H1 will be tested **before** any factorial run. PAPER.md §8 says the word "significantly" in H1 has no pre-registered criterion yet. This document supplies one. Nothing here is a result. Decisions 1–13 were accepted by the author on 2026-09-28 and are recorded in [Decisões tomadas (2026-09-28)](#decisões-tomadas-2026-09-28). Item 14 (formal sign-off with commit hash) is still pending. Once the author signs off, record the sign-off commit hash below. Any later change must be logged in the amendment log, with the reason and date, before data are seen.
 
 Sign-off commit: _not signed_.
 
@@ -66,8 +66,13 @@ Each run is scored with the harness Sharpe definition (`tradingagents/backtest/m
 - **Alignment and no look-ahead:** rf for the return ending on day t uses only rates dated t−1 or earlier.
 - **Annualization:** √252 for both markets. The B3 calendar has slightly fewer sessions per year, but 252 is kept as the harness convention for both. This only rescales Sharpe within a market and cannot change the sign of any Δ_t.
 - **Cash earns the risk-free rate.** On days the strategy holds cash, the portfolio return is rf_t, so its excess return is exactly 0. Without this rule, an all-cash run under a time-varying SELIC-level rf would get a large negative Sharpe driven by rf noise alone.
+- **Committed rf fixtures (snapshots):**
+  - `data/rf/bcb_sgs_12_cdi_daily_2023-12-01_2024-04-30.csv` (BCB SGS 12 API)
+  - `data/rf/fred_dtb3_2023-12-01_2024-04-30.csv` (FRED fredgraph CSV)
+  - `data/rf/SHA256SUMS` (SHA-256 checksums for both files)
+  - Download metadata (source URL, date, interval): `data/rf/README.md`
 
-**Implementation prerequisites (not done by this document).** Today the harness takes a scalar `annual_rf_rate` (`ExtendedMetricsCalculator`), and cash earns 0 in `run_agent_strategy`. Both must change before execution, and the rf series must be committed as fixtures. `scripts/h1_stats.py` consumes precomputed Sharpe values. It enforces the rf choice only through the `rf_source` column.
+**Implementation prerequisites (not done by this document).** Today the harness takes a scalar `annual_rf_rate` (`ExtendedMetricsCalculator`), and cash earns 0 in `run_agent_strategy`. The runner-level implementation of "cash earns rf" is deferred to P3.7; this document only records the decision. `scripts/h1_stats.py` consumes precomputed Sharpe values. It enforces the rf choice only through the `rf_source` column.
 
 ## 4. Data contract: `cells.csv`
 
@@ -102,6 +107,7 @@ The rules are applied in this order. Every exclusion is counted and reported by 
 | E5 | fewer than 3 valid runs in **either** arm of a ticker: the ticker is dropped from all analyses, both arms | `ticker_dropped` |
 
 - **Re-runs.** A run excluded under E1 or E4 because of infrastructure failure (API outage, rate limit, network) may be re-run **once** under a new, previously unused seed index. The failed row stays in `cells.csv`. Runs that completed and passed E1–E4 are never re-run or replaced.
+- **Note on `n_days == 0`.** Because exclusions are applied in order, rows with `n_days == 0` are typically captured by E3 (`truncated`) as long as the ticker has any longer valid run.
 - **Missing market data** (a ticker's price series is unavailable for the window) removes the ticker from both arms through E5 and is reported.
 - **Reduced primary test.** If E5 drops tickers, the primary test runs on the remaining tickers with the same procedure. The number of relabelings and the minimum attainable p are reported. With 5 BR + 2 US tickers the minimum p is 1/21 ≈ 0.048, so the test can still reject. With one US ticker left it cannot reject at α = 0.05, and that outcome is reported as **"não rejeitado (sem poder)"**.
 - No other data-dependent exclusion (e.g. outlier Sharpe) is permitted.
@@ -135,7 +141,12 @@ These tests condition on the tickers studied, so they support claims about *thes
 | ID | Statistic | Alternative | Question |
 |---|---|---|---|
 | S1 | mean Δ_t over BR macro-sensitive tickers | one-sided, > 0 | Does the Macro Agent improve Sharpe on BR macro-sensitive names at all? |
-| S2 | mean Δ_t over US tickers | two-sided, ≠ 0 | Does the Brazil-specific macro context help or hurt US names? (PAPER.md §5 predicts ≈ 0). Computed exactly as \(p_{S2}=(1+\#\{|T^*|\ge|T_{obs}|-10^{-12}\})/(10{,}000+1)\). |
+| S2 | mean Δ_t over US tickers | two-sided, ≠ 0 | Does the Brazil-specific macro context help or hurt US names? (PAPER.md §5 predicts ≈ 0). |
+
+Monte Carlo p-values (10,000 resamples) are computed as:
+
+- \(p_{S1}=(1+\#\{T^* \ge T_{obs}-10^{-12}\})/(10{,}000+1)\)
+- \(p_{S2}=(1+\#\{|T^*| \ge |T_{obs}|-10^{-12}\})/(10{,}000+1)\)
 
 Holm's step-down correction is applied across the evaluable subset of {S1, S2} at family-wise α = 0.05, and adjusted p-values are reported. If only one secondary test is evaluable, Holm uses \(m=1\), so \(p_{Holm}=p_{raw}\) for that test. The primary test is not part of this family: it is tested alone at α = 0.05. The paper's §7 patterns map to these tests as follows. Pattern (a) is primary rejected and S1 rejected. Pattern (b) is S1 and S2 both positive with the primary not rejected. Pattern (c) is S1 not rejected.
 
@@ -162,27 +173,28 @@ uv run python scripts/h1_stats.py path/to/cells.csv --out path/to/h1_result.json
 
 It is offline and deterministic: repeated runs on the same `cells.csv` produce byte-identical JSON. The constants above (α, 3 minimum seeds, 5% error threshold, 10,000 resamples, seed 20260925, ticker groups, rf sources) are module constants with no CLI flag, so the analysis cannot be tuned after the data are in.
 
-## Decisões em aberto para o autor
+## Decisões tomadas (2026-09-28)
 
-None of these has been approved. Each needs an explicit decision by the author (Rafa) before sign-off. The values in this draft are proposals.
+As decisões 1–13 foram aceitas pelo autor conforme as recomendações deste documento e estão refletidas em `scripts/h1_stats.py`.
 
-1. **Primary test.** Should the primary test be the ticker-level exact permutation (§6.1: conservative, min p ≈ 0.018, inference about markets)? The alternative is a pooled run-level test that conditions on the tickers (more power, narrower claim). The ROADMAP previously named "t-test on ΔSharpe", which this draft replaces.
-2. **Primary contrast.** D uses BR macro-sensitive tickers (RADL3 excluded) vs US, following PAPER.md §5. Alternative: all 6 BR tickers vs US.
-3. **Direction.** One-sided primary (D > 0). Should it be two-sided instead?
-4. **α.** 0.05 for the primary test and 0.05 family-wise (Holm) for S1/S2.
-5. **Secondary family.** Should S1/S2 be exactly these two tests, and should S2 be two-sided?
-6. **Seeds.** 5 replicates per ticker × arm (90 runs, about 5,400 decisions, about 92k–135k LLM calls). This depends on budget and Claude rate limits.
-7. **Model pin and sampling settings.** Which Claude model IDs (deep- and quick-think), temperature, and number of debate / risk rounds, fixed across all runs.
-8. **Window endpoints.** Exact first and last trading day for Jan–Mar 2024 in each market (proposed 2024-01-02 to 2024-03-28; B3 Carnival and Good Friday closures follow each exchange's calendar).
-9. **Brazil rf series.** CDI (SGS 12) vs SELIC over (SGS 11). They differ by a few basis points; CDI is proposed because it is the standard Brazilian cash benchmark.
-10. **US rf series and conversion.** DTB3 with the (1 + y)^(1/252) conversion, ignoring discount vs bond-equivalent basis.
-11. **Cash earns rf.** A harness change is required. The alternative is to keep cash at 0 and accept rf-driven Sharpe noise.
-12. **Exclusion thresholds.** The 5% decision-error threshold (E4), minimum 3 valid seeds (E5), and one re-run per infrastructure failure.
-13. **Annualization.** √252 for both markets.
-14. **Sign-off.** Once the items above are settled, set the status to "signed off", record the commit hash, and commit before the first factorial run.
+1. **Primary test:** ticker-level exact one-sided permutation on market labels (§6.1), not pooled run-level testing.
+2. **Primary contrast:** BR macro-sensitive tickers vs US; RADL3 remains excluded from the primary contrast.
+3. **Direction:** one-sided primary alternative \(D > 0\).
+4. **α levels:** 0.05 for the primary test and 0.05 family-wise for S1/S2 with Holm.
+5. **Secondary family:** S1 and S2 exactly as specified; S2 remains two-sided.
+6. **Seeds:** 5 replicates per ticker × arm (target 90 runs total).
+7. **Model/sampling pinning:** model IDs and sampling settings are fixed across all runs (deep-think/quick-think IDs, temperature, rounds).
+8. **Window endpoints:** Jan–Mar 2024 trading-window endpoints as specified (proposed 2024-01-02 to 2024-03-28, per market calendar).
+9. **Brazil rf series:** CDI daily, BCB SGS 12.
+10. **US rf series/conversion:** FRED DTB3 with \(rf_t=(1+DTB3_{t-1}/100)^{1/252}-1\), ignoring discount vs bond-equivalent basis.
+11. **Cash handling:** cash earns the risk-free rate (runner implementation deferred to P3.7; this document records the decision).
+12. **Exclusion thresholds:** keep E4/E5 thresholds and one re-run policy for infrastructure failures.
+13. **Annualization:** \(\sqrt{252}\) for both markets.
+14. **Sign-off:** still pending. Keep status as draft and record the sign-off commit hash only after formal author sign-off.
 
 ## Amendment log
 
 | Date | Change | Reason |
 |---|---|---|
 | 2026-09-25 | Initial draft | P3.3 |
+| 2026-09-28 | Decisions 1–13 marked as accepted; open-decision section replaced by decided list; committed rf snapshot files/checksums referenced | Author approval of recommended prereg choices |
