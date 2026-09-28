@@ -30,10 +30,31 @@ _SIGNAL_MAP: Dict[str, str] = {
     "UNDERWEIGHT": "SELL",
     "SELL": "SELL",
 }
-_SIGNAL_PATTERN = re.compile(
-    r"\b(BUY|OVERWEIGHT|HOLD|UNDERWEIGHT|SELL)\b",
-    flags=re.IGNORECASE,
+
+_TEXT_SIGNAL_PATTERN = re.compile(
+    r"\b(?P<buy>OVER\s+WEIGHT|OVERWEIGHT|BUY)\b"
+    r"|\b(?P<hold>HOLD)\b"
+    r"|\b(?P<sell>UNDER\s+WEIGHT|UNDERWEIGHT|SELL)\b"
 )
+_LABEL_BOUNDARY_PATTERN = re.compile(r"[.!?;:\n]|(?:\s-\s)")
+_NON_NEGATING_PHRASES_PATTERN = re.compile(
+    r"(?:\bNO\s+DOUBT\b|\bNOT\s+ONLY\b|\bNO\s+REASON\s+NOT\s+TO\b)\s*$"
+)
+_NEGATION_PATTERN = re.compile(
+    r"\b(?:DO\s+NOT|DON['’]?T|CANNOT|CAN['’]?T|NOT|NO|NEVER|AVOID)\b"
+    r"(?:\s+[A-Z'’]+){0,2}\s*$"
+)
+
+
+def _is_negated_label(text: str, label_start: int, previous_label_end: int) -> bool:
+    """Return True when a short negation appears right before a label."""
+    window_start = previous_label_end
+    for boundary_match in _LABEL_BOUNDARY_PATTERN.finditer(text, previous_label_end, label_start):
+        window_start = boundary_match.end()
+    local_prefix = text[window_start:label_start]
+    if _NON_NEGATING_PHRASES_PATTERN.search(local_prefix):
+        return False
+    return _NEGATION_PATTERN.search(local_prefix) is not None
 
 
 def map_signal(raw: Optional[str]) -> str:
@@ -56,13 +77,27 @@ def map_signal(raw: Optional[str]) -> str:
     """
     if raw is None:
         return "HOLD"
-    text = str(raw).strip()
-    if not text:
+    cleaned = str(raw).strip().upper()
+    if not cleaned:
         return "HOLD"
-    match = _SIGNAL_PATTERN.search(text)
-    if not match:
+
+    mapped = _SIGNAL_MAP.get(cleaned)
+    if mapped is not None:
+        return mapped
+
+    normalized_text = cleaned.replace("_", " ")
+    normalized_text = re.sub(r"(?<=[A-Z])-(?=[A-Z])", " ", normalized_text)
+    previous_label_end = 0
+    for match in _TEXT_SIGNAL_PATTERN.finditer(normalized_text):
+        if _is_negated_label(normalized_text, match.start(), previous_label_end):
+            previous_label_end = match.end()
+            continue
+        if match.lastgroup == "buy":
+            return "BUY"
+        if match.lastgroup == "sell":
+            return "SELL"
         return "HOLD"
-    return _SIGNAL_MAP.get(match.group(1).upper(), "HOLD")
+    return "HOLD"
 
 
 def make_decide_fn(
