@@ -31,7 +31,8 @@ def test_run_backtest_uses_map_signal_for_verbose_llm_output():
 
     captured = {}
 
-    def fake_runner(decide_fn, ticker, start, end, capital):
+    def fake_runner(decide_fn, ticker, start, end, capital, market=None):
+        captured["market"] = market
         captured["decision"] = decide_fn("2024-01-03", None)
         captured["args"] = (ticker, start, end, capital)
         return "equity-curve"
@@ -49,6 +50,7 @@ def test_run_backtest_uses_map_signal_for_verbose_llm_output():
     assert result == "equity-curve"
     assert captured["decision"] == "BUY"
     assert captured["args"] == ("AAPL", "2024-01-01", "2024-01-31", 100_000.0)
+    assert captured["market"] == "US"
 
 
 def test_run_backtest_defaults_to_hold_for_unrecognized_verbose_signal():
@@ -62,7 +64,8 @@ def test_run_backtest_defaults_to_hold_for_unrecognized_verbose_signal():
 
     captured = {}
 
-    def fake_runner(decide_fn, ticker, start, end, capital):
+    def fake_runner(decide_fn, ticker, start, end, capital, market=None):
+        captured["market"] = market
         captured["decision"] = decide_fn("2024-01-03", None)
         captured["args"] = (ticker, start, end, capital)
         return "equity-curve"
@@ -80,6 +83,7 @@ def test_run_backtest_defaults_to_hold_for_unrecognized_verbose_signal():
     assert result == "equity-curve"
     assert captured["decision"] == "HOLD"
     assert captured["args"] == ("AAPL", "2024-01-01", "2024-01-31", 100_000.0)
+    assert captured["market"] == "US"
 
 
 def test_run_backtest_returns_none_when_graph_import_unavailable():

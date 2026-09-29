@@ -2,10 +2,14 @@
 
 Compares Buy & Hold, MACD(12/26/9), SMA(50/200), and (optionally) the
 TradingAgents pipeline over a single-ticker window. Prints a rich table
-of CR / AR / Sharpe / MDD.
+of CR / AR / Sharpe / MDD. The TradingAgents arm's cash earns the market's
+daily rf (CDI for .SA tickers, DTB3 otherwise) from the committed data/rf/
+snapshots, so the agent window must lie inside the snapshot coverage
+(2023-12-01..2024-04-30); outside it daily_rf raises before any agent call
+(no zero-fill). print_comparison still shows Sharpe at the flat exploratory rf.
 
 Usage:
-    uv run python run_backtest.py --ticker AAPL --start 2023-01-01 --end 2024-01-01
+    uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
     uv run python run_backtest.py --ticker AAPL --start 2023-01-01 --end 2024-01-01 --skip-agents
 """
 
@@ -24,6 +28,7 @@ from tradingagents.backtest import (
     run_agent_strategy,
 )
 from tradingagents.backtest.agent_integration import map_signal
+from tradingagents.backtest.risk_free import market_of
 
 
 def _run_agent_decider(ticker: str, start: str, end: str, capital: float):
@@ -47,7 +52,7 @@ def _run_agent_decider(ticker: str, start: str, end: str, capital: float):
             logging.warning("Agent decision failed on %s: %s", curr_date, e)
             return "HOLD"
 
-    return run_agent_strategy(decide, ticker, start, end, capital)
+    return run_agent_strategy(decide, ticker, start, end, capital, market=market_of(ticker))
 
 
 def main(argv=None) -> int:
