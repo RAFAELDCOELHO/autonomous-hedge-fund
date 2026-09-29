@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import types
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -101,3 +101,41 @@ def test_run_backtest_returns_none_when_graph_import_unavailable():
         )
 
     assert result is None
+
+
+def test_run_backtest_propagate_exception_returns_hold_and_continues():
+    run_backtest = _load_module()
+
+    class FakeGraph:
+        def __init__(self, *args, **kwargs):
+            self.calls = 0
+
+        def propagate(self, ticker: str, curr_date: str):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("temporary model failure")
+            return {}, "BUY"
+
+    captured = {}
+
+    def fake_runner(decide_fn, ticker, start, end, capital):
+        captured["day1"] = decide_fn("2024-01-03", None)
+        captured["day2"] = decide_fn("2024-01-04", None)
+        captured["args"] = (ticker, start, end, capital)
+        return "equity-curve"
+
+    with patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch.object(
+        run_backtest, "run_agent_strategy", side_effect=fake_runner
+    ), patch.object(run_backtest.logging, "warning") as warn_mock:
+        result = run_backtest._run_agent_decider(
+            ticker="AAPL",
+            start="2024-01-01",
+            end="2024-01-31",
+            capital=100_000.0,
+        )
+
+    assert result == "equity-curve"
+    assert captured["day1"] == "HOLD"
+    assert captured["day2"] == "BUY"
+    assert captured["args"] == ("AAPL", "2024-01-01", "2024-01-31", 100_000.0)
+    warn_mock.assert_any_call("Agent decision failed on %s: %s", "2024-01-03", ANY)

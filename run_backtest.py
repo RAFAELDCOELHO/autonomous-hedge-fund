@@ -67,7 +67,14 @@ def _run_agent_decider(
         logging.warning("TradingAgents pipeline unavailable (%s)", e)
         return None
 
-    return run_agent_strategy(decide_fn, ticker, start, end, capital)
+    def safe_decide(curr_date: str, prices):
+        try:
+            return decide_fn(curr_date, prices)
+        except Exception as e:
+            logging.warning("Agent decision failed on %s: %s", curr_date, e)
+            return "HOLD"
+
+    return run_agent_strategy(safe_decide, ticker, start, end, capital)
 
 
 def main(argv=None) -> int:
@@ -87,7 +94,10 @@ def main(argv=None) -> int:
         curves[strat.name] = run_strategy(strat, args.ticker, args.start, args.end, args.capital)
 
     if not args.skip_agents:
-        for arm_name, selected_analysts in _selected_analysts_by_arm().items():
+        arms = _selected_analysts_by_arm()
+        if not arms:
+            logging.warning("No selected_analysts arms configured; skipping TradingAgents run")
+        for arm_name, selected_analysts in arms.items():
             agent_curve = _run_agent_decider(
                 args.ticker,
                 args.start,
