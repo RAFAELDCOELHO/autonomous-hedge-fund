@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import shutil
 from pathlib import Path
@@ -171,3 +172,40 @@ def test_flat_4_34_only_in_explicit_sensitivity_path():
         if "0.0434" in p.read_text() or "4.34" in p.read_text()
     ]
     assert hits == ["tradingagents/backtest/metrics.py"]
+
+
+def test_cdi_uses_prior_trading_day_not_date_t():
+    rf = daily_rf("BR", pd.DatetimeIndex(["2024-03-20", "2024-03-21", "2024-03-22"]))
+    # rf_t = CDI of t-1: 03-21 <- CDI(03-20) 0,041957; 03-22 <- CDI(03-21) 0,040168.
+    assert rf[pd.Timestamp("2024-03-21")] == pytest.approx(0.041957 / 100, rel=1e-12)
+    assert rf[pd.Timestamp("2024-03-22")] == pytest.approx(0.040168 / 100, rel=1e-12)
+
+
+def test_only_cash_earns_rf_stock_position_does_not():
+    df = pd.DataFrame({"Date": US_DATES, "Close": 100.0})
+    with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
+        eq = run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-12", "2024-01-18", 1_000.0, market="US")
+    assert eq.tolist() == [1_000.0] * len(US_DATES)
+
+
+def test_partial_rf_coverage_raises_no_zero_fill():
+    eq = pd.Series([100.0, 101.0, 100.5, 102.0], index=US_DATES)
+    rf = daily_rf("US", US_DATES).iloc[:-1]
+    with pytest.raises(ValueError, match="does not cover"):
+        ExtendedMetricsCalculator().compute(eq, rf=rf)
+
+
+def test_dtb3_forward_fills_missing_t_minus_1_never_backward(tmp_path):
+    rf_dir = tmp_path / "rf"
+    shutil.copytree(RF_DIR, rf_dir)
+    dtb3 = next(rf_dir.glob("fred_*.csv"))
+    dtb3.write_text(dtb3.read_text().replace("2024-01-16,5.22", "2024-01-16,9.99", 1))
+    (rf_dir / "SHA256SUMS").write_text("".join(
+        f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n" for p in sorted(rf_dir.glob("*.csv"))
+    ))
+    dates = pd.DatetimeIndex(["2024-01-12", "2024-01-15", "2024-01-16"])
+    # rf at 01-16: t-1 = 01-15 (MLK, no print) -> prior print 01-12 (5.22), not next print 01-16.
+    rf = daily_rf("US", dates, rf_dir=rf_dir)[pd.Timestamp("2024-01-16")]
+    assert rf == pytest.approx(_dtb3_daily(5.22), rel=1e-12)
+    assert rf != pytest.approx(_dtb3_daily(9.99), rel=1e-6)
+    assert daily_rf("US", dates)[pd.Timestamp("2024-01-16")] == pytest.approx(_dtb3_daily(5.22), rel=1e-12)
