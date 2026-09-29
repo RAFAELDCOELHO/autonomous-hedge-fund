@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | Date | 2026-09-25 |
-| Status | **draft, awaiting author sign-off** |
+| Status | **signed off, 2026-09-29, by Rafael Coelho / RAFAELDCOELHO** |
 | Scope | Phase 2 factorial experiment (ROADMAP.md), PAPER.md §5 and §8 |
 | Analysis code | [`scripts/h1_stats.py`](../scripts/h1_stats.py), tests in [`tests/test_h1_stats.py`](../tests/test_h1_stats.py) |
 
-This document fixes how H1 will be tested **before** any factorial run. PAPER.md §8 says the word "significantly" in H1 has no pre-registered criterion yet. This document supplies one. Nothing here is a result. Decisions 1–13 were accepted by the author on 2026-09-28 and are recorded in [Decisões tomadas (2026-09-28)](#decisões-tomadas-2026-09-28). Item 14 (formal sign-off with commit hash) is still pending. Once the author signs off, record the sign-off commit hash below. Any later change must be logged in the amendment log, with the reason and date, before data are seen.
+This document fixes how H1 will be tested **before** any factorial run. PAPER.md §8 says the word "significantly" in H1 has no pre-registered criterion yet. This document supplies one. Nothing here is a result. Decisions 1–13 were accepted by the author on 2026-09-28 and are recorded in [Decisões tomadas (2026-09-28)](#decisões-tomadas-2026-09-28). Item 14 (formal sign-off with commit hash) was signed by the author on 2026-09-29; see the sign-off commit below. Any later change must be logged in the amendment log, with the reason and date, before data are seen.
 
-Sign-off commit: _not signed_.
+Sign-off commit: signed by Rafael Coelho (RAFAELDCOELHO) on 2026-09-29. The signed version is the content at commit 3c9f8f067df6a2191b2601e848b6e865614b11d8 (3c9f8f0), which is what reviewers approved. This sign-off commit only records the signature and changes no pre-registered content.
 
 ## 1. Hypotheses
 
@@ -197,7 +197,7 @@ As decisões 1–13 foram aceitas pelo autor conforme as recomendações deste d
 11. **Cash handling:** cash earns the risk-free rate (runner implementation deferred to P3.7; this document records the decision).
 12. **Exclusion thresholds:** keep E4/E5 thresholds and one re-run policy for infrastructure failures.
 13. **Annualization:** \(\sqrt{252}\) for both markets.
-14. **Sign-off:** still pending. Keep status as draft and record the sign-off commit hash only after formal author sign-off.
+14. **Sign-off:** signed by the author (Rafael Coelho / RAFAELDCOELHO) on 2026-09-29. Signed version: 3c9f8f0 (3c9f8f067df6a2191b2601e848b6e865614b11d8).
 
 ## Amendment log
 
@@ -206,3 +206,4 @@ As decisões 1–13 foram aceitas pelo autor conforme as recomendações deste d
 | 2026-09-25 | Initial draft | P3.3 |
 | 2026-09-28 | Decisions 1–13 marked as accepted; open-decision section replaced by decided list; committed rf snapshot files/checksums referenced | Author approval of recommended prereg choices |
 | 2026-09-28 | Clarified decided wording (removed remaining "proposed"), expanded Decision 7 with code-sourced values/paths, and narrowed `h1_stats.py` enforcement scope to what the script actually checks | Reviewer nit follow-up on PR #47 |
+| 2026-09-29 | Author sign-off (item 14). Signed version: 3c9f8f0 (3c9f8f067df6a2191b2601e848b6e865614b11d8). Temperature left at provider default (not set in code), documented as-is. No change to pre-registered criteria. | Author sign-off |
