@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
+from runpy import run_path
 import sys
 
 from tradingagents.backtest import (
@@ -23,31 +25,49 @@ from tradingagents.backtest import (
     run_strategy,
     run_agent_strategy,
 )
-from tradingagents.backtest.agent_integration import map_signal
+from tradingagents.backtest.agent_integration import make_decide_fn
+from tradingagents.default_config import DEFAULT_CONFIG
 
 
-def _run_agent_decider(ticker: str, start: str, end: str, capital: float):
+def _load_headline_arena_arms() -> dict[str, dict[str, object]]:
+    script = Path(__file__).resolve().parent / "scripts" / "headline_arena_arms.py"
+    return run_path(str(script))["ARMS"]
+
+
+def _selected_analysts_by_arm() -> dict[str, list[str]]:
+    arms_data = _load_headline_arena_arms()
+    baseline_arm = arms_data.get("baseline") or arms_data.get("no_macro")
+    macro_arm = arms_data.get("macro")
+    arms: dict[str, list[str]] = {}
+    if baseline_arm and "selected_analysts" in baseline_arm:
+        arms["baseline"] = list(baseline_arm["selected_analysts"])
+    if macro_arm and "selected_analysts" in macro_arm:
+        arms["macro"] = list(macro_arm["selected_analysts"])
+    return arms
+
+
+def _run_agent_decider(
+    ticker: str,
+    start: str,
+    end: str,
+    capital: float,
+    selected_analysts: list[str] | None = None,
+):
     """Run TradingAgents once per trading day and return an equity curve.
 
     Falls back to None if the pipeline cannot be constructed.
     """
+    config = DEFAULT_CONFIG.copy()
+    if selected_analysts is not None:
+        config["selected_analysts"] = list(selected_analysts)
+
     try:
-        from tradingagents.graph.trading_graph import TradingAgentsGraph
+        decide_fn = make_decide_fn(ticker=ticker, config=config)
     except Exception as e:
         logging.warning("TradingAgents pipeline unavailable (%s)", e)
         return None
 
-    graph = TradingAgentsGraph()
-
-    def decide(curr_date: str, _prices):
-        try:
-            _, signal = graph.propagate(ticker, curr_date)
-            return map_signal(signal)
-        except Exception as e:
-            logging.warning("Agent decision failed on %s: %s", curr_date, e)
-            return "HOLD"
-
-    return run_agent_strategy(decide, ticker, start, end, capital)
+    return run_agent_strategy(decide_fn, ticker, start, end, capital)
 
 
 def main(argv=None) -> int:
@@ -67,9 +87,16 @@ def main(argv=None) -> int:
         curves[strat.name] = run_strategy(strat, args.ticker, args.start, args.end, args.capital)
 
     if not args.skip_agents:
-        agent_curve = _run_agent_decider(args.ticker, args.start, args.end, args.capital)
-        if agent_curve is not None:
-            curves["TradingAgents"] = agent_curve
+        for arm_name, selected_analysts in _selected_analysts_by_arm().items():
+            agent_curve = _run_agent_decider(
+                args.ticker,
+                args.start,
+                args.end,
+                args.capital,
+                selected_analysts=selected_analysts,
+            )
+            if agent_curve is not None:
+                curves[f"TradingAgents ({arm_name})"] = agent_curve
 
     print_comparison(curves)
     return 0
