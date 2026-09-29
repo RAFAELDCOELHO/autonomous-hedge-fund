@@ -14,6 +14,7 @@ class DocsSmokeTests(unittest.TestCase):
             "README.md",
             "docs/brazilbench.tex",
             "docs/NEURIPS_CHECKLIST.md",
+            "docs/PREREGISTRATION.md",
             "CITATION.cff",
             "LICENSE",
         ]
