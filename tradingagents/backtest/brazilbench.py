@@ -19,7 +19,7 @@ from tradingagents.backtest.baselines import (
     SMACrossStrategy,
     _simulate,
 )
-from tradingagents.backtest.metrics import ExtendedMetricsCalculator
+from tradingagents.backtest.metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator
 
 REPO = Path(__file__).resolve().parents[2]
 PRICE_DIR = REPO / "benchmark" / "prices"
@@ -81,7 +81,7 @@ def run_cell(strategy, prices: pd.DataFrame, regime: str,
         raise ValueError(f"No Close bars for regime {regime}")
     sig = strategy.signals(warmed).loc[win.index]
     equity = _simulate(win, sig, capital)
-    m = ExtendedMetricsCalculator().compute(equity)
+    m = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY).compute(equity)
     return {
         "cr": m["cr"],
         "sharpe": m["sharpe"],

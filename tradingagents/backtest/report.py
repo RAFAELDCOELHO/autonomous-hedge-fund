@@ -9,15 +9,16 @@ from typing import Dict
 
 import pandas as pd
 
-from .metrics import ExtendedMetricsCalculator
+from .metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator
 
 
 def build_comparison_table(equity_curves: Dict[str, pd.Series]) -> pd.DataFrame:
     """Build a DataFrame with columns: Strategy, CR (%), AR (%), Sharpe, MDD (%).
 
-    Values are formatted strings ready for display.
+    Values are formatted strings ready for display. Sharpe uses the flat
+    exploratory rf (FLAT_RF_SENSITIVITY); H1 Sharpe comes from h1_cell_metrics.
     """
-    calc = ExtendedMetricsCalculator()
+    calc = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY)
     rows = []
     for name, eq in equity_curves.items():
         m = calc.compute(eq)

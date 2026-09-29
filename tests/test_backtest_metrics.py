@@ -22,6 +22,7 @@ from tradingagents.backtest import (
     run_agent_strategy,
     run_strategy,
 )
+from tradingagents.backtest.metrics import FLAT_RF_SENSITIVITY
 
 
 def _linear_prices(n: int, start: float = 100.0, step: float = 1.0) -> pd.DataFrame:
@@ -32,7 +33,7 @@ def _linear_prices(n: int, start: float = 100.0, step: float = 1.0) -> pd.DataFr
 
 class ExtendedMetricsTests(unittest.TestCase):
     def test_empty_series_returns_none(self):
-        calc = ExtendedMetricsCalculator()
+        calc = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY)
         out = calc.compute(pd.Series([], dtype=float))
         self.assertIsNone(out["cr"])
         self.assertIsNone(out["ar"])
@@ -43,7 +44,7 @@ class ExtendedMetricsTests(unittest.TestCase):
         # 252 business days, equity goes 100 -> 110 -> linear-ish
         idx = pd.date_range("2024-01-01", periods=252, freq="B")
         equity = pd.Series(np.linspace(100.0, 110.0, 252), index=idx)
-        calc = ExtendedMetricsCalculator()
+        calc = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY)
         m = calc.compute(equity)
         self.assertAlmostEqual(m["cr"], 0.10, places=6)
         # n_days == 252 → ar == cr
@@ -52,7 +53,7 @@ class ExtendedMetricsTests(unittest.TestCase):
     def test_mdd_on_drawdown_series(self):
         idx = pd.date_range("2024-01-01", periods=5, freq="B")
         equity = pd.Series([100.0, 120.0, 90.0, 95.0, 110.0], index=idx)
-        m = ExtendedMetricsCalculator().compute(equity)
+        m = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY).compute(equity)
         # Peak 120, trough 90 -> -0.25
         self.assertAlmostEqual(m["mdd"], -0.25, places=6)
         self.assertEqual(m["mdd_date"], idx[2].strftime("%Y-%m-%d"))
@@ -62,7 +63,7 @@ class ExtendedMetricsTests(unittest.TestCase):
         rets = rng.normal(loc=0.001, scale=0.01, size=252)
         equity = pd.Series(100.0 * np.cumprod(1 + rets),
                            index=pd.date_range("2024-01-01", periods=252, freq="B"))
-        m = ExtendedMetricsCalculator().compute(equity)
+        m = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY).compute(equity)
         self.assertIsNotNone(m["sharpe"])
         self.assertFalse(math.isnan(m["sharpe"]))
 

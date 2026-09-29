@@ -57,6 +57,42 @@ def _is_negated_label(text: str, label_start: int, previous_label_end: int) -> b
     return _NEGATION_PATTERN.search(local_prefix) is not None
 
 
+class UnparseableSignal(ValueError):
+    """Raised by decide_fn when the raw signal contains no valid label."""
+
+
+def _parse_signal(raw: Optional[str]) -> Optional[str]:
+    """Return BUY/HOLD/SELL for the first non-negated label; HOLD if every
+    label is negated; None when the text contains no label at all."""
+    if raw is None:
+        return None
+    cleaned = str(raw).strip().upper()
+    if not cleaned:
+        return None
+
+    mapped = _SIGNAL_MAP.get(cleaned)
+    if mapped is not None:
+        return mapped
+
+    normalized_text = cleaned.replace("_", " ")
+    normalized_text = re.sub(r"(?<=[A-Z])-(?=[A-Z])", " ", normalized_text)
+    previous_label_end = 0
+    for match in _TEXT_SIGNAL_PATTERN.finditer(normalized_text):
+        if _is_negated_label(normalized_text, match.start(), previous_label_end):
+            previous_label_end = match.end()
+            continue
+        if match.lastgroup == "buy":
+            return "BUY"
+        if match.lastgroup == "sell":
+            return "SELL"
+        return "HOLD"
+    return "HOLD" if previous_label_end else None
+
+
+def is_parseable_signal(raw: Optional[str]) -> bool:
+    return _parse_signal(raw) is not None
+
+
 def map_signal(raw: Optional[str]) -> str:
     """Normalize a raw LLM/SignalProcessor output to BUY/HOLD/SELL.
 
@@ -75,29 +111,7 @@ def map_signal(raw: Optional[str]) -> str:
         SELL, UNDERWEIGHT     -> SELL
         (anything else / None -> HOLD, defensive fallback)
     """
-    if raw is None:
-        return "HOLD"
-    cleaned = str(raw).strip().upper()
-    if not cleaned:
-        return "HOLD"
-
-    mapped = _SIGNAL_MAP.get(cleaned)
-    if mapped is not None:
-        return mapped
-
-    normalized_text = cleaned.replace("_", " ")
-    normalized_text = re.sub(r"(?<=[A-Z])-(?=[A-Z])", " ", normalized_text)
-    previous_label_end = 0
-    for match in _TEXT_SIGNAL_PATTERN.finditer(normalized_text):
-        if _is_negated_label(normalized_text, match.start(), previous_label_end):
-            previous_label_end = match.end()
-            continue
-        if match.lastgroup == "buy":
-            return "BUY"
-        if match.lastgroup == "sell":
-            return "SELL"
-        return "HOLD"
-    return "HOLD"
+    return _parse_signal(raw) or "HOLD"
 
 
 def make_decide_fn(
@@ -110,6 +124,8 @@ def make_decide_fn(
 
     The returned function has the signature:
         decide_fn(curr_date_str, prices_up_to_date) -> "BUY"|"HOLD"|"SELL"
+    and raises UnparseableSignal when the raw signal has no valid label, so
+    run_agent_strategy counts it as a decision error (PREREGISTRATION §4).
 
     The prices_up_to_date argument is accepted (to honor run_agent_strategy's
     look-ahead prevention contract) but not used — TradingAgentsGraph fetches
@@ -138,6 +154,8 @@ def make_decide_fn(
 
     def decide_fn(curr_date: str, prices_up_to_date: pd.DataFrame) -> str:
         _, raw_signal = _propagate(ticker, curr_date)
+        if not is_parseable_signal(raw_signal):
+            raise UnparseableSignal(f"no BUY/HOLD/SELL label in {raw_signal!r}")
         return map_signal(raw_signal)
 
     return decide_fn
@@ -151,6 +169,7 @@ def run_tradingagents_backtest(
     initial_capital: float = 100_000.0,
     propagate_fn: Optional[Callable[[str, str], tuple]] = None,
     debug: bool = False,
+    market: Optional[str] = None,
 ) -> pd.Series:
     """Run a day-by-day backtest of TradingAgents over [start, end].
 
@@ -168,6 +187,8 @@ def run_tradingagents_backtest(
             depending on ticker).
         propagate_fn: Optional mock for testing without API calls.
         debug: Forwarded to TradingAgentsGraph when propagate_fn is None.
+        market: "BR"/"US" makes cash earn that market's rf (H1 path);
+            None keeps cash at 0%.
 
     Returns:
         pd.Series of daily equity values indexed by date. Feed this
@@ -185,4 +206,5 @@ def run_tradingagents_backtest(
         start=start,
         end=end,
         initial_capital=initial_capital,
+        market=market,
     )
