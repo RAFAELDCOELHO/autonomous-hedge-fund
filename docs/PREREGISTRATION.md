@@ -42,9 +42,9 @@ H1 in the paper also mentions cumulative return. CR is **not** part of the confi
 | Factorial cells | 4 = Market {US, BR} × Macro Agent {absent, present} | PAPER.md §5 |
 | Tickers | 9 (3 US + 5 BR sensitive + 1 BR control) | PAPER.md §5 |
 | Ticker × arm conditions | 18 | 9 × 2 |
-| Seeds (replicates) per ticker × arm | **5** (proposed) | PAPER.md §8 asks for multiple runs; see open decisions |
+| Seeds (replicates) per ticker × arm | **5** (decided 2026-09-28) | PAPER.md §8 asks for multiple runs |
 | Total backtest runs | 90 = 9 × 2 × 5 | |
-| Evaluation window | Jan–Mar 2024, first to last trading day of each market (proposed 2024-01-02 to 2024-03-28) | PAPER.md §5 |
+| Evaluation window | Jan–Mar 2024, first to last trading day of each market (decided endpoints: 2024-01-02 to 2024-03-28) | PAPER.md §5 |
 | Decision frequency | one `propagate()` per trading day, as in `run_agent_strategy` | PAPER.md §4 |
 | Minimum valid seeds per ticker × arm | 3 | exclusion rule E5 |
 | α (primary) | 0.05, one-sided | |
@@ -175,7 +175,7 @@ It is offline and deterministic: repeated runs on the same `cells.csv` produce b
 
 ## Decisões tomadas (2026-09-28)
 
-As decisões 1–13 foram aceitas pelo autor conforme as recomendações deste documento e estão refletidas em `scripts/h1_stats.py`.
+As decisões 1–13 foram aceitas pelo autor conforme as recomendações deste documento. `scripts/h1_stats.py` directly enforces decisions **1, 2, 3, 4, 5, 9** (via `rf_source` labels only), and **parts of 12** (E4/E5 thresholds). Decisions **6, 7, 8, 10 conversion, 11, 13** and the procedural part of **12** (re-run policy) are enforced outside this script (runner/config/execution procedure).
 
 1. **Primary test:** ticker-level exact one-sided permutation on market labels (§6.1), not pooled run-level testing.
 2. **Primary contrast:** BR macro-sensitive tickers vs US; RADL3 remains excluded from the primary contrast.
@@ -183,8 +183,15 @@ As decisões 1–13 foram aceitas pelo autor conforme as recomendações deste d
 4. **α levels:** 0.05 for the primary test and 0.05 family-wise for S1/S2 with Holm.
 5. **Secondary family:** S1 and S2 exactly as specified; S2 remains two-sided.
 6. **Seeds:** 5 replicates per ticker × arm (target 90 runs total).
-7. **Model/sampling pinning:** model IDs and sampling settings are fixed across all runs (deep-think/quick-think IDs, temperature, rounds).
-8. **Window endpoints:** Jan–Mar 2024 trading-window endpoints as specified (proposed 2024-01-02 to 2024-03-28, per market calendar).
+7. **Model/sampling pinning (code-sourced values):**
+   - `llm_provider = "anthropic"` (`tradingagents/default_config.py`)
+   - `deep_think_llm = "claude-sonnet-4-6"` (`tradingagents/default_config.py`)
+   - `quick_think_llm = "claude-haiku-4-5-20251001"` (`tradingagents/default_config.py`)
+   - `max_debate_rounds = 1` (`tradingagents/default_config.py`)
+   - `max_risk_discuss_rounds = 1` (`tradingagents/default_config.py`)
+   - Arm composition: baseline analysts are `["market","social","news","fundamentals"]` and macro arm adds `"macro"` (`scripts/headline_arena_arms.py`; also consistent with `TradingAgentsGraph(..., selected_analysts=[...])` in `tradingagents/graph/trading_graph.py`)
+   - Temperature is **not explicitly set** in the TradingAgents Anthropic path (`tradingagents/default_config.py`; `tradingagents/llm_clients/anthropic_client.py`), so runtime temperature follows provider/library defaults unless set externally.
+8. **Window endpoints:** Jan–Mar 2024 trading-window endpoints as specified (decided 2024-01-02 to 2024-03-28, per market calendar).
 9. **Brazil rf series:** CDI daily, BCB SGS 12.
 10. **US rf series/conversion:** FRED DTB3 with \(rf_t=(1+DTB3_{t-1}/100)^{1/252}-1\), ignoring discount vs bond-equivalent basis.
 11. **Cash handling:** cash earns the risk-free rate (runner implementation deferred to P3.7; this document records the decision).
@@ -198,3 +205,4 @@ As decisões 1–13 foram aceitas pelo autor conforme as recomendações deste d
 |---|---|---|
 | 2026-09-25 | Initial draft | P3.3 |
 | 2026-09-28 | Decisions 1–13 marked as accepted; open-decision section replaced by decided list; committed rf snapshot files/checksums referenced | Author approval of recommended prereg choices |
+| 2026-09-28 | Clarified decided wording (removed remaining "proposed"), expanded Decision 7 with code-sourced values/paths, and narrowed `h1_stats.py` enforcement scope to what the script actually checks | Reviewer nit follow-up on PR #47 |
