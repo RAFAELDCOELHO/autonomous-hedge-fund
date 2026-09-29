@@ -11,12 +11,15 @@ import pandas as pd
 
 from .metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator
 
+SHARPE_FLAT_COL = f"Sharpe @ flat {FLAT_RF_SENSITIVITY:.2%} (exploratory)"
+
 
 def build_comparison_table(equity_curves: Dict[str, pd.Series]) -> pd.DataFrame:
-    """Build a DataFrame with columns: Strategy, CR (%), AR (%), Sharpe, MDD (%).
+    """Build a DataFrame with columns: Strategy, CR (%), AR (%), SHARPE_FLAT_COL, MDD (%).
 
-    Values are formatted strings ready for display. Sharpe uses the flat
-    exploratory rf (FLAT_RF_SENSITIVITY); H1 Sharpe comes from h1_cell_metrics.
+    Values are formatted strings ready for display. The Sharpe column
+    (SHARPE_FLAT_COL) uses the flat exploratory rf (FLAT_RF_SENSITIVITY) and is
+    labelled as such; H1 Sharpe comes from h1_cell_metrics.
     """
     calc = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY)
     rows = []
@@ -26,10 +29,10 @@ def build_comparison_table(equity_curves: Dict[str, pd.Series]) -> pd.DataFrame:
             "Strategy": name,
             "CR (%)": _pct(m["cr"]),
             "AR (%)": _pct(m["ar"]),
-            "Sharpe": _num(m["sharpe"]),
+            SHARPE_FLAT_COL: _num(m["sharpe"]),
             "MDD (%)": _pct(m["mdd"]),
         })
-    return pd.DataFrame(rows, columns=["Strategy", "CR (%)", "AR (%)", "Sharpe", "MDD (%)"])
+    return pd.DataFrame(rows, columns=["Strategy", "CR (%)", "AR (%)", SHARPE_FLAT_COL, "MDD (%)"])
 
 
 def _pct(x) -> str:
@@ -62,7 +65,7 @@ def print_comparison(equity_curves: Dict[str, pd.Series]) -> pd.DataFrame:
         from rich.table import Table
 
         console = Console()
-        table = Table(title="Backtest Results", show_lines=False)
+        table = Table(title=f"Backtest Results (Sharpe @ flat {FLAT_RF_SENSITIVITY:.2%} rf, exploratory)", show_lines=False)
         for col in df.columns:
             table.add_column(col)
         for _, row in df.iterrows():
