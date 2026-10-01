@@ -24,6 +24,9 @@ def test_run_backtest_uses_map_signal_for_verbose_llm_output():
     run_backtest = _load_module()
 
     class FakeGraph:
+        def __init__(self, *args, **kwargs):
+            pass
+
         def propagate(self, ticker: str, curr_date: str):
             assert ticker == "AAPL"
             assert curr_date == "2024-01-03"
@@ -55,6 +58,9 @@ def test_run_backtest_defaults_to_hold_for_unrecognized_verbose_signal():
     run_backtest = _load_module()
 
     class FakeGraph:
+        def __init__(self, *args, **kwargs):
+            pass
+
         def propagate(self, ticker: str, curr_date: str):
             assert ticker == "AAPL"
             assert curr_date == "2024-01-03"
@@ -95,3 +101,4 @@ def test_run_backtest_returns_none_when_graph_import_unavailable():
         )
 
     assert result is None
+
