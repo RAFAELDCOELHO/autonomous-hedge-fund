@@ -147,7 +147,11 @@ def make_decide_fn(
     if propagate_fn is None:
         from tradingagents.graph.trading_graph import TradingAgentsGraph
 
-        ta = TradingAgentsGraph(debug=debug, config=config)
+        selected_analysts = config.get("selected_analysts")
+        graph_kwargs = {"debug": debug, "config": config}
+        if selected_analysts is not None:
+            graph_kwargs["selected_analysts"] = selected_analysts
+        ta = TradingAgentsGraph(**graph_kwargs)
         _propagate = ta.propagate
     else:
         _propagate = propagate_fn

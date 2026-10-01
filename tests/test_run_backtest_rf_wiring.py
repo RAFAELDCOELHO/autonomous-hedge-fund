@@ -25,6 +25,9 @@ def test_agent_arm_passes_market_of_ticker(ticker, market):
     run_backtest = _load_module()
 
     class FakeGraph:
+        def __init__(self, *args, **kwargs):
+            pass
+
         def propagate(self, ticker: str, curr_date: str):
             return {}, "HOLD"
 
