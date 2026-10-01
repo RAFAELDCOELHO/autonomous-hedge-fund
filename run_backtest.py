@@ -5,12 +5,15 @@ over a single-ticker window. TradingAgents runs two harness labels:
 `baseline` (mapped from `no_macro` in scripts/headline_arena_arms.py) and
 `macro`. Use `--arms` to choose which arms to run (default: baseline,macro)
 or `--skip-agents` to run only classical baselines. Prints a rich table
-of CR / AR / Sharpe / MDD.
+of CR / AR / Sharpe / MDD. The TradingAgents arms' cash earns the market's
+daily rf (CDI for .SA tickers, DTB3 otherwise) from data/rf/, so the agent
+window must lie inside 2023-12-01..2024-04-30 (daily_rf raises otherwise).
+print_comparison still shows Sharpe at the flat exploratory rf.
 
 Usage:
-    uv run python run_backtest.py --ticker AAPL --start 2023-01-01 --end 2024-01-01
+    uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
     uv run python run_backtest.py --ticker AAPL --start 2023-01-01 --end 2024-01-01 --skip-agents
-    uv run python run_backtest.py --ticker AAPL --start 2023-01-01 --end 2024-01-01 --arms macro
+    uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28 --arms macro
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from tradingagents.backtest import (
     run_agent_strategy,
 )
 from tradingagents.backtest.agent_integration import make_decide_fn
+from tradingagents.backtest.risk_free import market_of
 from tradingagents.default_config import DEFAULT_CONFIG
 
 
@@ -75,7 +79,7 @@ def _run_agent_decider(
         logging.warning("TradingAgents pipeline unavailable (%s)", e)
         return None
 
-    return run_agent_strategy(decide_fn, ticker, start, end, capital)
+    return run_agent_strategy(decide_fn, ticker, start, end, capital, market=market_of(ticker))
 
 
 def _parse_arms_csv(value: str) -> list[str]:

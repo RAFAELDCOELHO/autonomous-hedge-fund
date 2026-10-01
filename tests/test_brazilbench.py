@@ -103,13 +103,13 @@ class BrazilBenchMetricsTests(unittest.TestCase):
     def test_run_cell_returns_cr_sharpe_mdd(self):
         from tradingagents.backtest import brazilbench as bb
         from tradingagents.backtest.baselines import BuyAndHold
-        from tradingagents.backtest.metrics import ExtendedMetricsCalculator
+        from tradingagents.backtest.metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator
 
         prices = bb.load_close("ITUB4", price_dir=self.price_dir)
         row = bb.run_cell(BuyAndHold(), prices, "bull_2019")
         self.assertEqual(set(row), {"cr", "sharpe", "mdd", "n_days"})
         win = prices.loc["2019-01-02":"2019-12-31"]
-        expected = ExtendedMetricsCalculator().compute(
+        expected = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY).compute(
             BuyAndHold().run(win, bb.INITIAL_CAPITAL)
         )
         self.assertAlmostEqual(row["cr"], expected["cr"], places=10)
