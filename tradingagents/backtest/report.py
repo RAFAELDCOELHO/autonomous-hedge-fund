@@ -9,30 +9,41 @@ from typing import Dict
 
 import pandas as pd
 
-from .metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator
+from .metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator, h1_cell_metrics
 
 SHARPE_FLAT_COL = f"Sharpe @ flat {FLAT_RF_SENSITIVITY:.2%} (exploratory)"
+H1_SHARPE_COL = "H1 Sharpe (excess over daily rf)"
+_TABLE_COLUMNS = ["Strategy", "CR (%)", "AR (%)", SHARPE_FLAT_COL, H1_SHARPE_COL, "MDD (%)"]
 
 
-def build_comparison_table(equity_curves: Dict[str, pd.Series]) -> pd.DataFrame:
-    """Build a DataFrame with columns: Strategy, CR (%), AR (%), SHARPE_FLAT_COL, MDD (%).
+def build_comparison_table(
+    equity_curves: Dict[str, pd.Series],
+    market: str | None = None,
+) -> pd.DataFrame:
+    """Build a DataFrame of display strings for the comparison table.
 
-    Values are formatted strings ready for display. The Sharpe column
-    (SHARPE_FLAT_COL) uses the flat exploratory rf (FLAT_RF_SENSITIVITY) and is
-    labelled as such; H1 Sharpe comes from h1_cell_metrics.
+    SHARPE_FLAT_COL is the flat exploratory rf (FLAT_RF_SENSITIVITY) for every
+    strategy. H1_SHARPE_COL is the agent arm's excess Sharpe from
+    h1_cell_metrics over that market's daily rf. Classical baselines keep an
+    em dash there: their cash does not earn the daily rf.
     """
     calc = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY)
     rows = []
     for name, eq in equity_curves.items():
         m = calc.compute(eq)
+        if market is not None and name.startswith("TradingAgents ("):
+            h1_sharpe = _num(h1_cell_metrics(eq, market)["sharpe"])
+        else:
+            h1_sharpe = "—"
         rows.append({
             "Strategy": name,
             "CR (%)": _pct(m["cr"]),
             "AR (%)": _pct(m["ar"]),
             SHARPE_FLAT_COL: _num(m["sharpe"]),
+            H1_SHARPE_COL: h1_sharpe,
             "MDD (%)": _pct(m["mdd"]),
         })
-    return pd.DataFrame(rows, columns=["Strategy", "CR (%)", "AR (%)", SHARPE_FLAT_COL, "MDD (%)"])
+    return pd.DataFrame(rows, columns=_TABLE_COLUMNS)
 
 
 def _pct(x) -> str:
@@ -58,14 +69,17 @@ def format_table_markdown(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
-def print_comparison(equity_curves: Dict[str, pd.Series]) -> pd.DataFrame:
-    df = build_comparison_table(equity_curves)
+def print_comparison(
+    equity_curves: Dict[str, pd.Series],
+    market: str | None = None,
+) -> pd.DataFrame:
+    df = build_comparison_table(equity_curves, market=market)
     try:
         from rich.console import Console
         from rich.table import Table
 
         console = Console()
-        table = Table(title=f"Backtest Results (Sharpe @ flat {FLAT_RF_SENSITIVITY:.2%} rf, exploratory)", show_lines=False)
+        table = Table(title="Backtest Results", show_lines=False)
         for col in df.columns:
             table.add_column(col)
         for _, row in df.iterrows():
