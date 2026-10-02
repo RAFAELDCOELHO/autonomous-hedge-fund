@@ -179,7 +179,18 @@ class ReportTests(unittest.TestCase):
             "B": pd.Series(np.linspace(100, 90, 10), index=idx),
         }
         df = build_comparison_table(curves)
-        self.assertEqual(list(df.columns), ["Strategy", "CR (%)", "AR (%)", "Sharpe @ flat 4.34% (exploratory)", "MDD (%)"])
+        self.assertEqual(
+            list(df.columns),
+            [
+                "Strategy",
+                "CR (%)",
+                "AR (%)",
+                "Sharpe @ flat 4.34% (exploratory)",
+                "H1 Sharpe (excess over daily rf)",
+                "MDD (%)",
+            ],
+        )
+        self.assertTrue((df["H1 Sharpe (excess over daily rf)"] == "—").all())
         self.assertEqual(len(df), 2)
 
     def test_format_table_markdown_has_header_separator(self):

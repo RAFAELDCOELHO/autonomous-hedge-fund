@@ -8,12 +8,16 @@ or `--skip-agents` to run only classical baselines. Prints a rich table
 of CR / AR / Sharpe / MDD. The TradingAgents arms' cash earns the market's
 daily rf (CDI for .SA tickers, DTB3 otherwise) from data/rf/, so the agent
 window must lie inside 2023-12-01..2024-04-30 (daily_rf raises otherwise).
-print_comparison still shows Sharpe at the flat exploratory rf.
+The table shows Sharpe at the flat exploratory rf for every strategy, and
+the agent arm's H1 Sharpe (excess over the daily rf) beside it.
+``--cells-out`` appends one PREREGISTRATION §4 row per agent arm
+(baseline → absent, macro → present; B3 tickers stored without ``.SA``).
 
 Usage:
     uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
     uv run python run_backtest.py --ticker AAPL --start 2023-01-01 --end 2024-01-01 --skip-agents
     uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28 --arms macro
+    uv run python run_backtest.py --ticker PETR4.SA --start 2024-01-02 --end 2024-03-28 --cells-out cells.csv --seed 0
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from tradingagents.backtest import (
     run_agent_strategy,
 )
 from tradingagents.backtest.agent_integration import make_decide_fn
+from tradingagents.backtest.cells import append_cells, make_cell_row
 from tradingagents.backtest.risk_free import market_of
 from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -112,7 +117,21 @@ def main(argv=None) -> int:
         default="baseline,macro",
         help="Comma-separated TradingAgents arms to run: baseline,macro (default: baseline,macro)",
     )
+    parser.add_argument(
+        "--cells-out",
+        type=Path,
+        default=None,
+        help="Append one cells.csv row per TradingAgents arm (PREREGISTRATION §4)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Replicate index written with --cells-out (integer >= 0, default: 0)",
+    )
     args = parser.parse_args(argv)
+    if args.seed < 0:
+        parser.error("--seed must be >= 0")
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -150,8 +169,22 @@ def main(argv=None) -> int:
             )
             if agent_curve is not None:
                 curves[f"TradingAgents ({arm_name})"] = agent_curve
+            # Append each finished arm immediately so a later arm keeps it.
+            if args.cells_out is not None:
+                try:
+                    row = make_cell_row(
+                        args.ticker,
+                        arm_name,
+                        args.seed,
+                        equity=agent_curve,
+                        status="ok" if agent_curve is not None else "failed",
+                    )
+                    append_cells(args.cells_out, [row])
+                except ValueError as exc:
+                    logging.error("%s", exc)
+                    return 2
 
-    print_comparison(curves)
+    print_comparison(curves, market=market_of(args.ticker))
     return 0
 
 
