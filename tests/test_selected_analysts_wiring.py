@@ -347,9 +347,16 @@ def test_cells_out_rejects_wrong_window_before_any_strategy_or_llm(capsys, tmp_p
     run_agent_decider_mock.assert_not_called()
 
 
-def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_path):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_path, legacy):
     run_backtest = _load_run_backtest()
     cells_path = tmp_path / "cells.csv"
+    legacy_row = "AAPL,US,absent,7,ok,3,0,1.0,FRED-DTB3"
+    if legacy:
+        cells_path.write_text(
+            "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source\n" + legacy_row + "\n",
+            encoding="utf-8",
+        )
     equity = pd.Series(
         [100_000.0, 101_000.0, 100_500.0],
         index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
@@ -394,6 +401,10 @@ def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_pat
     assert log_exception_mock.call_args.args[1] == "baseline"
     with cells_path.open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
+    if legacy:
+        old = rows.pop(0)
+        assert ",".join(list(old.values())[:9]) == legacy_row
+        assert old["sharpe_flat"] == ""
     assert len(rows) == 2
     assert {row["arm"] for row in rows} == {"absent", "present"}
     failed = next(row for row in rows if row["arm"] == "absent")
@@ -402,6 +413,8 @@ def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_pat
     assert failed["sharpe"] == ""
     assert failed["start"] == "2024-01-02"
     assert failed["end"] == "2024-03-28"
+    assert failed["sharpe_flat"] == ""
+    assert ok["sharpe_flat"] != ""
     assert ok["status"] == "ok"
     assert ok["sharpe"] != ""
     assert ok["start"] == "2024-01-02"
@@ -425,3 +438,42 @@ def test_ensure_cells_extra_columns_uses_atomic_replace_and_preserves_original_o
     replace_mock.assert_called_once()
     assert path.read_text(encoding="utf-8") == before
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+@pytest.mark.parametrize("old_extras", [("start", "end"), ()])
+def test_pre_p315_cells_csv_migrates_to_sharpe_flat_and_keeps_appending(tmp_path, old_extras):
+    from tradingagents.backtest.cells import COLUMNS, SHARPE_FLAT_FIELD, append_cells, make_cell_row
+    from tradingagents.backtest.metrics import flat_rf_metrics
+
+    run_backtest = _load_run_backtest()
+    path = tmp_path / "cells.csv"
+    old_row = "AAPL,US,absent,0,ok,3,0,1.0,FRED-DTB3" + (",2024-01-02,2024-03-28" if old_extras else "")
+    path.write_text(",".join((*COLUMNS, *old_extras)) + "\n" + old_row + "\n", encoding="utf-8")
+    keys = {("AAPL", "absent", "0")}
+    assert run_backtest._read_existing_cells_keys(path) == keys
+
+    extras = ("start", "end", SHARPE_FLAT_FIELD)
+    with patch.object(run_backtest.os, "replace", wraps=os.replace) as replace_mock:
+        run_backtest._ensure_cells_extra_columns(path, extras)
+    replace_mock.assert_called_once()
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert run_backtest._read_existing_cells_keys(path) == keys
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        assert reader.fieldnames == [*COLUMNS, *extras]
+        rows = list(reader)
+    assert ",".join(rows[0][c] for c in (*COLUMNS, *old_extras)) == old_row
+    assert rows[0][SHARPE_FLAT_FIELD] == ""
+
+    equity = pd.Series(
+        [100_000.0, 101_000.0, 100_500.0],
+        index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+    )
+    row = make_cell_row("AAPL", "macro", 0, equity)
+    row["start"], row["end"] = "2024-01-02", "2024-03-28"
+    append_cells(path, [row])
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2
+    assert float(rows[1][SHARPE_FLAT_FIELD]) == flat_rf_metrics(equity)["sharpe"]
+    assert rows[1]["start"] == "2024-01-02"

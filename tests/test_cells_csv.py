@@ -16,13 +16,20 @@ from tradingagents.backtest.cells import (
     COLUMNS,
     HARNESS_TO_ARM,
     PREREG_TICKERS,
+    SHARPE_FLAT_FIELD,
     append_cells,
     make_cell_row,
 )
-from tradingagents.backtest.metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator, h1_cell_metrics
+from tradingagents.backtest.metrics import (
+    FLAT_RF_SENSITIVITY,
+    ExtendedMetricsCalculator,
+    flat_rf_metrics,
+    h1_cell_metrics,
+)
 from tradingagents.backtest.report import (
     H1_SHARPE_COL,
     SHARPE_FLAT_COL,
+    build_comparison_table,
     format_table_markdown,
     print_comparison,
 )
@@ -91,7 +98,7 @@ def test_rows_round_trip_through_h1_stats_validation(tmp_path):
         append_cells(path, [make_cell_row(ticker, arm, seed, equity)])
 
     text = path.read_text(encoding="utf-8")
-    assert text.splitlines()[0] == ",".join(COLUMNS)
+    assert text.splitlines()[0] == ",".join((*COLUMNS, SHARPE_FLAT_FIELD))
     assert text.count(text.splitlines()[0]) == 1
 
     raw = _raw_rows(path)
@@ -129,8 +136,8 @@ def test_rows_round_trip_through_h1_stats_validation(tmp_path):
 def test_append_preserves_extra_columns(tmp_path):
     path = tmp_path / "cells.csv"
     path.write_text(
-        "model," + ",".join(COLUMNS) + "\n"
-        "claude,AAPL,US,absent,0,ok,4,0,1.0,FRED-DTB3\n",
+        "model," + ",".join(COLUMNS) + f",{SHARPE_FLAT_FIELD}\n"
+        "claude,AAPL,US,absent,0,ok,4,0,1.0,FRED-DTB3,\n",
         encoding="utf-8",
     )
     append_cells(path, [make_cell_row("AAPL", "macro", 0, _equity("US"))])
@@ -139,6 +146,28 @@ def test_append_preserves_extra_columns(tmp_path):
     assert raw[1]["model"] == ""
     assert raw[1]["arm"] == "present"
     h1.load_cells(path)
+
+
+def test_append_refuses_sharpe_flat_on_legacy_header_but_accepts_failed_rows(tmp_path):
+    path = tmp_path / "cells.csv"
+    path.write_text(",".join(COLUMNS) + "\nAAPL,US,absent,0,ok,4,0,1.0,FRED-DTB3\n", encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="has no sharpe_flat column; migrate it first"):
+        append_cells(path, [make_cell_row("AAPL", "macro", 0, _equity("US"))])
+    assert path.read_bytes() == before
+    append_cells(path, [make_cell_row("AAPL", "macro", 0, status="failed")])
+    raw = _raw_rows(path)
+    assert list(raw[1]) == list(COLUMNS)
+    assert raw[1]["status"] == "failed"
+    h1.load_cells(path)
+
+
+def test_append_new_file_header_includes_sharpe_flat(tmp_path):
+    path = tmp_path / "cells.csv"
+    equity = _equity("US")
+    append_cells(path, [make_cell_row("AAPL", "baseline", 0, equity)])
+    assert path.read_text(encoding="utf-8").splitlines()[0] == ",".join((*COLUMNS, SHARPE_FLAT_FIELD))
+    assert float(_raw_rows(path)[0][SHARPE_FLAT_FIELD]) == flat_rf_metrics(equity)["sharpe"]
 
 
 def test_failed_row_leaves_sharpe_empty_and_still_validates(tmp_path):
@@ -153,6 +182,20 @@ def test_failed_row_leaves_sharpe_empty_and_still_validates(tmp_path):
     assert loaded[0]["status"] == "failed"
     assert math.isnan(loaded[0]["sharpe"])
     assert h1.main([str(path)]) == 0
+
+
+def test_sharpe_flat_is_the_flat_rf_table_sharpe_and_empty_when_failed():
+    equity = _equity("US")
+    flat = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY).compute(equity)["sharpe"]
+    r = equity.pct_change().dropna() - FLAT_RF_SENSITIVITY / 252
+    assert flat == pytest.approx(math.sqrt(252) * r.mean() / r.std(ddof=1))
+
+    row = make_cell_row("AAPL", "baseline", 0, equity)
+    assert float(row[SHARPE_FLAT_FIELD]) == flat
+    assert float(row[SHARPE_FLAT_FIELD]) != float(row["sharpe"])
+    table = build_comparison_table({"TradingAgents (baseline)": equity}, market="US")
+    assert table[SHARPE_FLAT_COL].iloc[0] == f"{flat:.3f}"
+    assert make_cell_row("AAPL", "macro", 0, status="failed")[SHARPE_FLAT_FIELD] == ""
 
 
 @pytest.mark.parametrize(
@@ -244,6 +287,7 @@ def test_cli_appends_mapped_rows_and_prints_h1_sharpe(tmp_path, capsys):
     ]
     assert raw[0]["rf_source"] == "BCB-SGS-12"
     assert float(raw[0]["sharpe"]) == h1_cell_metrics(equity, "BR")["sharpe"]
+    assert float(raw[0][SHARPE_FLAT_FIELD]) == flat_rf_metrics(equity)["sharpe"]
     loaded = h1.load_cells(path)
     assert h1.main([str(path)]) == 0
     assert loaded[0]["n_days"] == len(equity)
@@ -319,6 +363,7 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             "rf_source": "FRED-DTB3",
             "start": "2024-01-02",
             "end": "2024-03-28",
+            "sharpe_flat": "",
         }
     ]
     assert h1.load_cells(path)[0]["status"] == "failed"
