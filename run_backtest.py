@@ -11,7 +11,13 @@ window must lie inside 2023-12-01..2024-04-30 (daily_rf raises otherwise).
 The table shows Sharpe at the flat exploratory rf for every strategy, and
 the agent arm's H1 Sharpe (excess over the daily rf) beside it.
 ``--cells-out`` appends one PREREGISTRATION §4 row per agent arm
-(baseline → absent, macro → present; B3 tickers stored without ``.SA``).
+(baseline → absent, macro → present; B3 tickers stored without ``.SA``),
+plus ``start``/``end`` columns. Before any API key check, download, or
+LLM call it preflights the ticker/market, the fixed preregistered window
+(2024-01-02..2024-03-28), the existing file's header, and duplicate
+(ticker, arm, seed) keys, and exits 2 without touching the file on
+rejection. An arm that raises is recorded as ``status=failed`` and the
+next arm still runs; any failed arm makes the CLI exit non-zero.
 
 Usage:
     uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
