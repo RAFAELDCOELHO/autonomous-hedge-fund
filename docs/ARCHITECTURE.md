@@ -90,6 +90,8 @@ A full trading-day decision costs roughly 17–25 LLM calls depending on selecte
 
 **Bull and Bear Researchers** (`researchers/`). Adversarial pair that debates the analyst reports over multiple rounds — the Bull argues the strongest case for the position, the Bear the strongest case against, each citing specific reports (including `macro_report` when present). The debate forces analyst claims to survive opposition before they reach a decision, rather than being averaged together. Both maintain memories of past debates.
 
+*Known gap (memory key).* The memory key `curr_situation` (built in the Bull/Bear researchers, Research Manager, Trader, and Portfolio Manager) deliberately excludes `macro_report`, so memory retrieval cannot differ between the absent and present arms. Today nothing in the backtest calls `TradingAgentsGraph.reflect_and_remember` and each `FinancialSituationMemory` starts empty (`tradingagents/agents/utils/memory.py`), so retrieval is empty in both arms. If reflection is ever enabled, adding macro to the key would open a second macro channel and would require a PREREGISTRATION amendment.
+
 **Research Manager** (`managers/research_manager.py`). Adjudicates the Bull/Bear debate on a deep-thinking model: weighs the arguments, takes a side (or neither), and writes the investment plan that downstream agents act on. It fuses analyst perspectives from the debate transcript (including macro only insofar as Bull/Bear used `macro_report`).
 
 **Trader** (`trader/trader.py`). Translates the Research Manager's plan into a concrete proposed trade for the ticker — direction and conviction — bridging the research layer and the risk layer. It maintains memory of prior decisions so repeated mistakes can be reflected on.
