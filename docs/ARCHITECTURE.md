@@ -68,7 +68,7 @@ A full trading-day decision costs roughly 17–25 LLM calls depending on selecte
 
 **Step 1 — Analyst reports.** The compiled LangGraph runs the selected analysts *in sequence* (graph order: Market → Social → News → Fundamentals → Macro). They are conceptually independent — none reads another's report — but execute one after another, each in its own ReAct loop: the analyst node calls its bound tools (routed by `conditional_logic.py` through a per-analyst `ToolNode`), the tools fetch external data, and the loop repeats until the analyst writes its report. Data sources per analyst: yfinance/Alpha Vantage for Market (plus Kronos forecasts), FinGPT-methodology sentiment for Social, news adapters for News, statement data for Fundamentals, and brazilfi (Bacen, IBGE) for Macro. Each analyst writes one field into `AgentState`: `market_report`, `sentiment_report`, `news_report`, `fundamentals_report`, `macro_report`. A message-clear node after each analyst prunes its tool-call chatter from the state.
 
-**Step 2 — Research debate.** Bull and Bear researchers argue over the five reports for a bounded number of rounds (`conditional_logic.py` enforces the limit). The Research Manager adjudicates and writes an investment plan.
+**Step 2 — Research debate.** Bull and Bear researchers argue over the analyst reports for a bounded number of rounds (`conditional_logic.py` enforces the limit). `macro_report`, when present, is consumed in this step by Bull/Bear only. The Research Manager adjudicates the Bull/Bear debate history and writes an investment plan.
 
 **Step 3 — Trade proposal and risk review.** The Trader converts the plan into a proposed trade. The three risk debaters (aggressive, conservative, neutral) stress-test it in rounds; the Portfolio Manager reads the risk debate and writes the final trade decision as free text.
 
@@ -90,7 +90,7 @@ A full trading-day decision costs roughly 17–25 LLM calls depending on selecte
 
 **Bull and Bear Researchers** (`researchers/`). Adversarial pair that debates the analyst reports over multiple rounds — the Bull argues the strongest case for the position, the Bear the strongest case against, each citing specific reports (including `macro_report` when present). The debate forces analyst claims to survive opposition before they reach a decision, rather than being averaged together. Both maintain memories of past debates.
 
-**Research Manager** (`managers/research_manager.py`). Adjudicates the Bull/Bear debate on a deep-thinking model: weighs the arguments, takes a side (or neither), and writes the investment plan that downstream agents act on. It is the first point where the five analyst perspectives are fused into a single directional view.
+**Research Manager** (`managers/research_manager.py`). Adjudicates the Bull/Bear debate on a deep-thinking model: weighs the arguments, takes a side (or neither), and writes the investment plan that downstream agents act on. It fuses analyst perspectives from the debate transcript (including macro only insofar as Bull/Bear used `macro_report`).
 
 **Trader** (`trader/trader.py`). Translates the Research Manager's plan into a concrete proposed trade for the ticker — direction and conviction — bridging the research layer and the risk layer. It maintains memory of prior decisions so repeated mistakes can be reflected on.
 
