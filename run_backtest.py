@@ -110,19 +110,10 @@ def _build_run_config(
     selected_analysts: list[str] | None = None,
 ) -> dict[str, object]:
     """Build one run config object consumed by both run and cells.csv logging."""
+    _ = args
     config = DEFAULT_CONFIG.copy()
     if selected_analysts is not None:
         config["selected_analysts"] = list(selected_analysts)
-    if args.deep_think_llm is not None:
-        config["deep_think_llm"] = args.deep_think_llm
-    if args.quick_think_llm is not None:
-        config["quick_think_llm"] = args.quick_think_llm
-    if args.temperature is not None:
-        config["temperature"] = args.temperature
-    if args.max_debate_rounds is not None:
-        config["max_debate_rounds"] = args.max_debate_rounds
-    if args.max_risk_discuss_rounds is not None:
-        config["max_risk_discuss_rounds"] = args.max_risk_discuss_rounds
     return config
 
 
@@ -258,34 +249,6 @@ def main(argv=None) -> int:
         type=int,
         default=0,
         help="Replicate index written with --cells-out (integer >= 0, default: 0)",
-    )
-    parser.add_argument(
-        "--deep-think-llm",
-        default=None,
-        help="Override deep_think_llm for this run",
-    )
-    parser.add_argument(
-        "--quick-think-llm",
-        default=None,
-        help="Override quick_think_llm for this run",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=None,
-        help="Override model temperature for this run",
-    )
-    parser.add_argument(
-        "--max-debate-rounds",
-        type=int,
-        default=None,
-        help="Override max_debate_rounds for this run",
-    )
-    parser.add_argument(
-        "--max-risk-discuss-rounds",
-        type=int,
-        default=None,
-        help="Override max_risk_discuss_rounds for this run",
     )
     args = parser.parse_args(argv)
     if args.seed < 0:

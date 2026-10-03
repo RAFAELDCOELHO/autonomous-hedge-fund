@@ -599,6 +599,20 @@ def test_cells_out_preflight_accepts_extra_unknown_column_like_sharpe_flat(tmp_p
 def test_cells_out_logs_the_same_overridden_config_object_passed_to_run(tmp_path):
     run_backtest = _load_run_backtest()
     cells_path = tmp_path / "cells.csv"
+    override_deep_think = "claude-opus-5"
+    override_temperature = 0.37
+    override_max_debate_rounds = 3
+    assert run_backtest.DEFAULT_CONFIG["deep_think_llm"] != override_deep_think
+    assert run_backtest.DEFAULT_CONFIG.get("temperature") != override_temperature
+    assert run_backtest.DEFAULT_CONFIG["max_debate_rounds"] != override_max_debate_rounds
+    monkeypatched_config = {
+        **run_backtest.DEFAULT_CONFIG,
+        "deep_think_llm": override_deep_think,
+        "temperature": override_temperature,
+        "max_debate_rounds": override_max_debate_rounds,
+    }
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(run_backtest, "DEFAULT_CONFIG", monkeypatched_config)
     equity = pd.Series(
         [100_000.0, 101_000.0, 102_000.0],
         index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
@@ -612,43 +626,48 @@ def test_cells_out_logs_the_same_overridden_config_object_passed_to_run(tmp_path
         captured["run_config"] = kwargs["run_config"]
         return equity
 
-    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "ci-dummy-key"}), patch.object(
-        run_backtest, "load_dotenv"
-    ), patch.object(run_backtest, "run_strategy", side_effect=fake_run_strategy), patch.object(
-        run_backtest, "_selected_analysts_by_arm", return_value={"macro": ["macro"]}
-    ), patch.object(
-        run_backtest, "_run_agent_decider", side_effect=fake_run_agent_decider
-    ), patch.object(
-        run_backtest, "print_comparison"
-    ):
-        rc = run_backtest.main(
-            [
-                "--ticker",
-                "AAPL",
-                "--start",
-                "2024-01-02",
-                "--end",
-                "2024-03-28",
-                "--arms",
-                "macro",
-                "--seed",
-                "2",
-                "--temperature",
-                "0.42",
-                "--max-debate-rounds",
-                "7",
-                "--cells-out",
-                str(cells_path),
-            ]
-        )
+    try:
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "ci-dummy-key"}), patch.object(
+            run_backtest, "load_dotenv"
+        ), patch.object(run_backtest, "run_strategy", side_effect=fake_run_strategy), patch.object(
+            run_backtest, "_selected_analysts_by_arm", return_value={"macro": ["macro"]}
+        ), patch.object(
+            run_backtest, "_run_agent_decider", side_effect=fake_run_agent_decider
+        ), patch.object(
+            run_backtest, "print_comparison"
+        ):
+            rc = run_backtest.main(
+                [
+                    "--ticker",
+                    "AAPL",
+                    "--start",
+                    "2024-01-02",
+                    "--end",
+                    "2024-03-28",
+                    "--arms",
+                    "macro",
+                    "--seed",
+                    "2",
+                    "--cells-out",
+                    str(cells_path),
+                ]
+            )
+    finally:
+        monkeypatch.undo()
 
     assert rc == 0
     run_config = captured["run_config"]
+    assert run_config["deep_think_llm"] == override_deep_think
+    assert run_config["temperature"] == override_temperature
+    assert run_config["max_debate_rounds"] == override_max_debate_rounds
     with cells_path.open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
     assert len(rows) == 1
     row = rows[0]
     assert row["arm"] == "present"
+    assert row["deep_think_llm"] == override_deep_think
+    assert row["temperature"] == str(override_temperature)
+    assert row["max_debate_rounds"] == str(override_max_debate_rounds)
     assert row["temperature"] == str(run_config["temperature"])
     assert row["max_debate_rounds"] == str(run_config["max_debate_rounds"])
     assert row["deep_think_llm"] == str(run_config["deep_think_llm"])
