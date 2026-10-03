@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 
 REPO = Path(__file__).resolve().parents[1]
 RUN_BACKTEST = REPO / "run_backtest.py"
@@ -104,3 +106,54 @@ def test_agents_fail_fast_without_anthropic_key():
 
     assert rc == 2
     run_agent_decider_mock.assert_not_called()
+
+
+def test_skip_agents_runs_classic_without_anthropic_key():
+    run_backtest = _load_run_backtest()
+
+    def fake_run_strategy(*_args, **_kwargs):
+        return [100_000.0]
+
+    with patch.dict(os.environ, {}, clear=True), patch.object(
+        run_backtest, "load_dotenv"
+    ) as load_dotenv_mock, patch.object(
+        run_backtest, "run_strategy", side_effect=fake_run_strategy
+    ) as run_strategy_mock, patch.object(run_backtest, "print_comparison"):
+        rc = run_backtest.main(
+            [
+                "--ticker",
+                "AAPL",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-01-10",
+                "--skip-agents",
+            ]
+        )
+
+    assert rc == 0
+    assert run_strategy_mock.call_count == 3
+    load_dotenv_mock.assert_not_called()
+
+
+def test_invalid_arms_exits_with_code_2_and_clear_message(capsys):
+    run_backtest = _load_run_backtest()
+
+    with pytest.raises(SystemExit) as exc:
+        run_backtest.main(
+            [
+                "--ticker",
+                "AAPL",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-01-10",
+                "--arms",
+                "baseline,invalid",
+            ]
+        )
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "invalid arm(s): invalid" in captured.err
+    assert "Allowed: baseline,macro" in captured.err

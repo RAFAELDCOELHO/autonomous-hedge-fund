@@ -132,24 +132,26 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.seed < 0:
         parser.error("--seed must be >= 0")
+    try:
+        requested_arms = _parse_arms_csv(args.arms)
+    except ValueError as e:
+        parser.error(str(e))
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    curves = {}
-    for strat in (BuyAndHold(), MACDStrategy(), SMACrossStrategy()):
-        curves[strat.name] = run_strategy(strat, args.ticker, args.start, args.end, args.capital)
-
-    if not args.skip_agents:
-        try:
-            requested_arms = _parse_arms_csv(args.arms)
-        except ValueError as e:
-            parser.error(str(e))
+    if not args.skip_agents and requested_arms:
         load_dotenv()
         if not os.getenv("ANTHROPIC_API_KEY"):
             logging.error(
                 "ANTHROPIC_API_KEY is required when running agents; set it or use --skip-agents."
             )
             return 2
+
+    curves = {}
+    for strat in (BuyAndHold(), MACDStrategy(), SMACrossStrategy()):
+        curves[strat.name] = run_strategy(strat, args.ticker, args.start, args.end, args.capital)
+
+    if not args.skip_agents:
         arms = _selected_analysts_by_arm()
         if not arms:
             logging.warning("No selected_analysts arms configured; skipping TradingAgents run")
