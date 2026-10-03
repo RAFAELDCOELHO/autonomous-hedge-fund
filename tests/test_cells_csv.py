@@ -16,13 +16,20 @@ from tradingagents.backtest.cells import (
     COLUMNS,
     HARNESS_TO_ARM,
     PREREG_TICKERS,
+    SHARPE_FLAT_FIELD,
     append_cells,
     make_cell_row,
 )
-from tradingagents.backtest.metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator, h1_cell_metrics
+from tradingagents.backtest.metrics import (
+    FLAT_RF_SENSITIVITY,
+    ExtendedMetricsCalculator,
+    flat_rf_metrics,
+    h1_cell_metrics,
+)
 from tradingagents.backtest.report import (
     H1_SHARPE_COL,
     SHARPE_FLAT_COL,
+    build_comparison_table,
     format_table_markdown,
     print_comparison,
 )
@@ -155,6 +162,20 @@ def test_failed_row_leaves_sharpe_empty_and_still_validates(tmp_path):
     assert h1.main([str(path)]) == 0
 
 
+def test_sharpe_flat_is_the_flat_rf_table_sharpe_and_empty_when_failed():
+    equity = _equity("US")
+    flat = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY).compute(equity)["sharpe"]
+    r = equity.pct_change().dropna() - FLAT_RF_SENSITIVITY / 252
+    assert flat == pytest.approx(math.sqrt(252) * r.mean() / r.std(ddof=1))
+
+    row = make_cell_row("AAPL", "baseline", 0, equity)
+    assert float(row[SHARPE_FLAT_FIELD]) == flat
+    assert float(row[SHARPE_FLAT_FIELD]) != float(row["sharpe"])
+    table = build_comparison_table({"TradingAgents (baseline)": equity}, market="US")
+    assert table[SHARPE_FLAT_COL].iloc[0] == f"{flat:.3f}"
+    assert make_cell_row("AAPL", "macro", 0, status="failed")[SHARPE_FLAT_FIELD] == ""
+
+
 @pytest.mark.parametrize(
     "ticker, message",
     [
@@ -244,6 +265,7 @@ def test_cli_appends_mapped_rows_and_prints_h1_sharpe(tmp_path, capsys):
     ]
     assert raw[0]["rf_source"] == "BCB-SGS-12"
     assert float(raw[0]["sharpe"]) == h1_cell_metrics(equity, "BR")["sharpe"]
+    assert float(raw[0][SHARPE_FLAT_FIELD]) == flat_rf_metrics(equity)["sharpe"]
     loaded = h1.load_cells(path)
     assert h1.main([str(path)]) == 0
     assert loaded[0]["n_days"] == len(equity)
@@ -319,6 +341,7 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             "rf_source": "FRED-DTB3",
             "start": "2024-01-02",
             "end": "2024-03-28",
+            "sharpe_flat": "",
         }
     ]
     assert h1.load_cells(path)[0]["status"] == "failed"

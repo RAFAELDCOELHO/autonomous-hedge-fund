@@ -1,0 +1,108 @@
+"""P3.15: exploratory flat-rf H1 sensitivity (scripts/h1_rf_sensitivity.py). Offline."""
+
+from __future__ import annotations
+
+import csv
+import importlib.util
+import json
+from pathlib import Path
+
+import pytest
+
+from tradingagents.backtest.report import SHARPE_FLAT_COL
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+def _load(name: str):
+    spec = importlib.util.spec_from_file_location(name, REPO / "scripts" / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+h1 = _load("h1_stats")
+sens = _load("h1_rf_sensitivity")
+
+
+def _rows() -> list[dict]:
+    rows = []
+    for i, (ticker, market) in enumerate(h1.TICKERS.items()):
+        for arm in h1.ARMS:
+            present = arm == "present"
+            for s in range(h1.MIN_VALID_SEEDS):
+                rows.append({
+                    "ticker": ticker, "market": market, "arm": arm, "seed": s, "status": "ok",
+                    "n_days": 61, "n_decision_errors": 0,
+                    "sharpe": f"{0.1 * i + 0.01 * s + (0.2 if present else 0.0):.6f}",
+                    "rf_source": h1.RF_SOURCE[market],
+                    "sharpe_flat": f"{0.1 * i - 0.07 * s * (1 if present else -1) + (0.3 + 0.05 * i if present else 0.0):.6f}",
+                })
+    # Empty sharpe_flat -> NaN -> h1_stats' own missing_sharpe exclusion.
+    rows.append({**rows[0], "arm": "present", "seed": 9, "sharpe_flat": ""})
+    return rows
+
+
+def _write(path: Path, rows: list[dict], columns) -> Path:
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(columns), extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+    return path
+
+
+def test_script_reports_hand_computed_flat_rf_contrast(tmp_path, capsys):
+    rows = _rows()
+    cells = _write(tmp_path / "cells.csv", rows, (*h1.COLUMNS, "sharpe_flat"))
+    out = tmp_path / "out.json"
+    assert sens.main([str(cells), "--out", str(out)]) == 0
+
+    def delta(ticker):
+        means = []
+        for arm in ("present", "absent"):
+            vals = [float(r["sharpe_flat"]) for r in rows
+                    if r["ticker"] == ticker and r["arm"] == arm and r["sharpe_flat"]]
+            means.append(sum(vals) / len(vals))
+        return means[0] - means[1]
+
+    br = [delta(t) for t in ("ITUB4", "BPAC11", "PETR4", "VALE3", "WEGE3")]
+    us = [delta(t) for t in ("AAPL", "GOOGL", "AMZN")]
+    expected = sum(br) / len(br) - sum(us) / len(us)
+
+    raw = out.read_text(encoding="utf-8")
+    result = json.loads(raw)
+    assert result["D"] == pytest.approx(expected)
+    assert result["exclusion_counts"] == {"missing_sharpe": 1}
+    assert set(result) == {"exploratory", "n_rows", "n_valid_runs", "exclusion_counts", "excluded", "per_ticker", "D"}
+    printed = capsys.readouterr().out
+    assert printed.startswith("EXPLORATORY (PREREGISTRATION §7")
+    assert SHARPE_FLAT_COL in printed
+    assert "RADL3" in printed and "(control)" in printed
+    assert f"D (flat rf, exploratory) = mean dSharpe(BR sensitive) - mean dSharpe(US) = {expected:+.4f}" in printed
+    for text in (printed, raw):
+        for banned in ("p =", "p_value", "reject", "REJECT", "alpha", "Holm", "pre-registered analysis"):
+            assert banned not in text
+
+
+@pytest.mark.parametrize("columns, mutate", [
+    (h1.COLUMNS, None),
+    ((*h1.COLUMNS, "sharpe_flat"), "high"),
+])
+def test_script_rejects_missing_or_non_numeric_sharpe_flat(tmp_path, capsys, columns, mutate):
+    rows = _rows()
+    if mutate:
+        rows[1]["sharpe_flat"] = mutate
+    cells = _write(tmp_path / "cells.csv", rows, columns)
+    assert sens.main([str(cells)]) == 2
+    assert "sharpe_flat" in capsys.readouterr().err
+
+
+def test_h1_stats_output_identical_with_or_without_sharpe_flat(tmp_path, capsys):
+    rows = _rows()
+    outputs = []
+    for name, columns in (("plain", h1.COLUMNS), ("flat", (*h1.COLUMNS, "sharpe_flat"))):
+        cells = _write(tmp_path / f"{name}.csv", rows, columns)
+        out = tmp_path / f"{name}.json"
+        assert h1.main([str(cells), "--out", str(out)]) == 0
+        outputs.append((capsys.readouterr().out, out.read_bytes()))
+    assert outputs[0] == outputs[1]

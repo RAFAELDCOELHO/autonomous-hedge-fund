@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .metrics import h1_cell_metrics
+from .metrics import flat_rf_metrics, h1_cell_metrics
 from .risk_free import RF_SOURCE, market_of
 
 # Locked to scripts/h1_stats.py COLUMNS / TICKERS by tests/test_cells_csv.py.
@@ -28,6 +28,9 @@ COLUMNS = (
     "sharpe",
     "rf_source",
 )
+# Optional extra column, not in COLUMNS: same quantity as report.SHARPE_FLAT_COL
+# (flat_rf_metrics). Exploratory rf sensitivity only, PREREGISTRATION §7.
+SHARPE_FLAT_FIELD = "sharpe_flat"
 HARNESS_TO_ARM = {"baseline": "absent", "macro": "present"}
 PREREG_TICKERS = {
     "AAPL": "US",
@@ -103,11 +106,13 @@ def make_cell_row(
         n_errors = metrics["n_decision_errors"]
         sharpe = _format_sharpe(metrics["sharpe"])
         rf_source = metrics["rf_source"]
+        sharpe_flat = _format_sharpe(flat_rf_metrics(equity)["sharpe"])
     else:
         n_days = 0
         n_errors = 0
         sharpe = ""
         rf_source = RF_SOURCE[market]
+        sharpe_flat = ""
 
     return {
         "ticker": bare,
@@ -119,6 +124,7 @@ def make_cell_row(
         "n_decision_errors": str(n_errors),
         "sharpe": sharpe,
         "rf_source": rf_source,
+        SHARPE_FLAT_FIELD: sharpe_flat,
     }
 
 

@@ -47,6 +47,7 @@ from tradingagents.backtest.cells import (
     PREREG_TICKERS,
     PREREG_WINDOW_END,
     PREREG_WINDOW_START,
+    SHARPE_FLAT_FIELD,
     append_cells,
     bare_ticker,
     make_cell_row,
@@ -142,7 +143,7 @@ def _validate_cells_header(path: Path, fieldnames: list[str]) -> None:
 
 
 def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> None:
-    """Ensure cells.csv has start/end columns while preserving existing rows."""
+    """Ensure cells.csv has extra_columns, appended in order; existing rows get them empty."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists() or path.stat().st_size == 0:
@@ -289,7 +290,7 @@ def main(argv=None) -> int:
             # Append each finished arm immediately so a later arm keeps it.
             if args.cells_out is not None:
                 try:
-                    _ensure_cells_extra_columns(args.cells_out, ("start", "end"))
+                    _ensure_cells_extra_columns(args.cells_out, ("start", "end", SHARPE_FLAT_FIELD))
                     row = make_cell_row(
                         args.ticker,
                         arm_name,
