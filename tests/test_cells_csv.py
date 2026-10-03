@@ -260,17 +260,18 @@ def test_cli_appends_mapped_rows_and_prints_h1_sharpe(tmp_path, capsys):
     ), patch.object(run_backtest, "run_agent_strategy", side_effect=fake_run_agent), patch.object(
         run_backtest, "print_comparison"
     ):
-        again = run_backtest.main(
-            [
-                "--ticker", "PETR4.SA",
-                "--start", "2024-01-12",
-                "--end", "2024-01-18",
-                "--arms", "baseline",
-                "--cells-out", str(path),
-                "--seed", "2",
-            ]
-        )
-    assert again == 2
+        with pytest.raises(SystemExit) as exc:
+            run_backtest.main(
+                [
+                    "--ticker", "PETR4.SA",
+                    "--start", "2024-01-12",
+                    "--end", "2024-01-18",
+                    "--arms", "baseline",
+                    "--cells-out", str(path),
+                    "--seed", "2",
+                ]
+            )
+    assert exc.value.code == 2
     assert len(_raw_rows(path)) == 2
     h1.load_cells(path)
 
@@ -316,6 +317,8 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             "n_decision_errors": "0",
             "sharpe": "",
             "rf_source": "FRED-DTB3",
+            "start": "2024-01-02",
+            "end": "2024-01-10",
         }
     ]
     assert h1.load_cells(path)[0]["status"] == "failed"

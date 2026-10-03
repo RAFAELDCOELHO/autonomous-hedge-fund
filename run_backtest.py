@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import os
 from pathlib import Path
@@ -40,7 +41,7 @@ from tradingagents.backtest import (
     run_agent_strategy,
 )
 from tradingagents.backtest.agent_integration import make_decide_fn
-from tradingagents.backtest.cells import append_cells, make_cell_row
+from tradingagents.backtest.cells import COLUMNS, PREREG_TICKERS, append_cells, bare_ticker, make_cell_row, prereg_arm
 from tradingagents.backtest.risk_free import market_of
 from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -104,6 +105,56 @@ def _parse_arms_csv(value: str) -> list[str]:
     return deduped
 
 
+def _planned_cells_keys(ticker: str, arms: list[str], seed: int) -> set[tuple[str, str, str]]:
+    bare = bare_ticker(ticker)
+    return {(bare, prereg_arm(arm), str(seed)) for arm in arms}
+
+
+def _read_existing_cells_keys(path: Path) -> set[tuple[str, str, str]]:
+    keys: set[tuple[str, str, str]] = set()
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = set(reader.fieldnames or [])
+        required = {"ticker", "arm", "seed"}
+        missing = required - fieldnames
+        if missing:
+            raise ValueError(f"{path} is missing required columns for duplicate check: {sorted(missing)}")
+        for row in reader:
+            keys.add((row.get("ticker", ""), row.get("arm", ""), row.get("seed", "")))
+    return keys
+
+
+def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> None:
+    """Ensure cells.csv has start/end columns while preserving existing rows."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists() or path.stat().st_size == 0:
+        with path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=[*COLUMNS, *extra_columns], lineterminator="\n")
+            writer.writeheader()
+        return
+
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = list(reader.fieldnames or [])
+        if not fieldnames:
+            fieldnames = list(COLUMNS)
+        missing_required = [column for column in COLUMNS if column not in fieldnames]
+        if missing_required:
+            raise ValueError(f"{path} is missing required columns: {missing_required}")
+        extras_to_add = [name for name in extra_columns if name not in fieldnames]
+        if not extras_to_add:
+            return
+        rows = list(reader)
+
+    new_fieldnames = [*fieldnames, *extras_to_add]
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=new_fieldnames, lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({name: row.get(name, "") for name in new_fieldnames})
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run academic backtest comparison.")
     parser.add_argument("--ticker", required=True)
@@ -136,6 +187,30 @@ def main(argv=None) -> int:
         requested_arms = _parse_arms_csv(args.arms)
     except ValueError as e:
         parser.error(str(e))
+    if args.cells_out is not None:
+        bare = bare_ticker(args.ticker)
+        if bare not in PREREG_TICKERS:
+            parser.error(
+                f"--cells-out requires a pre-registered ticker; got {bare!r}. "
+                "Use one from tradingagents.backtest.cells.PREREG_TICKERS."
+            )
+        if args.skip_agents:
+            arms_to_write = []
+        else:
+            available_arms = set(_selected_analysts_by_arm())
+            arms_to_write = [arm for arm in requested_arms if arm in available_arms]
+        planned = _planned_cells_keys(args.ticker, arms_to_write, args.seed)
+        if planned and args.cells_out.exists() and args.cells_out.stat().st_size > 0:
+            try:
+                existing = _read_existing_cells_keys(args.cells_out)
+            except ValueError as exc:
+                parser.error(str(exc))
+            duplicates = sorted(planned & existing)
+            if duplicates:
+                parser.error(
+                    "--cells-out already contains (ticker, arm, seed) key(s) for this run: "
+                    + ", ".join(repr(item) for item in duplicates)
+                )
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -162,25 +237,34 @@ def main(argv=None) -> int:
                     "Requested arm '%s' is unavailable in harness config; skipping", arm_name
                 )
                 continue
-            agent_curve = _run_agent_decider(
-                args.ticker,
-                args.start,
-                args.end,
-                args.capital,
-                selected_analysts=selected_analysts,
-            )
+            arm_status = "failed"
+            agent_curve = None
+            try:
+                agent_curve = _run_agent_decider(
+                    args.ticker,
+                    args.start,
+                    args.end,
+                    args.capital,
+                    selected_analysts=selected_analysts,
+                )
+            except Exception:
+                logging.exception("TradingAgents arm '%s' failed; recording status=failed", arm_name)
             if agent_curve is not None:
                 curves[f"TradingAgents ({arm_name})"] = agent_curve
+                arm_status = "ok"
             # Append each finished arm immediately so a later arm keeps it.
             if args.cells_out is not None:
                 try:
+                    _ensure_cells_extra_columns(args.cells_out, ("start", "end"))
                     row = make_cell_row(
                         args.ticker,
                         arm_name,
                         args.seed,
                         equity=agent_curve,
-                        status="ok" if agent_curve is not None else "failed",
+                        status=arm_status,
                     )
+                    row["start"] = args.start
+                    row["end"] = args.end
                     append_cells(args.cells_out, [row])
                 except ValueError as exc:
                     logging.error("%s", exc)
