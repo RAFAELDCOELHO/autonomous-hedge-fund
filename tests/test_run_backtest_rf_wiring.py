@@ -40,7 +40,13 @@ def test_agent_arm_passes_market_of_ticker(ticker, market):
     with patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch.object(
         run_backtest, "run_agent_strategy", side_effect=fake_runner
     ):
-        result = run_backtest._run_agent_decider(ticker, "2024-01-02", "2024-01-31", 100_000.0)
+        result = run_backtest._run_agent_decider(
+            ticker,
+            "2024-01-02",
+            "2024-01-31",
+            100_000.0,
+            run_config=run_backtest.DEFAULT_CONFIG.copy(),
+        )
 
     assert result == "equity-curve"
     assert captured == {"market": market}

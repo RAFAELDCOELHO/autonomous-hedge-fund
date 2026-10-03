@@ -319,6 +319,11 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             "rf_source": "FRED-DTB3",
             "start": "2024-01-02",
             "end": "2024-03-28",
+            "deep_think_llm": "claude-sonnet-4-6",
+            "quick_think_llm": "claude-haiku-4-5-20251001",
+            "temperature": "provider-default",
+            "max_debate_rounds": "1",
+            "max_risk_discuss_rounds": "1",
         }
     ]
     assert h1.load_cells(path)[0]["status"] == "failed"
