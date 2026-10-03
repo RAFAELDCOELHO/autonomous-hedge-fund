@@ -90,23 +90,40 @@ def _run_agent_decider(
     start: str,
     end: str,
     capital: float,
-    selected_analysts: list[str] | None = None,
+    run_config: dict[str, object],
 ):
     """Run TradingAgents once per trading day and return an equity curve.
 
     Falls back to None if the pipeline cannot be constructed.
     """
-    config = DEFAULT_CONFIG.copy()
-    if selected_analysts is not None:
-        config["selected_analysts"] = list(selected_analysts)
-
     try:
-        decide_fn = make_decide_fn(ticker=ticker, config=config)
+        decide_fn = make_decide_fn(ticker=ticker, config=run_config)
     except Exception as e:
         logging.warning("TradingAgents pipeline unavailable (%s)", e)
         return None
 
     return run_agent_strategy(decide_fn, ticker, start, end, capital, market=market_of(ticker))
+
+
+def _build_run_config(
+    args: argparse.Namespace,
+    selected_analysts: list[str] | None = None,
+) -> dict[str, object]:
+    """Build one run config object consumed by both run and cells.csv logging."""
+    config = DEFAULT_CONFIG.copy()
+    if selected_analysts is not None:
+        config["selected_analysts"] = list(selected_analysts)
+    if args.deep_think_llm is not None:
+        config["deep_think_llm"] = args.deep_think_llm
+    if args.quick_think_llm is not None:
+        config["quick_think_llm"] = args.quick_think_llm
+    if args.temperature is not None:
+        config["temperature"] = args.temperature
+    if args.max_debate_rounds is not None:
+        config["max_debate_rounds"] = args.max_debate_rounds
+    if args.max_risk_discuss_rounds is not None:
+        config["max_risk_discuss_rounds"] = args.max_risk_discuss_rounds
+    return config
 
 
 def _parse_arms_csv(value: str) -> list[str]:
@@ -129,17 +146,6 @@ def _parse_arms_csv(value: str) -> list[str]:
 def _planned_cells_keys(ticker: str, arms: list[str], seed: int) -> set[tuple[str, str, str]]:
     bare = bare_ticker(ticker)
     return {(bare, prereg_arm(arm), str(seed)) for arm in arms}
-
-
-def _read_existing_cells_keys(path: Path) -> set[tuple[str, str, str]]:
-    keys: set[tuple[str, str, str]] = set()
-    with path.open(newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        fieldnames = list(reader.fieldnames or [])
-        _validate_cells_header(path, fieldnames)
-        for row in reader:
-            keys.add((row.get("ticker", ""), row.get("arm", ""), row.get("seed", "")))
-    return keys
 
 
 def _validate_cells_header(path: Path, fieldnames: list[str]) -> None:
@@ -253,6 +259,34 @@ def main(argv=None) -> int:
         default=0,
         help="Replicate index written with --cells-out (integer >= 0, default: 0)",
     )
+    parser.add_argument(
+        "--deep-think-llm",
+        default=None,
+        help="Override deep_think_llm for this run",
+    )
+    parser.add_argument(
+        "--quick-think-llm",
+        default=None,
+        help="Override quick_think_llm for this run",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Override model temperature for this run",
+    )
+    parser.add_argument(
+        "--max-debate-rounds",
+        type=int,
+        default=None,
+        help="Override max_debate_rounds for this run",
+    )
+    parser.add_argument(
+        "--max-risk-discuss-rounds",
+        type=int,
+        default=None,
+        help="Override max_risk_discuss_rounds for this run",
+    )
     args = parser.parse_args(argv)
     if args.seed < 0:
         parser.error("--seed must be >= 0")
@@ -261,7 +295,7 @@ def main(argv=None) -> int:
     except ValueError as e:
         parser.error(str(e))
     if args.cells_out is not None:
-        run_config_values = _cells_config_values(DEFAULT_CONFIG)
+        run_config_values = _cells_config_values(_build_run_config(args))
         bare = bare_ticker(args.ticker)
         expected_market = PREREG_TICKERS.get(bare)
         if expected_market is None:
@@ -345,13 +379,14 @@ def main(argv=None) -> int:
                 continue
             arm_status = "failed"
             agent_curve = None
+            run_config = _build_run_config(args, selected_analysts=selected_analysts)
             try:
                 agent_curve = _run_agent_decider(
                     args.ticker,
                     args.start,
                     args.end,
                     args.capital,
-                    selected_analysts=selected_analysts,
+                    run_config=run_config,
                 )
             except Exception:
                 logging.exception("TradingAgents arm '%s' failed; recording status=failed", arm_name)
@@ -373,7 +408,7 @@ def main(argv=None) -> int:
                     )
                     row["start"] = args.start
                     row["end"] = args.end
-                    row.update(run_config_values)
+                    row.update(_cells_config_values(run_config))
                     append_cells(args.cells_out, [row])
                 except ValueError as exc:
                     logging.error("%s", exc)
