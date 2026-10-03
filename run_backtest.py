@@ -11,7 +11,9 @@ window must lie inside 2023-12-01..2024-04-30 (daily_rf raises otherwise).
 The table shows Sharpe at the flat exploratory rf for every strategy, and
 the agent arm's H1 Sharpe (excess over the daily rf) beside it.
 ``--cells-out`` appends one PREREGISTRATION §4 row per agent arm
-(baseline → absent, macro → present; B3 tickers stored without ``.SA``).
+(baseline → absent, macro → present; B3 tickers stored without ``.SA``) and
+logs per-run config columns: ``deep_think_llm``, ``quick_think_llm``,
+``temperature``, ``max_debate_rounds``, ``max_risk_discuss_rounds``.
 
 Usage:
     uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
@@ -64,7 +66,13 @@ CELLS_EXTRA_COLUMNS = (
     "max_debate_rounds",
     "max_risk_discuss_rounds",
 )
-CELLS_CONFIG_COLUMNS = CELLS_EXTRA_COLUMNS[2:]
+CELLS_CONFIG_COLUMNS = (
+    "deep_think_llm",
+    "quick_think_llm",
+    "temperature",
+    "max_debate_rounds",
+    "max_risk_discuss_rounds",
+)
 
 
 def _load_headline_arena_arms() -> dict[str, dict[str, object]]:
@@ -105,12 +113,8 @@ def _run_agent_decider(
     return run_agent_strategy(decide_fn, ticker, start, end, capital, market=market_of(ticker))
 
 
-def _build_run_config(
-    args: argparse.Namespace,
-    selected_analysts: list[str] | None = None,
-) -> dict[str, object]:
+def _build_run_config(selected_analysts: list[str] | None = None) -> dict[str, object]:
     """Build one run config object consumed by both run and cells.csv logging."""
-    _ = args
     config = DEFAULT_CONFIG.copy()
     if selected_analysts is not None:
         config["selected_analysts"] = list(selected_analysts)
@@ -189,6 +193,9 @@ def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> N
 
 
 def _cells_config_values(config: dict[str, object]) -> dict[str, str]:
+    # The runtime graph path does not currently read `temperature`; we still
+    # log exactly what exists on the run_config object passed into execution
+    # so recorded metadata cannot drift from the executed config snapshot.
     raw_temperature = config.get("temperature")
     if raw_temperature in (None, ""):
         temperature = "provider-default"
@@ -258,7 +265,7 @@ def main(argv=None) -> int:
     except ValueError as e:
         parser.error(str(e))
     if args.cells_out is not None:
-        run_config_values = _cells_config_values(_build_run_config(args))
+        run_config_values = _cells_config_values(_build_run_config())
         bare = bare_ticker(args.ticker)
         expected_market = PREREG_TICKERS.get(bare)
         if expected_market is None:
@@ -342,7 +349,7 @@ def main(argv=None) -> int:
                 continue
             arm_status = "failed"
             agent_curve = None
-            run_config = _build_run_config(args, selected_analysts=selected_analysts)
+            run_config = _build_run_config(selected_analysts=selected_analysts)
             try:
                 agent_curve = _run_agent_decider(
                     args.ticker,
