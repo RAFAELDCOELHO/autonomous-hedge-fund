@@ -40,6 +40,9 @@ PREREG_TICKERS = {
     "WEGE3": "BR",
     "RADL3": "BR",
 }
+# PREREGISTRATION.md §2 / decision 8 fixed endpoints for the H1 run window.
+PREREG_WINDOW_START = "2024-01-02"
+PREREG_WINDOW_END = "2024-03-28"
 
 
 def bare_ticker(ticker: str) -> str:

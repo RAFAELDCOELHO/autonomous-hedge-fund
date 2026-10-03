@@ -228,8 +228,8 @@ def test_cli_appends_mapped_rows_and_prints_h1_sharpe(tmp_path, capsys):
         rc = run_backtest.main(
             [
                 "--ticker", "PETR4.SA",
-                "--start", "2024-01-12",
-                "--end", "2024-01-18",
+                "--start", "2024-01-02",
+                "--end", "2024-03-28",
                 "--arms", "baseline,macro",
                 "--cells-out", str(path),
                 "--seed", "2",
@@ -260,17 +260,18 @@ def test_cli_appends_mapped_rows_and_prints_h1_sharpe(tmp_path, capsys):
     ), patch.object(run_backtest, "run_agent_strategy", side_effect=fake_run_agent), patch.object(
         run_backtest, "print_comparison"
     ):
-        again = run_backtest.main(
-            [
-                "--ticker", "PETR4.SA",
-                "--start", "2024-01-12",
-                "--end", "2024-01-18",
-                "--arms", "baseline",
-                "--cells-out", str(path),
-                "--seed", "2",
-            ]
-        )
-    assert again == 2
+        with pytest.raises(SystemExit) as exc:
+            run_backtest.main(
+                [
+                    "--ticker", "PETR4.SA",
+                    "--start", "2024-01-02",
+                    "--end", "2024-03-28",
+                    "--arms", "baseline",
+                    "--cells-out", str(path),
+                    "--seed", "2",
+                ]
+            )
+    assert exc.value.code == 2
     assert len(_raw_rows(path)) == 2
     h1.load_cells(path)
 
@@ -296,14 +297,14 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             [
                 "--ticker", "AMZN",
                 "--start", "2024-01-02",
-                "--end", "2024-01-10",
+                "--end", "2024-03-28",
                 "--arms", "macro",
                 "--cells-out", str(path),
                 "--seed", "0",
             ]
         )
 
-    assert rc == 0
+    assert rc == 1
     raw = _raw_rows(path)
     assert raw == [
         {
@@ -316,6 +317,8 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             "n_decision_errors": "0",
             "sharpe": "",
             "rf_source": "FRED-DTB3",
+            "start": "2024-01-02",
+            "end": "2024-03-28",
         }
     ]
     assert h1.load_cells(path)[0]["status"] == "failed"
@@ -336,7 +339,7 @@ def test_cli_skip_agents_and_negative_seed(tmp_path):
             [
                 "--ticker", "AAPL",
                 "--start", "2024-01-02",
-                "--end", "2024-01-10",
+                "--end", "2024-03-28",
                 "--skip-agents",
                 "--cells-out", str(path),
             ]
