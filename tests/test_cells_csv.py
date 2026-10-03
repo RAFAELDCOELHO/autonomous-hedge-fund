@@ -98,7 +98,7 @@ def test_rows_round_trip_through_h1_stats_validation(tmp_path):
         append_cells(path, [make_cell_row(ticker, arm, seed, equity)])
 
     text = path.read_text(encoding="utf-8")
-    assert text.splitlines()[0] == ",".join(COLUMNS)
+    assert text.splitlines()[0] == ",".join((*COLUMNS, SHARPE_FLAT_FIELD))
     assert text.count(text.splitlines()[0]) == 1
 
     raw = _raw_rows(path)
@@ -136,8 +136,8 @@ def test_rows_round_trip_through_h1_stats_validation(tmp_path):
 def test_append_preserves_extra_columns(tmp_path):
     path = tmp_path / "cells.csv"
     path.write_text(
-        "model," + ",".join(COLUMNS) + "\n"
-        "claude,AAPL,US,absent,0,ok,4,0,1.0,FRED-DTB3\n",
+        "model," + ",".join(COLUMNS) + f",{SHARPE_FLAT_FIELD}\n"
+        "claude,AAPL,US,absent,0,ok,4,0,1.0,FRED-DTB3,\n",
         encoding="utf-8",
     )
     append_cells(path, [make_cell_row("AAPL", "macro", 0, _equity("US"))])
@@ -146,6 +146,28 @@ def test_append_preserves_extra_columns(tmp_path):
     assert raw[1]["model"] == ""
     assert raw[1]["arm"] == "present"
     h1.load_cells(path)
+
+
+def test_append_refuses_sharpe_flat_on_legacy_header_but_accepts_failed_rows(tmp_path):
+    path = tmp_path / "cells.csv"
+    path.write_text(",".join(COLUMNS) + "\nAAPL,US,absent,0,ok,4,0,1.0,FRED-DTB3\n", encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="has no sharpe_flat column; migrate it first"):
+        append_cells(path, [make_cell_row("AAPL", "macro", 0, _equity("US"))])
+    assert path.read_bytes() == before
+    append_cells(path, [make_cell_row("AAPL", "macro", 0, status="failed")])
+    raw = _raw_rows(path)
+    assert list(raw[1]) == list(COLUMNS)
+    assert raw[1]["status"] == "failed"
+    h1.load_cells(path)
+
+
+def test_append_new_file_header_includes_sharpe_flat(tmp_path):
+    path = tmp_path / "cells.csv"
+    equity = _equity("US")
+    append_cells(path, [make_cell_row("AAPL", "baseline", 0, equity)])
+    assert path.read_text(encoding="utf-8").splitlines()[0] == ",".join((*COLUMNS, SHARPE_FLAT_FIELD))
+    assert float(_raw_rows(path)[0][SHARPE_FLAT_FIELD]) == flat_rf_metrics(equity)["sharpe"]
 
 
 def test_failed_row_leaves_sharpe_empty_and_still_validates(tmp_path):

@@ -131,16 +131,17 @@ def make_cell_row(
 def append_cells(path: Path, rows: list[dict[str, str]]) -> None:
     """Append rows, writing the header only when the file is new or empty.
 
-    The header must include COLUMNS. Extra columns already in the file are
-    kept (empty on new rows); h1_stats ignores them. A repeated
-    (ticker, arm, seed) is refused so the file stays valid.
+    New files get COLUMNS + SHARPE_FLAT_FIELD. An existing header must include
+    COLUMNS; its extra columns are kept (empty on new rows) and h1_stats ignores
+    them. A non-empty sharpe_flat is refused on a header without that column,
+    as is a repeated (ticker, arm, seed), so the file stays valid.
     """
     if not rows:
         return
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     existing: set[tuple[str, str, str]] = set()
-    fieldnames = list(COLUMNS)
+    fieldnames = [*COLUMNS, SHARPE_FLAT_FIELD]
     write_header = True
     if path.exists() and path.stat().st_size > 0:
         with path.open(newline="", encoding="utf-8") as fh:
@@ -152,6 +153,11 @@ def append_cells(path: Path, rows: list[dict[str, str]]) -> None:
             for raw in reader:
                 existing.add((raw.get("ticker", ""), raw.get("arm", ""), raw.get("seed", "")))
         write_header = False
+        if SHARPE_FLAT_FIELD not in fieldnames and any(row.get(SHARPE_FLAT_FIELD) for row in rows):
+            raise ValueError(
+                f"{path} has no {SHARPE_FLAT_FIELD} column; migrate it first "
+                "(run_backtest --cells-out does this via _ensure_cells_extra_columns)"
+            )
 
     encoded: list[dict[str, str]] = []
     for row in rows:

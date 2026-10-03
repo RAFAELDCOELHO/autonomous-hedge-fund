@@ -347,9 +347,16 @@ def test_cells_out_rejects_wrong_window_before_any_strategy_or_llm(capsys, tmp_p
     run_agent_decider_mock.assert_not_called()
 
 
-def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_path):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_path, legacy):
     run_backtest = _load_run_backtest()
     cells_path = tmp_path / "cells.csv"
+    legacy_row = "AAPL,US,absent,7,ok,3,0,1.0,FRED-DTB3"
+    if legacy:
+        cells_path.write_text(
+            "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source\n" + legacy_row + "\n",
+            encoding="utf-8",
+        )
     equity = pd.Series(
         [100_000.0, 101_000.0, 100_500.0],
         index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
@@ -394,6 +401,10 @@ def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_pat
     assert log_exception_mock.call_args.args[1] == "baseline"
     with cells_path.open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
+    if legacy:
+        old = rows.pop(0)
+        assert ",".join(list(old.values())[:9]) == legacy_row
+        assert old["sharpe_flat"] == ""
     assert len(rows) == 2
     assert {row["arm"] for row in rows} == {"absent", "present"}
     failed = next(row for row in rows if row["arm"] == "absent")

@@ -36,21 +36,38 @@ BANNER = (
 )
 
 
-def load_flat_rows(path: Path) -> list[dict]:
-    """h1_stats.load_cells rows with ``sharpe`` replaced by ``sharpe_flat``."""
-    rows = h1_stats.load_cells(path)
+def load_rows(path: Path) -> tuple[list[dict], list[dict]]:
+    """h1_stats.load_cells rows as-is (primary) and with ``sharpe`` replaced by ``sharpe_flat``."""
+    primary = h1_stats.load_cells(path)
     with open(path, newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         if SHARPE_FLAT_FIELD not in (reader.fieldnames or []):
             raise ValueError(f"missing column {SHARPE_FLAT_FIELD!r}")
         raw = list(reader)
-    for line, (row, r) in enumerate(zip(rows, raw), start=2):
+    flat = []
+    for line, (row, r) in enumerate(zip(primary, raw), start=2):
         text = (r[SHARPE_FLAT_FIELD] or "").strip()
         try:
-            row["sharpe"] = float(text) if text else math.nan
+            flat.append({**row, "sharpe": float(text) if text else math.nan})
         except ValueError:
             raise ValueError(f"line {line}: {SHARPE_FLAT_FIELD}={text!r} is not a number") from None
-    return rows
+    return primary, flat
+
+
+def exclusion_diff(primary_excluded: list[dict], flat_excluded: list[dict]) -> list[dict]:
+    """Excluded entries present in only one of the two analyses."""
+    def key(e):
+        return e["ticker"], e["arm"], e["seed"], e["reason"]
+
+    p, f = {key(e) for e in primary_excluded}, {key(e) for e in flat_excluded}
+    return [{**e, "only_in": "sensitivity"} for e in flat_excluded if key(e) not in p] + [
+        {**e, "only_in": "primary"} for e in primary_excluded if key(e) not in f
+    ]
+
+
+def _label(e: dict) -> str:
+    where = e["ticker"] if e["arm"] is None else f"{e['ticker']}/{e['arm']}/seed {e['seed']}"
+    return f"{where} ({e['reason']})"
 
 
 def describe(rows: list[dict]) -> dict:
@@ -114,11 +131,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, help="also write this descriptive result as JSON here")
     args = ap.parse_args(argv)
     try:
-        rows = load_flat_rows(args.cells)
+        primary, rows = load_rows(args.cells)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     result = describe(rows)
+    diff = exclusion_diff(h1_stats.apply_exclusions(primary)[1], result["excluded"])
+    result["exclusions_differ_from_primary"] = diff
+    if diff:
+        parts = [
+            f"excluded only in {side}: " + ", ".join(_label(e) for e in diff if e["only_in"] == side)
+            for side in ("sensitivity", "primary") if any(e["only_in"] == side for e in diff)
+        ]
+        print(f"WARNING: {len(diff)} excluded row(s) differ from the primary analysis; " + "; ".join(parts), file=sys.stderr)
     print(report(result))
     if args.out:
         args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
