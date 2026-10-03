@@ -55,6 +55,17 @@ from tradingagents.backtest.cells import (
 from tradingagents.backtest.risk_free import market_of
 from tradingagents.default_config import DEFAULT_CONFIG
 
+CELLS_EXTRA_COLUMNS = (
+    "start",
+    "end",
+    "deep_think_llm",
+    "quick_think_llm",
+    "temperature",
+    "max_debate_rounds",
+    "max_risk_discuss_rounds",
+)
+CELLS_CONFIG_COLUMNS = CELLS_EXTRA_COLUMNS[2:]
+
 
 def _load_headline_arena_arms() -> dict[str, dict[str, object]]:
     script = Path(__file__).resolve().parent / "scripts" / "headline_arena_arms.py"
@@ -139,6 +150,13 @@ def _validate_cells_header(path: Path, fieldnames: list[str]) -> None:
     has_end = "end" in fieldnames
     if has_start != has_end:
         raise ValueError(f"{path} must include both start and end columns together")
+    has_any_config = any(name in fieldnames for name in CELLS_CONFIG_COLUMNS)
+    has_all_config = all(name in fieldnames for name in CELLS_CONFIG_COLUMNS)
+    if has_any_config and not has_all_config:
+        raise ValueError(
+            f"{path} must include all config columns together or none: "
+            f"{list(CELLS_CONFIG_COLUMNS)}"
+        )
 
 
 def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> None:
@@ -171,6 +189,43 @@ def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> N
         if os.path.exists(tmp_name):
             os.unlink(tmp_name)
         raise
+
+
+def _cells_config_values(config: dict[str, object]) -> dict[str, str]:
+    raw_temperature = config.get("temperature")
+    if raw_temperature in (None, ""):
+        temperature = "provider-default"
+    else:
+        temperature = str(raw_temperature)
+    return {
+        "deep_think_llm": str(config.get("deep_think_llm", "")),
+        "quick_think_llm": str(config.get("quick_think_llm", "")),
+        "temperature": temperature,
+        "max_debate_rounds": str(config.get("max_debate_rounds", "")),
+        "max_risk_discuss_rounds": str(config.get("max_risk_discuss_rounds", "")),
+    }
+
+
+def _row_has_logged_config(row: dict[str, str]) -> bool:
+    return any((row.get(column, "") or "").strip() != "" for column in CELLS_CONFIG_COLUMNS)
+
+
+def _find_config_mismatch(
+    rows: list[dict[str, str]], expected_config: dict[str, str]
+) -> tuple[dict[str, str], str, str] | None:
+    for row in rows:
+        if not _row_has_logged_config(row):
+            continue
+        for column, expected in expected_config.items():
+            actual = (row.get(column, "") or "").strip()
+            if actual != expected:
+                key = (
+                    row.get("ticker", ""),
+                    row.get("arm", ""),
+                    row.get("seed", ""),
+                )
+                return row, column, repr(key)
+    return None
 
 
 def main(argv=None) -> int:
@@ -206,6 +261,7 @@ def main(argv=None) -> int:
     except ValueError as e:
         parser.error(str(e))
     if args.cells_out is not None:
+        run_config_values = _cells_config_values(DEFAULT_CONFIG)
         bare = bare_ticker(args.ticker)
         expected_market = PREREG_TICKERS.get(bare)
         if expected_market is None:
@@ -233,15 +289,33 @@ def main(argv=None) -> int:
         planned = _planned_cells_keys(args.ticker, arms_to_write, args.seed)
         if planned and args.cells_out.exists() and args.cells_out.stat().st_size > 0:
             try:
-                existing = _read_existing_cells_keys(args.cells_out)
+                with args.cells_out.open(newline="", encoding="utf-8") as fh:
+                    reader = csv.DictReader(fh)
+                    fieldnames = list(reader.fieldnames or [])
+                    _validate_cells_header(args.cells_out, fieldnames)
+                    existing_rows = list(reader)
             except ValueError as exc:
                 parser.error(str(exc))
+            existing = {
+                (row.get("ticker", ""), row.get("arm", ""), row.get("seed", ""))
+                for row in existing_rows
+            }
             duplicates = sorted(planned & existing)
             if duplicates:
                 parser.error(
                     "--cells-out already contains (ticker, arm, seed) key(s) for this run: "
                     + ", ".join(repr(item) for item in duplicates)
                 )
+            has_config_columns = all(name in fieldnames for name in CELLS_CONFIG_COLUMNS)
+            if has_config_columns:
+                mismatch = _find_config_mismatch(existing_rows, run_config_values)
+                if mismatch is not None:
+                    row, column, key = mismatch
+                    parser.error(
+                        "--cells-out contains rows logged with a different run config: "
+                        f"{column}={row.get(column, '')!r} at {key}; expected "
+                        f"{run_config_values[column]!r} for this run"
+                    )
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -289,7 +363,7 @@ def main(argv=None) -> int:
             # Append each finished arm immediately so a later arm keeps it.
             if args.cells_out is not None:
                 try:
-                    _ensure_cells_extra_columns(args.cells_out, ("start", "end"))
+                    _ensure_cells_extra_columns(args.cells_out, CELLS_EXTRA_COLUMNS)
                     row = make_cell_row(
                         args.ticker,
                         arm_name,
@@ -299,6 +373,7 @@ def main(argv=None) -> int:
                     )
                     row["start"] = args.start
                     row["end"] = args.end
+                    row.update(run_config_values)
                     append_cells(args.cells_out, [row])
                 except ValueError as exc:
                     logging.error("%s", exc)
