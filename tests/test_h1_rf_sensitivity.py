@@ -84,6 +84,35 @@ def test_script_reports_hand_computed_flat_rf_contrast(tmp_path, capsys):
             assert banned not in text
 
 
+def test_script_matches_h1_stats_analyze(tmp_path, capsys):
+    cells = _write(tmp_path / "cells.csv", _rows(), (*h1.COLUMNS, "sharpe_flat"))
+    out = tmp_path / "out.json"
+    assert sens.main([str(cells), "--out", str(out)]) == 0
+    result = json.loads(out.read_text(encoding="utf-8"))
+    ref = json.loads(json.dumps(h1.analyze(sens.load_flat_rows(cells))))
+    for key in ("per_ticker", "n_rows", "n_valid_runs", "exclusion_counts", "excluded"):
+        assert result[key] == ref[key]
+    assert result["D"] == pytest.approx(ref["primary"]["statistic"], rel=0, abs=1e-12)
+
+
+def test_script_skips_permutation_code(tmp_path, capsys, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("permutation path called")
+
+    for name in ("analyze", "primary_test", "_within_ticker_perm"):
+        monkeypatch.setattr(sens.h1_stats, name, boom)
+    cells = _write(tmp_path / "cells.csv", _rows(), (*h1.COLUMNS, "sharpe_flat"))
+    assert sens.main([str(cells)]) == 0
+    assert "D (flat rf, exploratory) = " in capsys.readouterr().out
+
+
+def test_script_not_evaluable_without_us_tickers(tmp_path, capsys):
+    rows = [r for r in _rows() if r["market"] != "US"]
+    cells = _write(tmp_path / "cells.csv", rows, (*h1.COLUMNS, "sharpe_flat"))
+    assert sens.main([str(cells)]) == 0
+    assert "D (flat rf, exploratory) not evaluable: no BR-sensitive or no US ticker left" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("columns, mutate", [
     (h1.COLUMNS, None),
     ((*h1.COLUMNS, "sharpe_flat"), "high"),

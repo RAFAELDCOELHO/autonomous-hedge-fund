@@ -1,9 +1,10 @@
 """EXPLORATORY rf sensitivity of the H1 contrast (docs/PREREGISTRATION.md §7).
 
-Not confirmatory, descriptive only: no p-values or significance claims. Reuses
-scripts/h1_stats.py unchanged, with each row's ``sharpe`` replaced by its
-``sharpe_flat`` (the flat FLAT_RF_SENSITIVITY rate instead of the pre-registered
-daily rf), and reports exclusions, per-ticker deltas and D.
+Not confirmatory, descriptive only: no p-values, permutations or significance
+claims. Loads rows with scripts/h1_stats.py (unchanged), replaces each row's
+``sharpe`` with its ``sharpe_flat`` (the flat FLAT_RF_SENSITIVITY rate instead of
+the pre-registered daily rf), applies h1_stats' exclusions and reports
+per-ticker deltas and D = mean delta(BR sensitive) - mean delta(US).
 
 Usage::
 
@@ -19,6 +20,8 @@ import json
 import math
 import sys
 from pathlib import Path
+
+import numpy as np
 
 from tradingagents.backtest.cells import SHARPE_FLAT_FIELD
 from tradingagents.backtest.report import SHARPE_FLAT_COL
@@ -50,6 +53,40 @@ def load_flat_rows(path: Path) -> list[dict]:
     return rows
 
 
+def describe(rows: list[dict]) -> dict:
+    """Exclusions, per-ticker deltas and D via h1_stats' pure helpers (no permutations)."""
+    kept, excluded = h1_stats.apply_exclusions(rows)
+    deltas = {t: h1_stats._delta(a) for t, a in kept.items()}
+    per_ticker = [
+        {
+            "ticker": t,
+            "market": h1_stats.TICKERS[t],
+            "role": "control" if t in h1_stats.BR_CONTROL else "primary",
+            "n_absent": len(kept[t]["absent"]),
+            "n_present": len(kept[t]["present"]),
+            "mean_sharpe_absent": float(np.mean([x["sharpe"] for x in kept[t]["absent"]])),
+            "mean_sharpe_present": float(np.mean([x["sharpe"] for x in kept[t]["present"]])),
+            "delta_sharpe": deltas[t],
+        }
+        for t in h1_stats.TICKERS if t in kept
+    ]
+    counts = {}
+    for e in excluded:
+        counts[e["reason"]] = counts.get(e["reason"], 0) + 1
+    br = [deltas[t] for t in h1_stats.BR_SENSITIVE if t in deltas]
+    us = [deltas[t] for t in h1_stats.US_TICKERS if t in deltas]
+    return {
+        "exploratory": BANNER,
+        "n_rows": len(rows),
+        "n_valid_runs": sum(len(v) for a in kept.values() for v in a.values()),
+        "exclusion_counts": counts,
+        "excluded": excluded,
+        "per_ticker": per_ticker,
+        **({"D": float(np.mean(br) - np.mean(us))} if br and us
+           else {"not_evaluable": "no BR-sensitive or no US ticker left"}),
+    }
+
+
 def report(result: dict) -> str:
     lines = [
         BANNER,
@@ -77,16 +114,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, help="also write this descriptive result as JSON here")
     args = ap.parse_args(argv)
     try:
-        full = h1_stats.analyze(load_flat_rows(args.cells))
+        rows = load_flat_rows(args.cells)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    primary = full["primary"]
-    result = {
-        "exploratory": BANNER,
-        **{k: full[k] for k in ("n_rows", "n_valid_runs", "exclusion_counts", "excluded", "per_ticker")},
-        **({"D": primary["statistic"]} if primary["evaluable"] else {"not_evaluable": primary["reason"]}),
-    }
+    result = describe(rows)
     print(report(result))
     if args.out:
         args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
