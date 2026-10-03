@@ -23,11 +23,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import os
 from pathlib import Path
 from runpy import run_path
 import sys
+import tempfile
 
 from dotenv import load_dotenv
 
@@ -40,7 +42,16 @@ from tradingagents.backtest import (
     run_agent_strategy,
 )
 from tradingagents.backtest.agent_integration import make_decide_fn
-from tradingagents.backtest.cells import append_cells, make_cell_row
+from tradingagents.backtest.cells import (
+    COLUMNS,
+    PREREG_TICKERS,
+    PREREG_WINDOW_END,
+    PREREG_WINDOW_START,
+    append_cells,
+    bare_ticker,
+    make_cell_row,
+    prereg_arm,
+)
 from tradingagents.backtest.risk_free import market_of
 from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -104,6 +115,64 @@ def _parse_arms_csv(value: str) -> list[str]:
     return deduped
 
 
+def _planned_cells_keys(ticker: str, arms: list[str], seed: int) -> set[tuple[str, str, str]]:
+    bare = bare_ticker(ticker)
+    return {(bare, prereg_arm(arm), str(seed)) for arm in arms}
+
+
+def _read_existing_cells_keys(path: Path) -> set[tuple[str, str, str]]:
+    keys: set[tuple[str, str, str]] = set()
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = list(reader.fieldnames or [])
+        _validate_cells_header(path, fieldnames)
+        for row in reader:
+            keys.add((row.get("ticker", ""), row.get("arm", ""), row.get("seed", "")))
+    return keys
+
+
+def _validate_cells_header(path: Path, fieldnames: list[str]) -> None:
+    missing_required = [column for column in COLUMNS if column not in fieldnames]
+    if missing_required:
+        raise ValueError(f"{path} is missing required columns: {missing_required}")
+    has_start = "start" in fieldnames
+    has_end = "end" in fieldnames
+    if has_start != has_end:
+        raise ValueError(f"{path} must include both start and end columns together")
+
+
+def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> None:
+    """Ensure cells.csv has start/end columns while preserving existing rows."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists() or path.stat().st_size == 0:
+        fieldnames = [*COLUMNS, *extra_columns]
+        rows: list[dict[str, str]] = []
+    else:
+        with path.open(newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            fieldnames = list(reader.fieldnames or [])
+            _validate_cells_header(path, fieldnames)
+            extras_to_add = [name for name in extra_columns if name not in fieldnames]
+            if not extras_to_add:
+                return
+            rows = list(reader)
+            fieldnames = [*fieldnames, *extras_to_add]
+
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=fieldnames, lineterminator="\n")
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({name: row.get(name, "") for name in fieldnames})
+        os.replace(tmp_name, path)
+    except Exception:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+        raise
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run academic backtest comparison.")
     parser.add_argument("--ticker", required=True)
@@ -136,6 +205,43 @@ def main(argv=None) -> int:
         requested_arms = _parse_arms_csv(args.arms)
     except ValueError as e:
         parser.error(str(e))
+    if args.cells_out is not None:
+        bare = bare_ticker(args.ticker)
+        expected_market = PREREG_TICKERS.get(bare)
+        if expected_market is None:
+            parser.error(
+                f"--cells-out requires a pre-registered ticker; got {bare!r}. "
+                "Use one from tradingagents.backtest.cells.PREREG_TICKERS."
+            )
+        actual_market = market_of(args.ticker)
+        if actual_market != expected_market:
+            parser.error(
+                f"--cells-out ticker {args.ticker!r} resolves to market {actual_market}, "
+                f"but preregistered {bare} market is {expected_market}. "
+                "Use the Yahoo symbol expected by market_of (B3 tickers require .SA)."
+            )
+        if args.start != PREREG_WINDOW_START or args.end != PREREG_WINDOW_END:
+            parser.error(
+                f"--cells-out requires the preregistered H1 window "
+                f"{PREREG_WINDOW_START}..{PREREG_WINDOW_END}; got {args.start}..{args.end}"
+            )
+        if args.skip_agents:
+            arms_to_write = []
+        else:
+            available_arms = set(_selected_analysts_by_arm())
+            arms_to_write = [arm for arm in requested_arms if arm in available_arms]
+        planned = _planned_cells_keys(args.ticker, arms_to_write, args.seed)
+        if planned and args.cells_out.exists() and args.cells_out.stat().st_size > 0:
+            try:
+                existing = _read_existing_cells_keys(args.cells_out)
+            except ValueError as exc:
+                parser.error(str(exc))
+            duplicates = sorted(planned & existing)
+            if duplicates:
+                parser.error(
+                    "--cells-out already contains (ticker, arm, seed) key(s) for this run: "
+                    + ", ".join(repr(item) for item in duplicates)
+                )
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -153,6 +259,7 @@ def main(argv=None) -> int:
 
     if not args.skip_agents:
         arms = _selected_analysts_by_arm()
+        failed_arms: list[str] = []
         if not arms:
             logging.warning("No selected_analysts arms configured; skipping TradingAgents run")
         for arm_name in requested_arms:
@@ -162,29 +269,44 @@ def main(argv=None) -> int:
                     "Requested arm '%s' is unavailable in harness config; skipping", arm_name
                 )
                 continue
-            agent_curve = _run_agent_decider(
-                args.ticker,
-                args.start,
-                args.end,
-                args.capital,
-                selected_analysts=selected_analysts,
-            )
+            arm_status = "failed"
+            agent_curve = None
+            try:
+                agent_curve = _run_agent_decider(
+                    args.ticker,
+                    args.start,
+                    args.end,
+                    args.capital,
+                    selected_analysts=selected_analysts,
+                )
+            except Exception:
+                logging.exception("TradingAgents arm '%s' failed; recording status=failed", arm_name)
             if agent_curve is not None:
                 curves[f"TradingAgents ({arm_name})"] = agent_curve
+                arm_status = "ok"
+            else:
+                failed_arms.append(arm_name)
             # Append each finished arm immediately so a later arm keeps it.
             if args.cells_out is not None:
                 try:
+                    _ensure_cells_extra_columns(args.cells_out, ("start", "end"))
                     row = make_cell_row(
                         args.ticker,
                         arm_name,
                         args.seed,
                         equity=agent_curve,
-                        status="ok" if agent_curve is not None else "failed",
+                        status=arm_status,
                     )
+                    row["start"] = args.start
+                    row["end"] = args.end
                     append_cells(args.cells_out, [row])
                 except ValueError as exc:
                     logging.error("%s", exc)
                     return 2
+        if failed_arms:
+            logging.error("Failed TradingAgents arms: %s", ",".join(failed_arms))
+            print_comparison(curves, market=market_of(args.ticker))
+            return 1
 
     print_comparison(curves, market=market_of(args.ticker))
     return 0
