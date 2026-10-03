@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import pytest
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.runnables import RunnableLambda
 
@@ -20,6 +21,8 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 BULL_ABSENT_PROMPT_SHA256 = "ab467475e46d012f1c52d75323c16321960b8acebf26b6e05af3c11461717676"
 BEAR_ABSENT_PROMPT_SHA256 = "7e387d43925152981b6c96ed49ec08708d3415d0084d7fd0c2acff19bc4df810"
 MACRO_TOKEN = "MACRO-REPORT-TOKEN-P3-12"
+MACRO_SECTION_LABEL = "Macroeconomic report:"
+PORTFOLIO_MANAGER_MARKER = "As the Portfolio Manager"
 
 
 class _NoMemory:
@@ -167,7 +170,10 @@ def test_research_manager_prompt_excludes_macro_report():
     assert MACRO_TOKEN not in llm.prompts[-1]
 
 
-def test_real_graph_propagation_macro_visibility_by_arm(monkeypatch, tmp_path: Path):
+@pytest.mark.parametrize("max_debate_rounds", [1, 2])
+def test_real_graph_propagation_macro_visibility_by_arm(
+    monkeypatch, tmp_path: Path, max_debate_rounds: int
+):
     def run_arm(selected_analysts: list[str]) -> list[str]:
         recording_llm = _RecordingLLM(macro_token=MACRO_TOKEN)
 
@@ -183,7 +189,8 @@ def test_real_graph_propagation_macro_visibility_by_arm(monkeypatch, tmp_path: P
         config = DEFAULT_CONFIG.copy()
         config["results_dir"] = str(tmp_path / "results")
         config["data_cache_dir"] = str(tmp_path / "cache")
-        config["max_recur_limit"] = 60
+        config["max_recur_limit"] = 100
+        config["max_debate_rounds"] = max_debate_rounds
 
         graph = TradingAgentsGraph(
             selected_analysts=selected_analysts,
@@ -207,6 +214,11 @@ def test_real_graph_propagation_macro_visibility_by_arm(monkeypatch, tmp_path: P
         if "You are a Bear Analyst making the case against investing in the stock." in prompt
     ]
     assert absent_bull_prompts and absent_bear_prompts
+    assert all(MACRO_SECTION_LABEL not in prompt for prompt in absent_bull_prompts)
+    assert all(MACRO_SECTION_LABEL not in prompt for prompt in absent_bear_prompts)
+    absent_pm_prompts = [p for p in absent_prompts if PORTFOLIO_MANAGER_MARKER in p]
+    assert absent_pm_prompts
+    assert all(MACRO_TOKEN not in prompt for prompt in absent_pm_prompts)
 
     present_prompts = run_arm(["market", "social", "news", "fundamentals", "macro"])
     assert present_prompts, "present arm should produce LLM prompts"
@@ -246,7 +258,10 @@ def test_real_graph_propagation_macro_visibility_by_arm(monkeypatch, tmp_path: P
             or "As the Neutral Risk Analyst" in prompt
         )
     ]
+    portfolio_manager_prompts = [p for p in present_prompts if PORTFOLIO_MANAGER_MARKER in p]
     assert research_manager_prompts and trader_prompts and risk_prompts
+    assert portfolio_manager_prompts
+    assert all(MACRO_TOKEN not in prompt for prompt in portfolio_manager_prompts)
     assert all(MACRO_TOKEN not in prompt for prompt in research_manager_prompts)
     assert all(MACRO_TOKEN not in prompt for prompt in trader_prompts)
     assert all(MACRO_TOKEN not in prompt for prompt in risk_prompts)
