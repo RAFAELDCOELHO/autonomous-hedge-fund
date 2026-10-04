@@ -858,3 +858,91 @@ def test_cells_out_logs_the_same_overridden_config_object_passed_to_run(tmp_path
     assert row["deep_think_llm"] == str(run_config["deep_think_llm"])
     assert row["quick_think_llm"] == str(run_config["quick_think_llm"])
     assert row["max_risk_discuss_rounds"] == str(run_config["max_risk_discuss_rounds"])
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        ("2024-01-03", "2024-03-28"),  # only start differs
+        ("2024-01-02", "2024-03-27"),  # only end differs
+    ],
+    ids=["start-only", "end-only"],
+)
+def test_cells_out_rejects_window_when_only_one_endpoint_differs(capsys, tmp_path, start, end):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+
+    with patch.object(run_backtest, "run_strategy") as run_strategy_mock, patch.object(
+        run_backtest, "_run_agent_decider"
+    ) as run_agent_decider_mock:
+        with pytest.raises(SystemExit) as exc:
+            run_backtest.main(
+                ["--ticker", "AAPL", "--start", start, "--end", end, "--cells-out", str(cells_path)]
+            )
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "--cells-out requires the preregistered H1 window" in captured.err
+    run_strategy_mock.assert_not_called()
+    run_agent_decider_mock.assert_not_called()
+
+
+_VALID_HEADER = "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source\n"
+
+
+@pytest.mark.parametrize(
+    ("existing", "ticker", "start", "end"),
+    [
+        (None, "MSFT", "2024-01-02", "2024-03-28"),  # non-preregistered ticker
+        (None, "PETR4", "2024-01-02", "2024-03-28"),  # bare B3 ticker
+        (None, "AAPL", "2024-01-03", "2024-03-28"),  # wrong window
+        (_VALID_HEADER + "AAPL,US,absent,0,ok,2,0,1.0,FRED-DTB3\n", "AAPL", "2024-01-02", "2024-03-28"),  # duplicate
+        ("ticker,market,arm,seed,status,n_days,n_decision_errors,rf_source\n", "AAPL", "2024-01-02", "2024-03-28"),  # bad header
+        (_VALID_HEADER.rstrip("\n") + ",start\n", "AAPL", "2024-01-02", "2024-03-28"),  # start without end
+    ],
+    ids=["unregistered-ticker", "bare-b3", "wrong-window", "duplicate-key", "bad-header", "start-without-end"],
+)
+def test_cells_out_preflight_rejection_never_touches_cells_file(tmp_path, existing, ticker, start, end):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    if existing is not None:
+        cells_path.write_text(existing, encoding="utf-8")
+        os.utime(cells_path, ns=(1_000_000_000, 1_000_000_000))
+        before_bytes = cells_path.read_bytes()
+        before_stat = cells_path.stat()
+        before_ino = before_stat.st_ino
+        before_mtime = before_stat.st_mtime_ns
+
+    with patch.object(run_backtest, "run_strategy") as run_strategy_mock, patch.object(
+        run_backtest, "_run_agent_decider"
+    ) as run_agent_decider_mock:
+        with pytest.raises(SystemExit) as exc:
+            run_backtest.main(
+                [
+                    "--ticker",
+                    ticker,
+                    "--start",
+                    start,
+                    "--end",
+                    end,
+                    "--cells-out",
+                    str(cells_path),
+                    "--arms",
+                    "baseline",
+                    "--seed",
+                    "0",
+                ]
+            )
+
+    assert exc.value.code == 2
+    run_strategy_mock.assert_not_called()
+    run_agent_decider_mock.assert_not_called()
+    if existing is None:
+        assert not cells_path.exists()
+        assert list(tmp_path.iterdir()) == []
+    else:
+        assert cells_path.read_bytes() == before_bytes
+        after_stat = cells_path.stat()
+        assert after_stat.st_ino == before_ino
+        assert after_stat.st_mtime_ns == before_mtime
+        assert list(tmp_path.iterdir()) == [cells_path]

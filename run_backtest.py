@@ -8,12 +8,7 @@ or `--skip-agents` to run only classical baselines. Prints a rich table
 of CR / AR / Sharpe / MDD. The TradingAgents arms' cash earns the market's
 daily rf (CDI for .SA tickers, DTB3 otherwise) from data/rf/, so the agent
 window must lie inside 2023-12-01..2024-04-30 (daily_rf raises otherwise).
-The table shows Sharpe at the flat exploratory rf for every strategy, and
-the agent arm's H1 Sharpe (excess over the daily rf) beside it.
-``--cells-out`` appends one PREREGISTRATION §4 row per agent arm
-(baseline → absent, macro → present; B3 tickers stored without ``.SA``) and
-logs per-run config columns: ``deep_think_llm``, ``quick_think_llm``,
-``temperature``, ``max_debate_rounds``, ``max_risk_discuss_rounds``.
+The table shows Sharpe at the flat exploratory rf for every strategy, and the agent arm's H1 Sharpe (excess over the daily rf) beside it. ``--cells-out`` appends one PREREGISTRATION §4 row per agent arm (baseline → absent, macro → present; B3 tickers stored without ``.SA``), plus ``start``/``end`` and the five config columns (``deep_think_llm``, ``quick_think_llm``, ``temperature``, ``max_debate_rounds``, ``max_risk_discuss_rounds``). Before any API key check, download, or LLM call, it preflights ticker/market, the fixed preregistered window (2024-01-02..2024-03-28), existing header validity, duplicate (ticker, arm, seed) keys, and rows already logged with a different config; if rejected, it exits 2 without touching the file. If an arm raises, it records ``status=failed`` and continues with the next arm, and any failed arm makes the CLI exit non-zero.
 
 Usage:
     uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
