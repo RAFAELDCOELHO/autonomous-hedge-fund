@@ -474,8 +474,11 @@ def test_cells_out_preflight_rejection_never_touches_cells_file(tmp_path, existi
     cells_path = tmp_path / "cells.csv"
     if existing is not None:
         cells_path.write_text(existing, encoding="utf-8")
+        os.utime(cells_path, ns=(1_000_000_000, 1_000_000_000))
         before_bytes = cells_path.read_bytes()
-        before_mtime = cells_path.stat().st_mtime_ns
+        before_stat = cells_path.stat()
+        before_ino = before_stat.st_ino
+        before_mtime = before_stat.st_mtime_ns
 
     with patch.object(run_backtest, "run_strategy") as run_strategy_mock, patch.object(
         run_backtest, "_run_agent_decider"
@@ -506,5 +509,7 @@ def test_cells_out_preflight_rejection_never_touches_cells_file(tmp_path, existi
         assert list(tmp_path.iterdir()) == []
     else:
         assert cells_path.read_bytes() == before_bytes
-        assert cells_path.stat().st_mtime_ns == before_mtime
+        after_stat = cells_path.stat()
+        assert after_stat.st_ino == before_ino
+        assert after_stat.st_mtime_ns == before_mtime
         assert list(tmp_path.iterdir()) == [cells_path]
