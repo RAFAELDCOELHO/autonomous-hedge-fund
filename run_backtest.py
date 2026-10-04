@@ -205,6 +205,9 @@ def _cells_config_values(config: dict[str, object]) -> dict[str, str]:
     }
 
 
+assert tuple(_cells_config_values(DEFAULT_CONFIG).keys()) == CELLS_CONFIG_COLUMNS
+
+
 def _row_has_logged_config(row: dict[str, str]) -> bool:
     return any((row.get(column, "") or "").strip() != "" for column in CELLS_CONFIG_COLUMNS)
 
