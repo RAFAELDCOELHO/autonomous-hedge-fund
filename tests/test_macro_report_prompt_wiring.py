@@ -31,6 +31,24 @@ class _NoMemory:
 
 
 @dataclass
+class _CaptureMemory:
+    last_query: str | None = None
+
+    def get_memories(self, query: str, **_kwargs: Any) -> list[dict[str, str]]:
+        self.last_query = query
+        return []
+
+
+@dataclass
+class _CaptureMemoryQueries:
+    queries: list[str] = field(default_factory=list)
+
+    def get_memories(self, query: str, **_kwargs: Any) -> list[dict[str, str]]:
+        self.queries.append(query)
+        return []
+
+
+@dataclass
 class _CaptureInvokeLLM:
     prompts: list[str] = field(default_factory=list)
 
@@ -160,14 +178,52 @@ def test_bull_and_bear_macro_prompt_diff_and_absent_golden_hash():
 
 def test_research_manager_prompt_excludes_macro_report():
     llm = _CaptureInvokeLLM()
-    node = create_research_manager(llm, _NoMemory())
+    memory = _CaptureMemory()
+    node = create_research_manager(llm, memory)
     state = _base_debate_state()
     state["company_of_interest"] = "PETR4.SA"
     state["macro_report"] = MACRO_TOKEN
     node(state)
 
+    assert memory.last_query is not None, "research_manager should perform a memory lookup"
+    assert MACRO_TOKEN not in memory.last_query
     assert llm.prompts, "research_manager should call llm.invoke once"
     assert MACRO_TOKEN not in llm.prompts[-1]
+
+
+def test_bull_and_bear_curr_situation_excludes_macro_report_but_prompt_includes_it():
+    macro_sentinel = "MACRO_SENTINEL"
+    base_state = _base_debate_state()
+    expected_curr_situation = (
+        f"{base_state['market_report']}\n\n"
+        f"{base_state['sentiment_report']}\n\n"
+        f"{base_state['news_report']}\n\n"
+        f"{base_state['fundamentals_report']}"
+    )
+
+    bull_memory = _CaptureMemoryQueries()
+    bull_llm = _CaptureInvokeLLM()
+    bull_node = create_bull_researcher(bull_llm, bull_memory)
+    bull_state = _base_debate_state()
+    bull_state["macro_report"] = macro_sentinel
+    bull_node(bull_state)
+
+    assert bull_memory.queries, "bull researcher should perform a memory lookup"
+    assert macro_sentinel not in bull_memory.queries[-1]
+    assert bull_memory.queries[-1] == expected_curr_situation
+    assert f"Macroeconomic report: {macro_sentinel}" in bull_llm.prompts[-1]
+
+    bear_memory = _CaptureMemoryQueries()
+    bear_llm = _CaptureInvokeLLM()
+    bear_node = create_bear_researcher(bear_llm, bear_memory)
+    bear_state = _base_debate_state()
+    bear_state["macro_report"] = macro_sentinel
+    bear_node(bear_state)
+
+    assert bear_memory.queries, "bear researcher should perform a memory lookup"
+    assert macro_sentinel not in bear_memory.queries[-1]
+    assert bear_memory.queries[-1] == expected_curr_situation
+    assert f"Macroeconomic report: {macro_sentinel}" in bear_llm.prompts[-1]
 
 
 @pytest.mark.parametrize("max_debate_rounds", [1, 2])
