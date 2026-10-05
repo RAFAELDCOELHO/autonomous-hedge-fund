@@ -119,7 +119,7 @@ def test_script_warns_when_exclusions_diverge_from_primary(tmp_path, capsys):
     out = tmp_path / "out.json"
     assert sens.main([str(cells), "--out", str(out)]) == 0
     err = capsys.readouterr().err
-    assert err.startswith("WARNING: 2 excluded row(s) differ")
+    assert err.startswith("WARNING: 2 exclusion(s) differ")
     assert "excluded only in sensitivity: AAPL/present/seed 9 (missing_sharpe)" in err
     assert "excluded only in primary: AAPL/present/seed 13 (missing_sharpe)" in err
     assert json.loads(out.read_text(encoding="utf-8"))["exclusions_differ_from_primary"] == [

@@ -143,7 +143,11 @@ def main(argv: list[str] | None = None) -> int:
             f"excluded only in {side}: " + ", ".join(_label(e) for e in diff if e["only_in"] == side)
             for side in ("sensitivity", "primary") if any(e["only_in"] == side for e in diff)
         ]
-        print(f"WARNING: {len(diff)} excluded row(s) differ from the primary analysis; " + "; ".join(parts), file=sys.stderr)
+        print(
+            f"WARNING: {len(diff)} exclusion(s) differ from the primary analysis; "
+            + "; ".join(parts),
+            file=sys.stderr,
+        )
     print(report(result))
     if args.out:
         args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
