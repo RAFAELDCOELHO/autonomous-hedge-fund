@@ -5,6 +5,8 @@ claims. Loads rows with scripts/h1_stats.py (unchanged), replaces each row's
 ``sharpe`` with its ``sharpe_flat`` (the flat FLAT_RF_SENSITIVITY rate instead of
 the pre-registered daily rf), applies h1_stats' exclusions and reports
 per-ticker deltas and D = mean delta(BR sensitive) - mean delta(US).
+When flat-rf exclusions differ from the primary analysis, it warns on stderr
+and writes the difference list to ``exclusions_differ_from_primary``.
 
 Usage::
 

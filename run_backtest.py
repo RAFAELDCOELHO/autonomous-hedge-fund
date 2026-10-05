@@ -153,6 +153,17 @@ def _planned_cells_keys(ticker: str, arms: list[str], seed: int) -> set[tuple[st
     return {(bare, prereg_arm(arm), str(seed)) for arm in arms}
 
 
+def _read_existing_cells_keys(path: Path) -> set[tuple[str, str, str]]:
+    keys: set[tuple[str, str, str]] = set()
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = list(reader.fieldnames or [])
+        _validate_cells_header(path, fieldnames)
+        for row in reader:
+            keys.add((row.get("ticker", ""), row.get("arm", ""), row.get("seed", "")))
+    return keys
+
+
 def _validate_cells_header(path: Path, fieldnames: list[str]) -> None:
     missing_required = [column for column in COLUMNS if column not in fieldnames]
     if missing_required:
