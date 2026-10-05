@@ -8,7 +8,21 @@ or `--skip-agents` to run only classical baselines. Prints a rich table
 of CR / AR / Sharpe / MDD. The TradingAgents arms' cash earns the market's
 daily rf (CDI for .SA tickers, DTB3 otherwise) from data/rf/, so the agent
 window must lie inside 2023-12-01..2024-04-30 (daily_rf raises otherwise).
-The table shows Sharpe at the flat exploratory rf for every strategy, and the agent arm's H1 Sharpe (excess over the daily rf) beside it. ``--cells-out`` appends one PREREGISTRATION §4 row per agent arm (baseline → absent, macro → present; B3 tickers stored without ``.SA``), plus ``start``/``end`` and the five config columns (``deep_think_llm``, ``quick_think_llm``, ``temperature``, ``max_debate_rounds``, ``max_risk_discuss_rounds``). Before any API key check, download, or LLM call, it preflights ticker/market, the fixed preregistered window (2024-01-02..2024-03-28), existing header validity, duplicate (ticker, arm, seed) keys, and rows already logged with a different config; if rejected, it exits 2 without touching the file. If an arm raises, it records ``status=failed`` and continues with the next arm, and any failed arm makes the CLI exit non-zero.
+The table shows Sharpe at the flat exploratory rf for every strategy, and the
+agent arm's H1 Sharpe (excess over the daily rf) beside it.
+``--cells-out`` appends one PREREGISTRATION §4 row per agent arm
+(baseline → absent, macro → present; B3 tickers stored without ``.SA``),
+plus ``start``/``end`` and the five config columns
+(``deep_think_llm``, ``quick_think_llm``, ``temperature``,
+``max_debate_rounds``, ``max_risk_discuss_rounds``).
+It also writes ``sharpe_flat`` for exploratory PREREGISTRATION §7 analyses
+and leaves ``sharpe_flat`` empty on failed rows.
+Before any API key check, download, or LLM call, it preflights ticker/market,
+the fixed preregistered window (2024-01-02..2024-03-28), existing header
+validity, duplicate (ticker, arm, seed) keys, and rows already logged with a
+different config; if rejected, it exits 2 without touching the file.
+If an arm raises, it records ``status=failed`` and continues with the next arm,
+and any failed arm makes the CLI exit non-zero.
 
 Usage:
     uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
@@ -44,6 +58,7 @@ from tradingagents.backtest.cells import (
     PREREG_TICKERS,
     PREREG_WINDOW_END,
     PREREG_WINDOW_START,
+    SHARPE_FLAT_FIELD,
     append_cells,
     bare_ticker,
     make_cell_row,
@@ -138,6 +153,17 @@ def _planned_cells_keys(ticker: str, arms: list[str], seed: int) -> set[tuple[st
     return {(bare, prereg_arm(arm), str(seed)) for arm in arms}
 
 
+def _read_existing_cells_keys(path: Path) -> set[tuple[str, str, str]]:
+    keys: set[tuple[str, str, str]] = set()
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = list(reader.fieldnames or [])
+        _validate_cells_header(path, fieldnames)
+        for row in reader:
+            keys.add((row.get("ticker", ""), row.get("arm", ""), row.get("seed", "")))
+    return keys
+
+
 def _validate_cells_header(path: Path, fieldnames: list[str]) -> None:
     missing_required = [column for column in COLUMNS if column not in fieldnames]
     if missing_required:
@@ -156,7 +182,7 @@ def _validate_cells_header(path: Path, fieldnames: list[str]) -> None:
 
 
 def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> None:
-    """Ensure cells.csv has start/end columns while preserving existing rows."""
+    """Ensure cells.csv has extra_columns, appended in order; existing rows get them empty."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists() or path.stat().st_size == 0:
@@ -205,7 +231,9 @@ def _cells_config_values(config: dict[str, object]) -> dict[str, str]:
     }
 
 
-assert tuple(_cells_config_values(DEFAULT_CONFIG).keys()) == CELLS_CONFIG_COLUMNS
+assert tuple(_cells_config_values(DEFAULT_CONFIG).keys()) == CELLS_CONFIG_COLUMNS, (
+    "CELLS_CONFIG_COLUMNS fora de sincronia com _cells_config_values"
+)
 
 
 def _row_has_logged_config(row: dict[str, str]) -> bool:
@@ -366,7 +394,9 @@ def main(argv=None) -> int:
             # Append each finished arm immediately so a later arm keeps it.
             if args.cells_out is not None:
                 try:
-                    _ensure_cells_extra_columns(args.cells_out, CELLS_EXTRA_COLUMNS)
+                    _ensure_cells_extra_columns(
+                        args.cells_out, (*CELLS_EXTRA_COLUMNS, SHARPE_FLAT_FIELD)
+                    )
                     row = make_cell_row(
                         args.ticker,
                         arm_name,

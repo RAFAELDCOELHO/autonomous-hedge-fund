@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .metrics import h1_cell_metrics
+from .metrics import flat_rf_metrics, h1_cell_metrics
 from .risk_free import RF_SOURCE, market_of
 
 # Locked to scripts/h1_stats.py COLUMNS / TICKERS by tests/test_cells_csv.py.
@@ -28,6 +28,9 @@ COLUMNS = (
     "sharpe",
     "rf_source",
 )
+# Optional extra column, not in COLUMNS: same quantity as report.SHARPE_FLAT_COL
+# (flat_rf_metrics). Exploratory rf sensitivity only, PREREGISTRATION §7.
+SHARPE_FLAT_FIELD = "sharpe_flat"
 HARNESS_TO_ARM = {"baseline": "absent", "macro": "present"}
 PREREG_TICKERS = {
     "AAPL": "US",
@@ -103,11 +106,13 @@ def make_cell_row(
         n_errors = metrics["n_decision_errors"]
         sharpe = _format_sharpe(metrics["sharpe"])
         rf_source = metrics["rf_source"]
+        sharpe_flat = _format_sharpe(flat_rf_metrics(equity)["sharpe"])
     else:
         n_days = 0
         n_errors = 0
         sharpe = ""
         rf_source = RF_SOURCE[market]
+        sharpe_flat = ""
 
     return {
         "ticker": bare,
@@ -119,22 +124,24 @@ def make_cell_row(
         "n_decision_errors": str(n_errors),
         "sharpe": sharpe,
         "rf_source": rf_source,
+        SHARPE_FLAT_FIELD: sharpe_flat,
     }
 
 
 def append_cells(path: Path, rows: list[dict[str, str]]) -> None:
     """Append rows, writing the header only when the file is new or empty.
 
-    The header must include COLUMNS. Extra columns already in the file are
-    kept (empty on new rows); h1_stats ignores them. A repeated
-    (ticker, arm, seed) is refused so the file stays valid.
+    New files get COLUMNS + SHARPE_FLAT_FIELD. An existing header must include
+    COLUMNS; its extra columns are kept (empty on new rows) and h1_stats ignores
+    them. A non-empty sharpe_flat is refused on a header without that column,
+    as is a repeated (ticker, arm, seed), so the file stays valid.
     """
     if not rows:
         return
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     existing: set[tuple[str, str, str]] = set()
-    fieldnames = list(COLUMNS)
+    fieldnames = [*COLUMNS, SHARPE_FLAT_FIELD]
     write_header = True
     if path.exists() and path.stat().st_size > 0:
         with path.open(newline="", encoding="utf-8") as fh:
@@ -146,6 +153,11 @@ def append_cells(path: Path, rows: list[dict[str, str]]) -> None:
             for raw in reader:
                 existing.add((raw.get("ticker", ""), raw.get("arm", ""), raw.get("seed", "")))
         write_header = False
+        if SHARPE_FLAT_FIELD not in fieldnames and any(row.get(SHARPE_FLAT_FIELD) for row in rows):
+            raise ValueError(
+                f"{path} has no {SHARPE_FLAT_FIELD} column; migrate it first "
+                "(run_backtest --cells-out does this via _ensure_cells_extra_columns)"
+            )
 
     encoded: list[dict[str, str]] = []
     for row in rows:
