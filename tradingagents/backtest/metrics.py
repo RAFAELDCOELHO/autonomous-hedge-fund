@@ -113,6 +113,11 @@ class ExtendedMetricsCalculator:
         }
 
 
+def flat_rf_metrics(equity: pd.Series) -> dict:
+    """compute() at FLAT_RF_SENSITIVITY (exploratory, PREREGISTRATION §7)."""
+    return ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY).compute(equity)
+
+
 def h1_cell_metrics(equity: pd.Series, market: str) -> dict:
     """cells.csv fields (PREREGISTRATION §4) for one agent run in `market`."""
     rf = daily_rf(market, equity.index)

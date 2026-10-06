@@ -8,16 +8,21 @@ or `--skip-agents` to run only classical baselines. Prints a rich table
 of CR / AR / Sharpe / MDD. The TradingAgents arms' cash earns the market's
 daily rf (CDI for .SA tickers, DTB3 otherwise) from data/rf/, so the agent
 window must lie inside 2023-12-01..2024-04-30 (daily_rf raises otherwise).
-The table shows Sharpe at the flat exploratory rf for every strategy, and
-the agent arm's H1 Sharpe (excess over the daily rf) beside it.
+The table shows Sharpe at the flat exploratory rf for every strategy, and the
+agent arm's H1 Sharpe (excess over the daily rf) beside it.
 ``--cells-out`` appends one PREREGISTRATION §4 row per agent arm
 (baseline → absent, macro → present; B3 tickers stored without ``.SA``),
-plus ``start``/``end`` columns. Before any API key check, download, or
-LLM call it preflights the ticker/market, the fixed preregistered window
-(2024-01-02..2024-03-28), the existing file's header, and duplicate
-(ticker, arm, seed) keys, and exits 2 without touching the file on
-rejection. An arm that raises is recorded as ``status=failed`` and the
-next arm still runs; any failed arm makes the CLI exit non-zero.
+plus ``start``/``end`` and the five config columns
+(``deep_think_llm``, ``quick_think_llm``, ``temperature``,
+``max_debate_rounds``, ``max_risk_discuss_rounds``).
+It also writes ``sharpe_flat`` for exploratory PREREGISTRATION §7 analyses
+and leaves ``sharpe_flat`` empty on failed rows.
+Before any API key check, download, or LLM call, it preflights ticker/market,
+the fixed preregistered window (2024-01-02..2024-03-28), existing header
+validity, duplicate (ticker, arm, seed) keys, and rows already logged with a
+different config; if rejected, it exits 2 without touching the file.
+If an arm raises, it records ``status=failed`` and continues with the next arm,
+and any failed arm makes the CLI exit non-zero.
 
 Usage:
     uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
@@ -53,6 +58,7 @@ from tradingagents.backtest.cells import (
     PREREG_TICKERS,
     PREREG_WINDOW_END,
     PREREG_WINDOW_START,
+    SHARPE_FLAT_FIELD,
     append_cells,
     bare_ticker,
     make_cell_row,
@@ -60,6 +66,23 @@ from tradingagents.backtest.cells import (
 )
 from tradingagents.backtest.risk_free import market_of
 from tradingagents.default_config import DEFAULT_CONFIG
+
+CELLS_EXTRA_COLUMNS = (
+    "start",
+    "end",
+    "deep_think_llm",
+    "quick_think_llm",
+    "temperature",
+    "max_debate_rounds",
+    "max_risk_discuss_rounds",
+)
+CELLS_CONFIG_COLUMNS = (
+    "deep_think_llm",
+    "quick_think_llm",
+    "temperature",
+    "max_debate_rounds",
+    "max_risk_discuss_rounds",
+)
 
 
 def _load_headline_arena_arms() -> dict[str, dict[str, object]]:
@@ -85,23 +108,27 @@ def _run_agent_decider(
     start: str,
     end: str,
     capital: float,
-    selected_analysts: list[str] | None = None,
+    run_config: dict[str, object],
 ):
     """Run TradingAgents once per trading day and return an equity curve.
 
     Falls back to None if the pipeline cannot be constructed.
     """
-    config = DEFAULT_CONFIG.copy()
-    if selected_analysts is not None:
-        config["selected_analysts"] = list(selected_analysts)
-
     try:
-        decide_fn = make_decide_fn(ticker=ticker, config=config)
+        decide_fn = make_decide_fn(ticker=ticker, config=run_config)
     except Exception as e:
         logging.warning("TradingAgents pipeline unavailable (%s)", e)
         return None
 
     return run_agent_strategy(decide_fn, ticker, start, end, capital, market=market_of(ticker))
+
+
+def _build_run_config(selected_analysts: list[str] | None = None) -> dict[str, object]:
+    """Build one run config object consumed by both run and cells.csv logging."""
+    config = DEFAULT_CONFIG.copy()
+    if selected_analysts is not None:
+        config["selected_analysts"] = list(selected_analysts)
+    return config
 
 
 def _parse_arms_csv(value: str) -> list[str]:
@@ -145,10 +172,17 @@ def _validate_cells_header(path: Path, fieldnames: list[str]) -> None:
     has_end = "end" in fieldnames
     if has_start != has_end:
         raise ValueError(f"{path} must include both start and end columns together")
+    has_any_config = any(name in fieldnames for name in CELLS_CONFIG_COLUMNS)
+    has_all_config = all(name in fieldnames for name in CELLS_CONFIG_COLUMNS)
+    if has_any_config and not has_all_config:
+        raise ValueError(
+            f"{path} must include all config columns together or none: "
+            f"{list(CELLS_CONFIG_COLUMNS)}"
+        )
 
 
 def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> None:
-    """Ensure cells.csv has start/end columns while preserving existing rows."""
+    """Ensure cells.csv has extra_columns, appended in order; existing rows get them empty."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists() or path.stat().st_size == 0:
@@ -177,6 +211,51 @@ def _ensure_cells_extra_columns(path: Path, extra_columns: tuple[str, ...]) -> N
         if os.path.exists(tmp_name):
             os.unlink(tmp_name)
         raise
+
+
+def _cells_config_values(config: dict[str, object]) -> dict[str, str]:
+    # The runtime graph path does not currently read `temperature`; we still
+    # log exactly what exists on the run_config object passed into execution
+    # so recorded metadata cannot drift from the executed config snapshot.
+    raw_temperature = config.get("temperature")
+    if raw_temperature in (None, ""):
+        temperature = "provider-default"
+    else:
+        temperature = str(raw_temperature)
+    return {
+        "deep_think_llm": str(config.get("deep_think_llm", "")),
+        "quick_think_llm": str(config.get("quick_think_llm", "")),
+        "temperature": temperature,
+        "max_debate_rounds": str(config.get("max_debate_rounds", "")),
+        "max_risk_discuss_rounds": str(config.get("max_risk_discuss_rounds", "")),
+    }
+
+
+assert tuple(_cells_config_values(DEFAULT_CONFIG).keys()) == CELLS_CONFIG_COLUMNS, (
+    "CELLS_CONFIG_COLUMNS fora de sincronia com _cells_config_values"
+)
+
+
+def _row_has_logged_config(row: dict[str, str]) -> bool:
+    return any((row.get(column, "") or "").strip() != "" for column in CELLS_CONFIG_COLUMNS)
+
+
+def _find_config_mismatch(
+    rows: list[dict[str, str]], expected_config: dict[str, str]
+) -> tuple[dict[str, str], str, str] | None:
+    for row in rows:
+        if not _row_has_logged_config(row):
+            continue
+        for column, expected in expected_config.items():
+            actual = (row.get(column, "") or "").strip()
+            if actual != expected:
+                key = (
+                    row.get("ticker", ""),
+                    row.get("arm", ""),
+                    row.get("seed", ""),
+                )
+                return row, column, repr(key)
+    return None
 
 
 def main(argv=None) -> int:
@@ -212,6 +291,7 @@ def main(argv=None) -> int:
     except ValueError as e:
         parser.error(str(e))
     if args.cells_out is not None:
+        run_config_values = _cells_config_values(_build_run_config())
         bare = bare_ticker(args.ticker)
         expected_market = PREREG_TICKERS.get(bare)
         if expected_market is None:
@@ -239,15 +319,33 @@ def main(argv=None) -> int:
         planned = _planned_cells_keys(args.ticker, arms_to_write, args.seed)
         if planned and args.cells_out.exists() and args.cells_out.stat().st_size > 0:
             try:
-                existing = _read_existing_cells_keys(args.cells_out)
+                with args.cells_out.open(newline="", encoding="utf-8") as fh:
+                    reader = csv.DictReader(fh)
+                    fieldnames = list(reader.fieldnames or [])
+                    _validate_cells_header(args.cells_out, fieldnames)
+                    existing_rows = list(reader)
             except ValueError as exc:
                 parser.error(str(exc))
+            existing = {
+                (row.get("ticker", ""), row.get("arm", ""), row.get("seed", ""))
+                for row in existing_rows
+            }
             duplicates = sorted(planned & existing)
             if duplicates:
                 parser.error(
                     "--cells-out already contains (ticker, arm, seed) key(s) for this run: "
                     + ", ".join(repr(item) for item in duplicates)
                 )
+            has_config_columns = all(name in fieldnames for name in CELLS_CONFIG_COLUMNS)
+            if has_config_columns:
+                mismatch = _find_config_mismatch(existing_rows, run_config_values)
+                if mismatch is not None:
+                    row, column, key = mismatch
+                    parser.error(
+                        "--cells-out contains rows logged with a different run config: "
+                        f"{column}={row.get(column, '')!r} at {key}; expected "
+                        f"{run_config_values[column]!r} for this run"
+                    )
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -277,13 +375,14 @@ def main(argv=None) -> int:
                 continue
             arm_status = "failed"
             agent_curve = None
+            run_config = _build_run_config(selected_analysts=selected_analysts)
             try:
                 agent_curve = _run_agent_decider(
                     args.ticker,
                     args.start,
                     args.end,
                     args.capital,
-                    selected_analysts=selected_analysts,
+                    run_config=run_config,
                 )
             except Exception:
                 logging.exception("TradingAgents arm '%s' failed; recording status=failed", arm_name)
@@ -295,7 +394,9 @@ def main(argv=None) -> int:
             # Append each finished arm immediately so a later arm keeps it.
             if args.cells_out is not None:
                 try:
-                    _ensure_cells_extra_columns(args.cells_out, ("start", "end"))
+                    _ensure_cells_extra_columns(
+                        args.cells_out, (*CELLS_EXTRA_COLUMNS, SHARPE_FLAT_FIELD)
+                    )
                     row = make_cell_row(
                         args.ticker,
                         arm_name,
@@ -305,6 +406,7 @@ def main(argv=None) -> int:
                     )
                     row["start"] = args.start
                     row["end"] = args.end
+                    row.update(_cells_config_values(run_config))
                     append_cells(args.cells_out, [row])
                 except ValueError as exc:
                     logging.error("%s", exc)

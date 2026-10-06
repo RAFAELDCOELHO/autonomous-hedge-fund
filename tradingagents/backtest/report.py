@@ -9,7 +9,7 @@ from typing import Dict
 
 import pandas as pd
 
-from .metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator, h1_cell_metrics
+from .metrics import FLAT_RF_SENSITIVITY, flat_rf_metrics, h1_cell_metrics
 
 SHARPE_FLAT_COL = f"Sharpe @ flat {FLAT_RF_SENSITIVITY:.2%} (exploratory)"
 H1_SHARPE_COL = "H1 Sharpe (excess over daily rf)"
@@ -27,10 +27,9 @@ def build_comparison_table(
     h1_cell_metrics over that market's daily rf. Classical baselines keep an
     em dash there: their cash does not earn the daily rf.
     """
-    calc = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY)
     rows = []
     for name, eq in equity_curves.items():
-        m = calc.compute(eq)
+        m = flat_rf_metrics(eq)
         if market is not None and name.startswith("TradingAgents ("):
             h1_sharpe = _num(h1_cell_metrics(eq, market)["sharpe"])
         else:

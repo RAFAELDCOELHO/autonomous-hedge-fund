@@ -11,6 +11,9 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
+from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.backtest.metrics import flat_rf_metrics
+
 
 REPO = Path(__file__).resolve().parents[1]
 RUN_BACKTEST = REPO / "run_backtest.py"
@@ -21,6 +24,16 @@ def _load_run_backtest():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _expected_cells_config_values() -> dict[str, str]:
+    return {
+        "deep_think_llm": str(DEFAULT_CONFIG["deep_think_llm"]),
+        "quick_think_llm": str(DEFAULT_CONFIG["quick_think_llm"]),
+        "temperature": "provider-default",
+        "max_debate_rounds": str(DEFAULT_CONFIG["max_debate_rounds"]),
+        "max_risk_discuss_rounds": str(DEFAULT_CONFIG["max_risk_discuss_rounds"]),
+    }
 
 
 def test_macro_arm_instantiates_macro_analyst_and_baseline_does_not():
@@ -347,9 +360,16 @@ def test_cells_out_rejects_wrong_window_before_any_strategy_or_llm(capsys, tmp_p
     run_agent_decider_mock.assert_not_called()
 
 
-def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_path):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_path, legacy):
     run_backtest = _load_run_backtest()
     cells_path = tmp_path / "cells.csv"
+    legacy_row = "AAPL,US,absent,7,ok,3,0,1.0,FRED-DTB3"
+    if legacy:
+        cells_path.write_text(
+            "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source\n" + legacy_row + "\n",
+            encoding="utf-8",
+        )
     equity = pd.Series(
         [100_000.0, 101_000.0, 100_500.0],
         index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
@@ -394,6 +414,10 @@ def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_pat
     assert log_exception_mock.call_args.args[1] == "baseline"
     with cells_path.open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
+    if legacy:
+        old = rows.pop(0)
+        assert ",".join(list(old.values())[:9]) == legacy_row
+        assert old["sharpe_flat"] == ""
     assert len(rows) == 2
     assert {row["arm"] for row in rows} == {"absent", "present"}
     failed = next(row for row in rows if row["arm"] == "absent")
@@ -402,6 +426,8 @@ def test_cells_out_writes_failed_row_and_continues_next_arm_on_exception(tmp_pat
     assert failed["sharpe"] == ""
     assert failed["start"] == "2024-01-02"
     assert failed["end"] == "2024-03-28"
+    assert failed["sharpe_flat"] == ""
+    assert ok["sharpe_flat"] != ""
     assert ok["status"] == "ok"
     assert ok["sharpe"] != ""
     assert ok["start"] == "2024-01-02"
@@ -420,11 +446,527 @@ def test_ensure_cells_extra_columns_uses_atomic_replace_and_preserves_original_o
 
     with patch.object(run_backtest.os, "replace", side_effect=OSError("replace failed")) as replace_mock:
         with pytest.raises(OSError, match="replace failed"):
-            run_backtest._ensure_cells_extra_columns(path, ("start", "end"))
+            run_backtest._ensure_cells_extra_columns(path, run_backtest.CELLS_EXTRA_COLUMNS)
 
     replace_mock.assert_called_once()
     assert path.read_text(encoding="utf-8") == before
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+@pytest.mark.parametrize("old_extras", [("start", "end"), ()])
+def test_pre_p315_cells_csv_migrates_to_sharpe_flat_and_keeps_appending(tmp_path, old_extras):
+    from tradingagents.backtest.cells import COLUMNS, SHARPE_FLAT_FIELD, append_cells, make_cell_row
+    from tradingagents.backtest.metrics import flat_rf_metrics
+
+    run_backtest = _load_run_backtest()
+    path = tmp_path / "cells.csv"
+    old_row = "AAPL,US,absent,0,ok,3,0,1.0,FRED-DTB3" + (",2024-01-02,2024-03-28" if old_extras else "")
+    path.write_text(",".join((*COLUMNS, *old_extras)) + "\n" + old_row + "\n", encoding="utf-8")
+    keys = {("AAPL", "absent", "0")}
+    assert run_backtest._read_existing_cells_keys(path) == keys
+
+    extras = ("start", "end", SHARPE_FLAT_FIELD)
+    with patch.object(run_backtest.os, "replace", wraps=os.replace) as replace_mock:
+        run_backtest._ensure_cells_extra_columns(path, extras)
+    replace_mock.assert_called_once()
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert run_backtest._read_existing_cells_keys(path) == keys
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        assert reader.fieldnames == [*COLUMNS, *extras]
+        rows = list(reader)
+    assert ",".join(rows[0][c] for c in (*COLUMNS, *old_extras)) == old_row
+    assert rows[0][SHARPE_FLAT_FIELD] == ""
+
+    equity = pd.Series(
+        [100_000.0, 101_000.0, 100_500.0],
+        index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+    )
+    row = make_cell_row("AAPL", "macro", 0, equity)
+    row["start"], row["end"] = "2024-01-02", "2024-03-28"
+    append_cells(path, [row])
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2
+    assert float(rows[1][SHARPE_FLAT_FIELD]) == flat_rf_metrics(equity)["sharpe"]
+    assert rows[1]["start"] == "2024-01-02"
+
+
+def test_cells_out_migrates_legacy_header_and_preflight_accepts(tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    cells_path.write_text(
+        "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source,start,end\n"
+        "AAPL,US,absent,0,ok,2,0,1.0,FRED-DTB3,2024-01-02,2024-03-28\n",
+        encoding="utf-8",
+    )
+    equity = pd.Series(
+        [100_000.0, 101_000.0, 102_000.0],
+        index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+    )
+
+    def fake_run_strategy(*_args, **_kwargs):
+        return [100_000.0]
+
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "ci-dummy-key"}), patch.object(
+        run_backtest, "load_dotenv"
+    ), patch.object(run_backtest, "run_strategy", side_effect=fake_run_strategy), patch.object(
+        run_backtest, "_selected_analysts_by_arm", return_value={"macro": ["macro"]}
+    ), patch.object(
+        run_backtest, "_run_agent_decider", return_value=equity
+    ), patch.object(
+        run_backtest, "print_comparison"
+    ):
+        rc = run_backtest.main(
+            [
+                "--ticker",
+                "AAPL",
+                "--start",
+                "2024-01-02",
+                "--end",
+                "2024-03-28",
+                "--arms",
+                "macro",
+                "--seed",
+                "1",
+                "--cells-out",
+                str(cells_path),
+            ]
+        )
+
+    assert rc == 0
+    with cells_path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = list(reader.fieldnames or [])
+        rows = list(reader)
+    assert "start" in fieldnames and "end" in fieldnames
+    for col in run_backtest.CELLS_CONFIG_COLUMNS:
+        assert col in fieldnames
+    assert len(rows) == 2
+    assert rows[0]["ticker"] == "AAPL"
+    # Legacy rows are preserved and migrated with empty values.
+    assert rows[0]["deep_think_llm"] == ""
+    assert rows[1]["arm"] == "present"
+    assert rows[1]["seed"] == "1"
+    for name, value in _expected_cells_config_values().items():
+        assert rows[1][name] == value
+
+
+def test_cells_out_preflight_accepts_legacy_empty_config_row_after_migration(tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    cells_path.write_text(
+        "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source,start,end\n"
+        "AAPL,US,absent,0,ok,2,0,1.0,FRED-DTB3,2024-01-02,2024-03-28\n",
+        encoding="utf-8",
+    )
+    equity = pd.Series(
+        [100_000.0, 101_000.0, 102_000.0],
+        index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+    )
+
+    def fake_run_strategy(*_args, **_kwargs):
+        return [100_000.0]
+
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "ci-dummy-key"}), patch.object(
+        run_backtest, "load_dotenv"
+    ), patch.object(run_backtest, "run_strategy", side_effect=fake_run_strategy), patch.object(
+        run_backtest, "_selected_analysts_by_arm", return_value={"macro": ["macro"]}
+    ), patch.object(
+        run_backtest, "_run_agent_decider", return_value=equity
+    ), patch.object(
+        run_backtest, "print_comparison"
+    ):
+        rc1 = run_backtest.main(
+            [
+                "--ticker",
+                "AAPL",
+                "--start",
+                "2024-01-02",
+                "--end",
+                "2024-03-28",
+                "--arms",
+                "macro",
+                "--seed",
+                "1",
+                "--cells-out",
+                str(cells_path),
+            ]
+        )
+        rc2 = run_backtest.main(
+            [
+                "--ticker",
+                "AAPL",
+                "--start",
+                "2024-01-02",
+                "--end",
+                "2024-03-28",
+                "--arms",
+                "macro",
+                "--seed",
+                "2",
+                "--cells-out",
+                str(cells_path),
+            ]
+        )
+
+    assert rc1 == 0
+    assert rc2 == 0
+    with cells_path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 3
+    # Migrated legacy row keeps empty config cells; later preflight must accept this.
+    assert rows[0]["deep_think_llm"] == ""
+    assert rows[0]["temperature"] == ""
+    assert rows[1]["seed"] == "1"
+    assert rows[2]["seed"] == "2"
+
+
+def test_cells_out_rejects_header_with_partial_config_columns(capsys, tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    cells_path.write_text(
+        "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source,start,end,"
+        "deep_think_llm,temperature\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(run_backtest, "run_strategy") as run_strategy_mock, patch.object(
+        run_backtest, "_run_agent_decider"
+    ) as run_agent_decider_mock:
+        with pytest.raises(SystemExit) as exc:
+            run_backtest.main(
+                [
+                    "--ticker",
+                    "AAPL",
+                    "--start",
+                    "2024-01-02",
+                    "--end",
+                    "2024-03-28",
+                    "--cells-out",
+                    str(cells_path),
+                ]
+            )
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "must include all config columns together or none" in captured.err
+    run_strategy_mock.assert_not_called()
+    run_agent_decider_mock.assert_not_called()
+
+
+def test_cells_out_rejects_mismatched_logged_config_preflight(capsys, tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    cfg = _expected_cells_config_values()
+    cells_path.write_text(
+        "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source,start,end,"
+        "deep_think_llm,quick_think_llm,temperature,max_debate_rounds,max_risk_discuss_rounds\n"
+        "AAPL,US,absent,0,ok,2,0,1.0,FRED-DTB3,2024-01-02,2024-03-28,"
+        f"{cfg['deep_think_llm']},{cfg['quick_think_llm']},provider-default,99,{cfg['max_risk_discuss_rounds']}\n",
+        encoding="utf-8",
+    )
+    before = cells_path.read_text(encoding="utf-8")
+
+    with patch.object(run_backtest, "run_strategy") as run_strategy_mock, patch.object(
+        run_backtest, "_run_agent_decider"
+    ) as run_agent_decider_mock:
+        with pytest.raises(SystemExit) as exc:
+            run_backtest.main(
+                [
+                    "--ticker",
+                    "AAPL",
+                    "--start",
+                    "2024-01-02",
+                    "--end",
+                    "2024-03-28",
+                    "--arms",
+                    "macro",
+                    "--seed",
+                    "1",
+                    "--cells-out",
+                    str(cells_path),
+                ]
+            )
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "contains rows logged with a different run config" in captured.err
+    assert "max_debate_rounds='99'" in captured.err
+    run_strategy_mock.assert_not_called()
+    run_agent_decider_mock.assert_not_called()
+    assert cells_path.read_text(encoding="utf-8") == before
+
+
+def test_cells_out_rejects_mismatched_temperature_preflight(capsys, tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    cfg = _expected_cells_config_values()
+    cells_path.write_text(
+        "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source,start,end,"
+        "deep_think_llm,quick_think_llm,temperature,max_debate_rounds,max_risk_discuss_rounds\n"
+        "AAPL,US,absent,0,ok,2,0,1.0,FRED-DTB3,2024-01-02,2024-03-28,"
+        f"{cfg['deep_think_llm']},{cfg['quick_think_llm']},0.99,{cfg['max_debate_rounds']},"
+        f"{cfg['max_risk_discuss_rounds']}\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(run_backtest, "run_strategy") as run_strategy_mock, patch.object(
+        run_backtest, "_run_agent_decider"
+    ) as run_agent_decider_mock:
+        with pytest.raises(SystemExit) as exc:
+            run_backtest.main(
+                [
+                    "--ticker",
+                    "AAPL",
+                    "--start",
+                    "2024-01-02",
+                    "--end",
+                    "2024-03-28",
+                    "--arms",
+                    "macro",
+                    "--seed",
+                    "1",
+                    "--cells-out",
+                    str(cells_path),
+                ]
+            )
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "temperature='0.99'" in captured.err
+    run_strategy_mock.assert_not_called()
+    run_agent_decider_mock.assert_not_called()
+
+
+def test_cells_out_rejects_mismatched_deep_think_llm_preflight(capsys, tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    cfg = _expected_cells_config_values()
+    cells_path.write_text(
+        "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source,start,end,"
+        "deep_think_llm,quick_think_llm,temperature,max_debate_rounds,max_risk_discuss_rounds\n"
+        "AAPL,US,absent,0,ok,2,0,1.0,FRED-DTB3,2024-01-02,2024-03-28,"
+        f"non-default-llm,{cfg['quick_think_llm']},{cfg['temperature']},{cfg['max_debate_rounds']},"
+        f"{cfg['max_risk_discuss_rounds']}\n",
+        encoding="utf-8",
+    )
+
+    with patch.object(run_backtest, "run_strategy") as run_strategy_mock, patch.object(
+        run_backtest, "_run_agent_decider"
+    ) as run_agent_decider_mock:
+        with pytest.raises(SystemExit) as exc:
+            run_backtest.main(
+                [
+                    "--ticker",
+                    "AAPL",
+                    "--start",
+                    "2024-01-02",
+                    "--end",
+                    "2024-03-28",
+                    "--arms",
+                    "macro",
+                    "--seed",
+                    "1",
+                    "--cells-out",
+                    str(cells_path),
+                ]
+            )
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "deep_think_llm='non-default-llm'" in captured.err
+    run_strategy_mock.assert_not_called()
+    run_agent_decider_mock.assert_not_called()
+
+
+def test_cells_out_preflight_accepts_existing_sharpe_flat_and_fills_new_row(tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    cfg = _expected_cells_config_values()
+    cells_path.write_text(
+        "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source,start,end,"
+        "deep_think_llm,quick_think_llm,temperature,max_debate_rounds,max_risk_discuss_rounds,sharpe_flat\n"
+        "AAPL,US,absent,0,ok,2,0,1.0,FRED-DTB3,2024-01-02,2024-03-28,"
+        f"{cfg['deep_think_llm']},{cfg['quick_think_llm']},{cfg['temperature']},"
+        f"{cfg['max_debate_rounds']},{cfg['max_risk_discuss_rounds']},0.75\n",
+        encoding="utf-8",
+    )
+    equity = pd.Series(
+        [100_000.0, 101_000.0, 102_000.0],
+        index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+    )
+
+    def fake_run_strategy(*_args, **_kwargs):
+        return [100_000.0]
+
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "ci-dummy-key"}), patch.object(
+        run_backtest, "load_dotenv"
+    ), patch.object(run_backtest, "run_strategy", side_effect=fake_run_strategy), patch.object(
+        run_backtest, "_selected_analysts_by_arm", return_value={"macro": ["macro"]}
+    ), patch.object(
+        run_backtest, "_run_agent_decider", return_value=equity
+    ), patch.object(
+        run_backtest, "print_comparison"
+    ):
+        rc = run_backtest.main(
+            [
+                "--ticker",
+                "AAPL",
+                "--start",
+                "2024-01-02",
+                "--end",
+                "2024-03-28",
+                "--arms",
+                "macro",
+                "--seed",
+                "1",
+                "--cells-out",
+                str(cells_path),
+            ]
+        )
+
+    assert rc == 0
+    with cells_path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2
+    assert rows[0]["sharpe_flat"] == "0.75"
+    expected_sharpe_flat = f"{flat_rf_metrics(equity)['sharpe']}"
+    assert rows[1]["sharpe_flat"] == expected_sharpe_flat
+    assert rows[1]["sharpe_flat"] != ""
+
+
+def test_cells_out_preflight_accepts_truly_unknown_extra_column(tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    cfg = _expected_cells_config_values()
+    cells_path.write_text(
+        "ticker,market,arm,seed,status,n_days,n_decision_errors,sharpe,rf_source,start,end,"
+        "deep_think_llm,quick_think_llm,temperature,max_debate_rounds,max_risk_discuss_rounds,foo_extra\n"
+        "AAPL,US,absent,0,ok,2,0,1.0,FRED-DTB3,2024-01-02,2024-03-28,"
+        f"{cfg['deep_think_llm']},{cfg['quick_think_llm']},{cfg['temperature']},"
+        f"{cfg['max_debate_rounds']},{cfg['max_risk_discuss_rounds']},legacy-value\n",
+        encoding="utf-8",
+    )
+    equity = pd.Series(
+        [100_000.0, 101_000.0, 102_000.0],
+        index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+    )
+
+    def fake_run_strategy(*_args, **_kwargs):
+        return [100_000.0]
+
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "ci-dummy-key"}), patch.object(
+        run_backtest, "load_dotenv"
+    ), patch.object(run_backtest, "run_strategy", side_effect=fake_run_strategy), patch.object(
+        run_backtest, "_selected_analysts_by_arm", return_value={"macro": ["macro"]}
+    ), patch.object(
+        run_backtest, "_run_agent_decider", return_value=equity
+    ), patch.object(
+        run_backtest, "print_comparison"
+    ):
+        rc = run_backtest.main(
+            [
+                "--ticker",
+                "AAPL",
+                "--start",
+                "2024-01-02",
+                "--end",
+                "2024-03-28",
+                "--arms",
+                "macro",
+                "--seed",
+                "1",
+                "--cells-out",
+                str(cells_path),
+            ]
+        )
+
+    assert rc == 0
+    with cells_path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2
+    assert rows[0]["foo_extra"] == "legacy-value"
+    assert rows[1]["foo_extra"] == ""
+
+
+def test_cells_out_logs_the_same_overridden_config_object_passed_to_run(tmp_path):
+    run_backtest = _load_run_backtest()
+    cells_path = tmp_path / "cells.csv"
+    override_deep_think = "claude-opus-5"
+    override_temperature = 0.37
+    override_max_debate_rounds = 3
+    assert run_backtest.DEFAULT_CONFIG["deep_think_llm"] != override_deep_think
+    assert run_backtest.DEFAULT_CONFIG.get("temperature") != override_temperature
+    assert run_backtest.DEFAULT_CONFIG["max_debate_rounds"] != override_max_debate_rounds
+    monkeypatched_config = {
+        **run_backtest.DEFAULT_CONFIG,
+        "deep_think_llm": override_deep_think,
+        "temperature": override_temperature,
+        "max_debate_rounds": override_max_debate_rounds,
+    }
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(run_backtest, "DEFAULT_CONFIG", monkeypatched_config)
+    equity = pd.Series(
+        [100_000.0, 101_000.0, 102_000.0],
+        index=pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run_strategy(*_args, **_kwargs):
+        return [100_000.0]
+
+    def fake_run_agent_decider(*_args, **kwargs):
+        captured["run_config"] = kwargs["run_config"]
+        return equity
+
+    try:
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "ci-dummy-key"}), patch.object(
+            run_backtest, "load_dotenv"
+        ), patch.object(run_backtest, "run_strategy", side_effect=fake_run_strategy), patch.object(
+            run_backtest, "_selected_analysts_by_arm", return_value={"macro": ["macro"]}
+        ), patch.object(
+            run_backtest, "_run_agent_decider", side_effect=fake_run_agent_decider
+        ), patch.object(
+            run_backtest, "print_comparison"
+        ):
+            rc = run_backtest.main(
+                [
+                    "--ticker",
+                    "AAPL",
+                    "--start",
+                    "2024-01-02",
+                    "--end",
+                    "2024-03-28",
+                    "--arms",
+                    "macro",
+                    "--seed",
+                    "2",
+                    "--cells-out",
+                    str(cells_path),
+                ]
+            )
+    finally:
+        monkeypatch.undo()
+
+    assert rc == 0
+    run_config = captured["run_config"]
+    assert run_config["deep_think_llm"] == override_deep_think
+    assert run_config["temperature"] == override_temperature
+    assert run_config["max_debate_rounds"] == override_max_debate_rounds
+    with cells_path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["arm"] == "present"
+    assert row["deep_think_llm"] == override_deep_think
+    assert row["temperature"] == str(override_temperature)
+    assert row["max_debate_rounds"] == str(override_max_debate_rounds)
+    assert row["temperature"] == str(run_config["temperature"])
+    assert row["max_debate_rounds"] == str(run_config["max_debate_rounds"])
+    assert row["deep_think_llm"] == str(run_config["deep_think_llm"])
+    assert row["quick_think_llm"] == str(run_config["quick_think_llm"])
+    assert row["max_risk_discuss_rounds"] == str(run_config["max_risk_discuss_rounds"])
 
 
 @pytest.mark.parametrize(
