@@ -29,6 +29,7 @@ Execute the 2×2 factorial (Market: US vs. Brazil × Macro Agent: absent vs. pre
 - [x] P3.14: `--cells-out` now logs per-run model/debate config (`deep_think_llm`, `quick_think_llm`, `temperature`, `max_debate_rounds`, `max_risk_discuss_rounds`) alongside `start`/`end`; legacy files are migrated atomically via `_ensure_cells_extra_columns` and preflight rejects only when existing logged config differs from the current run (legacy rows and unrelated extra columns remain accepted). (PR #57)
 - [x] P3.15: `--cells-out` adds optional `sharpe_flat` (same `flat_rf_metrics` as the table's flat-rf Sharpe; old files migrated atomically, failed rows empty); `scripts/h1_rf_sensitivity.py` reports descriptive per-ticker ΔSharpe and D on it with h1_stats' exclusions (no permutations, no p-values; exploratory §7). (PR #58)
 - [x] P3.16 (PR #59): update PAPER.md to reflect signed pre-registration status, per-market daily rf (CDI/DTB3, t−1, SHA-256-verified `data/rf/` snapshots) as the primary H1 metric with flat 4.34% only exploratory sensitivity, and the Bull/Bear → Research Manager plan → Trader flow; add a regression assert that `curr_situation` memory lookup excludes `macro_report` text.
+- [x] P4.1 (PR #60): temporal look-ahead audit doc with verified file:line citations on main 80d2f80 (leaks + clean paths); no runtime fixes.
 
 ## Phase 3: Paper Submission 📝 (planned)
 
