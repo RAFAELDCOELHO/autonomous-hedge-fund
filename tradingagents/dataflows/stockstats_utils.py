@@ -120,14 +120,31 @@ def get_fiscal_year_end_month_day(annual_period_ends) -> tuple[int, int]:
 def _statement_available_date(
     period_end: pd.Timestamp, freq: str, fiscal_year_end_month_day: tuple[int, int]
 ) -> pd.Timestamp:
-    normalized_freq = (freq or "quarterly").lower()
-    if normalized_freq == "annual":
+    # Mirror y_finance's branching: anything other than "quarterly" fetched annual data.
+    normalized_freq = (freq or "quarterly").strip().lower()
+    if normalized_freq != "quarterly":
         return period_end + relativedelta(months=3)
 
-    is_fiscal_year_end_quarter = (period_end.month, period_end.day) == fiscal_year_end_month_day
-    if is_fiscal_year_end_quarter:
+    if _is_fiscal_year_end_quarter(period_end, fiscal_year_end_month_day):
         return period_end + relativedelta(months=3)
     return period_end + pd.Timedelta(days=45)
+
+
+def _is_fiscal_year_end_quarter(
+    period_end: pd.Timestamp, fiscal_year_end_month_day: tuple[int, int], tolerance_days: int = 7
+) -> bool:
+    """True if period_end is within a few days of the fiscal year end.
+
+    Tolerates Feb-28/29 leap-year drift and 52/53-week fiscal years, where an
+    exact month/day match would misclassify Q4 as a regular 45-day quarter.
+    """
+    month, day = fiscal_year_end_month_day
+    for year in (period_end.year - 1, period_end.year, period_end.year + 1):
+        last_day = pd.Timestamp(year=year, month=month, day=1).days_in_month
+        anchor = pd.Timestamp(year=year, month=month, day=min(day, last_day))
+        if abs((period_end.normalize() - anchor).days) <= tolerance_days:
+            return True
+    return False
 
 
 def statement_period_is_visible(
@@ -174,7 +191,8 @@ def filter_insider_transactions_by_date(
 
     date_column = next((col for col in date_columns if col in data.columns), None)
     if not date_column:
-        return data
+        # Fail closed: without a transaction date we cannot prove availability.
+        return data.iloc[0:0]
 
     cutoff = pd.Timestamp(curr_date)
     transaction_dates = pd.to_datetime(data[date_column], errors="coerce")

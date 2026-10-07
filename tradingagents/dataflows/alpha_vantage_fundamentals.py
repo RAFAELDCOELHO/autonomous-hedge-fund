@@ -1,3 +1,5 @@
+import json
+
 from .alpha_vantage_common import _make_api_request
 from .stockstats_utils import get_fiscal_year_end_month_day, statement_period_is_visible
 
@@ -8,7 +10,18 @@ def _filter_reports_by_date(result, curr_date: str):
     Prevents look-ahead bias by removing fiscal periods that end after
     the simulation's current date.
     """
-    if not curr_date or not isinstance(result, dict):
+    if not curr_date:
+        return result
+    # _make_api_request returns the raw response text, not a dict.
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except json.JSONDecodeError:
+            return result
+        if not isinstance(parsed, dict):
+            return result
+        return json.dumps(_filter_reports_by_date(parsed, curr_date), indent=2)
+    if not isinstance(result, dict):
         return result
 
     annual_reports = result.get("annualReports", [])

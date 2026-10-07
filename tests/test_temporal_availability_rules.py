@@ -137,5 +137,53 @@ class InsiderAvailabilityTests(unittest.TestCase):
         self.assertEqual(out_after["data"][0]["transaction_date"], "2024-07-03")
 
 
+class ReviewFollowUpTests(unittest.TestCase):
+    def test_alpha_vantage_statements_filter_raw_json_text(self):
+        import json
+        payload = {
+            "annualReports": [{"fiscalDateEnding": "2023-12-31"}],
+            "quarterlyReports": [{"fiscalDateEnding": "2024-03-31"}],
+        }
+        with patch.object(
+            alpha_vantage_fundamentals, "_make_api_request", return_value=json.dumps(payload)
+        ):
+            out = alpha_vantage_fundamentals.get_balance_sheet("AAPL", "quarterly", "2024-03-31")
+        parsed = json.loads(out)
+        self.assertEqual(parsed["annualReports"], [])
+        self.assertEqual(parsed["quarterlyReports"], [])
+
+    def test_alpha_vantage_insider_filters_raw_json_text(self):
+        import json
+        payload = {"data": [{"transaction_date": "2024-07-03"}, {"transaction_date": "2024-07-05"}]}
+        with patch.object(alpha_vantage_news, "_make_api_request", return_value=json.dumps(payload)):
+            out = alpha_vantage_news.get_insider_transactions("AAPL", "2024-07-09")
+        self.assertEqual([r["transaction_date"] for r in json.loads(out)["data"]], ["2024-07-03"])
+
+    def test_yfinance_non_quarterly_freq_alias_uses_annual_lag(self):
+        ticker_obj = Mock()
+        ticker_obj.income_stmt = pd.DataFrame([[1.0]], columns=["2024-09-30"])
+        with patch.object(y_finance.yf, "Ticker", return_value=ticker_obj):
+            out_deadline = y_finance.get_income_statement("AAPL", "yearly", "2024-12-30")
+            out_after = y_finance.get_income_statement("AAPL", "yearly", "2024-12-31")
+        self.assertIn("No income statement data found", out_deadline)
+        self.assertIn("2024-09-30", out_after)
+
+    def test_q4_detection_tolerates_leap_year_fiscal_year_end(self):
+        from tradingagents.dataflows.stockstats_utils import filter_financials_by_date
+
+        data = pd.DataFrame([[1.0]], columns=["2024-02-29"])
+        kw = dict(freq="quarterly", annual_period_ends=["2024-02-29", "2025-02-28"])
+        self.assertEqual(list(filter_financials_by_date(data, "2024-05-29", **kw).columns), [])
+        self.assertEqual(
+            list(filter_financials_by_date(data, "2024-05-30", **kw).columns), ["2024-02-29"]
+        )
+
+    def test_insider_filter_fails_closed_without_known_date_column(self):
+        from tradingagents.dataflows.stockstats_utils import filter_insider_transactions_by_date
+
+        data = pd.DataFrame([{"Filing Date": "2030-01-01", "Shares": 1}])
+        self.assertEqual(len(filter_insider_transactions_by_date(data, "2024-01-01")), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
