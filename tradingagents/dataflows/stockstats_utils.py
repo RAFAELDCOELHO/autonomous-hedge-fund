@@ -204,6 +204,20 @@ def filter_insider_transactions_by_date(
     return data.loc[available_dates < cutoff]
 
 
+def is_b3_symbol(ticker) -> bool:
+    return str(ticker or "").strip().upper().endswith(".SA")
+
+
+def b3_insider_refusal(ticker, curr_date):
+    if curr_date and is_b3_symbol(ticker):
+        return (
+            f"Insider transactions for {str(ticker).upper()} are withheld as of {curr_date}: "
+            "the B3/CVM availability rule (month-end + 10 days) is not implemented yet, "
+            "so B3 insider data fails closed."
+        )
+    return None
+
+
 class StockstatsUtils:
     @staticmethod
     def get_stock_stats(
