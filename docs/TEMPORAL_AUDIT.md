@@ -101,6 +101,7 @@ These fixes use a deterministic proxy for "publicly available" timestamps becaus
   - Fiscal year-end month/day is inferred from annual statement period ends for that ticker/report path when available; fallback is **Dec 31** when annual inference is unavailable.
 - **Insiders (P4.4, strict boundary):** an insider transaction is visible only when `available_date < curr_date`, where `available_date = transaction_date + 2 US business days` (Form 4 proxy; `CustomBusinessDay` with `USFederalHolidayCalendar`).
 - **B3 insider vendor check:** spot checks for `PETR4.SA`, `VALE3.SA`, and `ITUB4.SA` returned zero `insider_transactions` rows via yfinance at implementation time, so the CVM month-end + 10-day lag rule was not enabled in runtime filtering for this PR.
+- On main, no analyst currently binds `get_insider_transactions`; this P4.4 filter is therefore defensive for any future binding, and exposing that tool to an analyst remains a separate design decision.
 
 Residual risk remains by design:
 - Late filers (or issuers with filing extensions) can still publish after the proxy lag and therefore leak if interpreted as public immediately at `available_date`.
