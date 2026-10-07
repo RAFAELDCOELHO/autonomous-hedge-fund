@@ -41,7 +41,7 @@ def get_global_news(
 @tool
 def get_insider_transactions(
     ticker: Annotated[str, "ticker symbol"],
-    curr_date: Annotated[str, "current date in yyyy-mm-dd format"] = None,
+    curr_date: Annotated[str, "current date in yyyy-mm-dd format"],
 ) -> str:
     """
     Retrieve insider transaction information about a company.

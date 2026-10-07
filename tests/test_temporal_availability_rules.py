@@ -84,6 +84,12 @@ class StatementAvailabilityTests(unittest.TestCase):
 
 
 class InsiderAvailabilityTests(unittest.TestCase):
+    def test_insider_tool_schema_requires_curr_date(self):
+        schema = news_data_tools.get_insider_transactions.args_schema.model_json_schema()
+        self.assertIn("required", schema)
+        self.assertIn("ticker", schema["required"])
+        self.assertIn("curr_date", schema["required"])
+
     def test_insider_tool_wrapper_passes_curr_date_to_route(self):
         with patch(
             "tradingagents.agents.utils.news_data_tools.route_to_vendor",
