@@ -106,6 +106,7 @@ These fixes use a deterministic proxy for "publicly available" timestamps becaus
 Residual risk remains by design:
 - Late filers (or issuers with filing extensions) can still publish after the proxy lag and therefore leak if interpreted as public immediately at `available_date`.
 - Early filers can be hidden longer than necessary (false delay) because the lag is conservative and not issuer/event-specific.
+- FYE is inferred from the most recent annual period returned by yfinance, which may be after `curr_date`; no ticker in the universe changed FYE, and restricting inference to past periods would be worse because yfinance returns only ~4 annual periods.
 
 ## 10) P4.2 point-in-time fundamentals and B3 insider fail-closed (F4 PR4)
 

@@ -1,3 +1,5 @@
+import json
+
 from .alpha_vantage_common import _make_api_request, format_datetime_for_api
 from .stockstats_utils import US_BUSINESS_DAY
 import pandas as pd
@@ -76,9 +78,23 @@ def get_insider_transactions(symbol: str, curr_date: str = None) -> dict[str, st
     }
 
     result = _make_api_request("INSIDER_TRANSACTIONS", params)
-    if not curr_date or not isinstance(result, dict) or "data" not in result:
+    if not curr_date:
         return result
+    # _make_api_request returns the raw response text, not a dict.
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except json.JSONDecodeError:
+            return result
+        if not isinstance(parsed, dict) or "data" not in parsed:
+            return result
+        return json.dumps(_filter_insider_payload(parsed, curr_date), indent=2)
+    if not isinstance(result, dict) or "data" not in result:
+        return result
+    return _filter_insider_payload(result, curr_date)
 
+
+def _filter_insider_payload(result: dict, curr_date: str) -> dict:
     cutoff = pd.Timestamp(curr_date)
     filtered_rows = []
     for row in result.get("data", []):
