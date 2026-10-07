@@ -11,6 +11,7 @@ from .stockstats_utils import (
     load_ohlcv,
     filter_financials_by_date,
     filter_insider_transactions_by_date,
+    b3_insider_refusal,
 )
 from .indicator_fallback import compute_indicator_with_fallback
 from .pit_fundamentals import build_point_in_time_fundamentals
@@ -423,6 +424,9 @@ def get_insider_transactions(
 ):
     """Get insider transactions data from yfinance."""
     try:
+        refusal = b3_insider_refusal(ticker, curr_date)
+        if refusal:
+            return refusal
         ticker_obj = yf.Ticker(ticker.upper())
         data = yf_retry(lambda: ticker_obj.insider_transactions)
         data = filter_insider_transactions_by_date(data, curr_date)

@@ -1,6 +1,7 @@
 from .alpha_vantage_common import _make_api_request, format_datetime_for_api
 from .stockstats_utils import US_BUSINESS_DAY
 import pandas as pd
+from .stockstats_utils import b3_insider_refusal
 
 def get_news(ticker, start_date, end_date) -> dict[str, str] | str:
     """Returns live and historical market news & sentiment data from premier news outlets worldwide.
@@ -65,6 +66,10 @@ def get_insider_transactions(symbol: str, curr_date: str = None) -> dict[str, st
     Returns:
         Dictionary containing insider transaction data or JSON string.
     """
+
+    refusal = b3_insider_refusal(symbol, curr_date)
+    if refusal:
+        return refusal
 
     params = {
         "symbol": symbol,
