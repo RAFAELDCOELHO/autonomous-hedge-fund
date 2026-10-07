@@ -78,9 +78,11 @@ class StatementAvailabilityTests(unittest.TestCase):
         ticker_obj = TickerWithFailingAnnual()
 
         with patch.object(y_finance.yf, "Ticker", return_value=ticker_obj):
-            out = y_finance.get_balance_sheet("AAPL", "quarterly", "2024-05-16")
+            out_deadline = y_finance.get_balance_sheet("AAPL", "quarterly", "2024-05-15")
+            out_after = y_finance.get_balance_sheet("AAPL", "quarterly", "2024-05-16")
 
-        self.assertIn("2024-03-31", out)
+        self.assertIn("No balance sheet data found", out_deadline)
+        self.assertIn("2024-03-31", out_after)
 
 
 class InsiderAvailabilityTests(unittest.TestCase):
