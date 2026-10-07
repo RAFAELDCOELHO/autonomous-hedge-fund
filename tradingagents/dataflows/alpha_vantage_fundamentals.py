@@ -1,4 +1,5 @@
 from .alpha_vantage_common import _make_api_request
+from .stockstats_utils import get_fiscal_year_end_month_day, statement_period_is_visible
 
 
 def _filter_reports_by_date(result, curr_date: str):
@@ -9,12 +10,27 @@ def _filter_reports_by_date(result, curr_date: str):
     """
     if not curr_date or not isinstance(result, dict):
         return result
-    for key in ("annualReports", "quarterlyReports"):
-        if key in result:
-            result[key] = [
-                r for r in result[key]
-                if r.get("fiscalDateEnding", "") <= curr_date
-            ]
+
+    annual_reports = result.get("annualReports", [])
+    fiscal_year_end_month_day = get_fiscal_year_end_month_day(
+        [r.get("fiscalDateEnding") for r in annual_reports]
+    )
+
+    if "annualReports" in result:
+        result["annualReports"] = [
+            r for r in result["annualReports"]
+            if statement_period_is_visible(
+                r.get("fiscalDateEnding"), curr_date, "annual", fiscal_year_end_month_day
+            )
+        ]
+
+    if "quarterlyReports" in result:
+        result["quarterlyReports"] = [
+            r for r in result["quarterlyReports"]
+            if statement_period_is_visible(
+                r.get("fiscalDateEnding"), curr_date, "quarterly", fiscal_year_end_month_day
+            )
+        ]
     return result
 
 

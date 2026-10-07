@@ -3,12 +3,16 @@ import logging
 
 import pandas as pd
 import yfinance as yf
+from dateutil.relativedelta import relativedelta
+from pandas.tseries.holiday import USFederalHolidayCalendar
+from pandas.tseries.offsets import CustomBusinessDay
 from yfinance.exceptions import YFRateLimitError
 from typing import Annotated
 import os
 from .config import get_config
 
 logger = logging.getLogger(__name__)
+US_BUSINESS_DAY = CustomBusinessDay(calendar=USFederalHolidayCalendar())
 
 
 def yf_retry(func, max_retries=3, base_delay=2.0):
@@ -87,18 +91,99 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     return data
 
 
-def filter_financials_by_date(data: pd.DataFrame, curr_date: str) -> pd.DataFrame:
-    """Drop financial statement columns (fiscal period timestamps) after curr_date.
+def _coerce_period_end(value) -> pd.Timestamp | None:
+    period_end = pd.to_datetime(value, errors="coerce")
+    if pd.isna(period_end):
+        return None
+    return period_end.tz_localize(None) if getattr(period_end, "tzinfo", None) else period_end
 
-    yfinance financial statements use fiscal period end dates as columns.
-    Columns after curr_date represent future data and are removed to
-    prevent look-ahead bias.
-    """
+
+def get_fiscal_year_end_month_day(annual_period_ends) -> tuple[int, int]:
+    """Infer fiscal-year-end month/day from annual period ends; fallback to Dec 31."""
+    if annual_period_ends is None:
+        return 12, 31
+
+    valid_periods = []
+    for value in annual_period_ends:
+        period_end = _coerce_period_end(value)
+        if period_end is not None:
+            valid_periods.append((period_end.year, period_end.month, period_end.day))
+
+    if not valid_periods:
+        return 12, 31
+
+    valid_periods.sort()
+    _, month, day = valid_periods[-1]
+    return month, day
+
+
+def _statement_available_date(
+    period_end: pd.Timestamp, freq: str, fiscal_year_end_month_day: tuple[int, int]
+) -> pd.Timestamp:
+    normalized_freq = (freq or "quarterly").lower()
+    if normalized_freq == "annual":
+        return period_end + relativedelta(months=3)
+
+    is_fiscal_year_end_quarter = (period_end.month, period_end.day) == fiscal_year_end_month_day
+    if is_fiscal_year_end_quarter:
+        return period_end + relativedelta(months=3)
+    return period_end + pd.Timedelta(days=45)
+
+
+def statement_period_is_visible(
+    period_end_value, curr_date: str, freq: str, fiscal_year_end_month_day: tuple[int, int]
+) -> bool:
+    period_end = _coerce_period_end(period_end_value)
+    if period_end is None:
+        return False
+    cutoff = pd.Timestamp(curr_date)
+    available_date = _statement_available_date(period_end, freq, fiscal_year_end_month_day)
+    return available_date < cutoff
+
+
+def filter_financials_by_date(
+    data: pd.DataFrame,
+    curr_date: str,
+    freq: str = "quarterly",
+    annual_period_ends=None,
+) -> pd.DataFrame:
+    """Drop columns not yet approximately public by curr_date (strict boundary)."""
     if not curr_date or data.empty:
         return data
-    cutoff = pd.Timestamp(curr_date)
-    mask = pd.to_datetime(data.columns, errors="coerce") <= cutoff
+
+    fiscal_year_end_month_day = get_fiscal_year_end_month_day(annual_period_ends)
+    mask = [
+        statement_period_is_visible(col, curr_date, freq, fiscal_year_end_month_day)
+        for col in data.columns
+    ]
     return data.loc[:, mask]
+
+
+def _insider_available_date(transaction_date: pd.Timestamp) -> pd.Timestamp:
+    return transaction_date + (2 * US_BUSINESS_DAY)
+
+
+def filter_insider_transactions_by_date(
+    data: pd.DataFrame,
+    curr_date: str,
+    date_columns: tuple[str, ...] = ("Start Date", "Transaction Date", "Date", "transaction_date"),
+) -> pd.DataFrame:
+    """Filter insider rows to those approximately public before curr_date."""
+    if not curr_date or data is None or data.empty:
+        return data
+
+    date_column = next((col for col in date_columns if col in data.columns), None)
+    if not date_column:
+        return data
+
+    cutoff = pd.Timestamp(curr_date)
+    transaction_dates = pd.to_datetime(data[date_column], errors="coerce")
+    available_dates = transaction_dates.apply(
+        lambda d: _insider_available_date(d.tz_localize(None) if getattr(d, "tzinfo", None) else d)
+        if not pd.isna(d)
+        else pd.NaT
+    )
+    return data.loc[available_dates < cutoff]
 
 
 class StockstatsUtils:

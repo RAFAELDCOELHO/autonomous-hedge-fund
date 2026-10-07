@@ -30,6 +30,8 @@ Execute the 2×2 factorial (Market: US vs. Brazil × Macro Agent: absent vs. pre
 - [x] P3.15: `--cells-out` adds optional `sharpe_flat` (same `flat_rf_metrics` as the table's flat-rf Sharpe; old files migrated atomically, failed rows empty); `scripts/h1_rf_sensitivity.py` reports descriptive per-ticker ΔSharpe and D on it with h1_stats' exclusions (no permutations, no p-values; exploratory §7). (PR #58)
 - [x] P3.16 (PR #59): update PAPER.md to reflect signed pre-registration status, per-market daily rf (CDI/DTB3, t−1, SHA-256-verified `data/rf/` snapshots) as the primary H1 metric with flat 4.34% only exploratory sensitivity, and the Bull/Bear → Research Manager plan → Trader flow; add a regression assert that `curr_situation` memory lookup excludes `macro_report` text.
 - [x] P4.1 (PR #60): temporal look-ahead audit doc with verified file:line citations on main 80d2f80 (leaks + clean paths); no runtime fixes.
+- [x] P4.3 (PR #62): filter financial statements by approximate public availability (quarterly +45 days, annual +3 calendar months, Q4-in-quarterly treated as annual by fiscal-year-end month/day; strict `<` boundary with Dec-31 fallback when annual fiscal-year-end inference is unavailable).
+- [x] P4.4 (PR #62): filter insider transactions by approximate public availability (2 US business days Form 4 lag with strict `<` boundary; B3 yfinance insider rows unavailable in spot-check so CVM month-end+10 rule deferred pending vendor data availability).
 
 ## Phase 3: Paper Submission 📝 (planned)
 
