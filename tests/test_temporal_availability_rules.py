@@ -85,6 +85,15 @@ class StatementAvailabilityTests(unittest.TestCase):
         self.assertIn("2024-03-31", out_after)
 
 
+class StatementToolSchemaTests(unittest.TestCase):
+    def test_statement_tools_require_curr_date(self):
+        from tradingagents.agents.utils import fundamental_data_tools as fdt
+
+        for tool in (fdt.get_balance_sheet, fdt.get_cashflow, fdt.get_income_statement):
+            schema = tool.args_schema.model_json_schema()
+            self.assertIn("curr_date", schema.get("required", []), tool.name)
+
+
 class InsiderAvailabilityTests(unittest.TestCase):
     def test_insider_tool_schema_requires_curr_date(self):
         schema = news_data_tools.get_insider_transactions.args_schema.model_json_schema()
