@@ -13,6 +13,7 @@ from .stockstats_utils import (
     filter_insider_transactions_by_date,
 )
 from .indicator_fallback import compute_indicator_with_fallback
+from .pit_fundamentals import build_point_in_time_fundamentals
 
 def get_YFin_data_online(
     symbol: Annotated[str, "ticker symbol of the company"],
@@ -244,56 +245,53 @@ def get_stockstats_indicator(
 
 def get_fundamentals(
     ticker: Annotated[str, "ticker symbol of the company"],
-    curr_date: Annotated[str, "current date (not used for yfinance)"] = None
+    curr_date: Annotated[str, "current date YYYY-MM-DD; output is point-in-time as of this date"] = None
 ):
     """Get company fundamentals overview from yfinance."""
+    ticker_upper = str(ticker).upper()
+    if not curr_date:
+        return f"Point-in-time fundamentals for {ticker_upper} require curr_date (YYYY-MM-DD); none was provided."
+
     try:
-        ticker_obj = yf.Ticker(ticker.upper())
-        info = yf_retry(lambda: ticker_obj.info)
+        cutoff = pd.Timestamp(datetime.strptime(curr_date, "%Y-%m-%d"))
+        ticker_obj = yf.Ticker(ticker_upper)
 
-        if not info:
-            return f"No fundamentals data found for symbol '{ticker}'"
+        history = yf_retry(
+            lambda: ticker_obj.history(
+                start=(cutoff - pd.Timedelta(days=400)).strftime("%Y-%m-%d"),
+                end=(cutoff + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                auto_adjust=False,
+            )
+        )
+        if history is not None and not history.empty:
+            if history.index.tz is not None:
+                history.index = history.index.tz_localize(None)
+            history = history.loc[history.index.normalize() <= cutoff]
 
-        fields = [
-            ("Name", info.get("longName")),
-            ("Sector", info.get("sector")),
-            ("Industry", info.get("industry")),
-            ("Market Cap", info.get("marketCap")),
-            ("PE Ratio (TTM)", info.get("trailingPE")),
-            ("Forward PE", info.get("forwardPE")),
-            ("PEG Ratio", info.get("pegRatio")),
-            ("Price to Book", info.get("priceToBook")),
-            ("EPS (TTM)", info.get("trailingEps")),
-            ("Forward EPS", info.get("forwardEps")),
-            ("Dividend Yield", info.get("dividendYield")),
-            ("Beta", info.get("beta")),
-            ("52 Week High", info.get("fiftyTwoWeekHigh")),
-            ("52 Week Low", info.get("fiftyTwoWeekLow")),
-            ("50 Day Average", info.get("fiftyDayAverage")),
-            ("200 Day Average", info.get("twoHundredDayAverage")),
-            ("Revenue (TTM)", info.get("totalRevenue")),
-            ("Gross Profit", info.get("grossProfits")),
-            ("EBITDA", info.get("ebitda")),
-            ("Net Income", info.get("netIncomeToCommon")),
-            ("Profit Margin", info.get("profitMargins")),
-            ("Operating Margin", info.get("operatingMargins")),
-            ("Return on Equity", info.get("returnOnEquity")),
-            ("Return on Assets", info.get("returnOnAssets")),
-            ("Debt to Equity", info.get("debtToEquity")),
-            ("Current Ratio", info.get("currentRatio")),
-            ("Book Value", info.get("bookValue")),
-            ("Free Cash Flow", info.get("freeCashflow")),
-        ]
+        income_stmt = filter_financials_by_date(
+            yf_retry(lambda: ticker_obj.income_stmt),
+            curr_date,
+            freq="annual",
+        )
+        balance_sheet = filter_financials_by_date(
+            yf_retry(lambda: ticker_obj.balance_sheet),
+            curr_date,
+            freq="annual",
+        )
+        cashflow = filter_financials_by_date(
+            yf_retry(lambda: ticker_obj.cashflow),
+            curr_date,
+            freq="annual",
+        )
 
-        lines = []
-        for label, value in fields:
-            if value is not None:
-                lines.append(f"{label}: {value}")
-
-        header = f"# Company Fundamentals for {ticker.upper()}\n"
-        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-
-        return header + "\n".join(lines)
+        return build_point_in_time_fundamentals(
+            ticker=ticker,
+            curr_date=curr_date,
+            history=history,
+            income_stmt=income_stmt,
+            balance_sheet=balance_sheet,
+            cashflow=cashflow,
+        )
 
     except Exception as e:
         return f"Error retrieving fundamentals for {ticker}: {str(e)}"

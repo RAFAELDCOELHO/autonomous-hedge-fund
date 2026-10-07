@@ -106,3 +106,10 @@ These fixes use a deterministic proxy for "publicly available" timestamps becaus
 Residual risk remains by design:
 - Late filers (or issuers with filing extensions) can still publish after the proxy lag and therefore leak if interpreted as public immediately at `available_date`.
 - Early filers can be hidden longer than necessary (false delay) because the lag is conservative and not issuer/event-specific.
+
+## 10) P4.2 point-in-time fundamentals and B3 insider fail-closed (F4 PR4)
+
+- `get_fundamentals` (yfinance) no longer reads `Ticker.info`. It rebuilds an as-of view from (a) the latest annual statement column visible under the §9 rule (`filter_financials_by_date(..., freq="annual")`) and (b) unadjusted (`auto_adjust=False`) daily closes dated ≤ curr_date. Fields with no as-of source (Forward PE/EPS, PEG, Beta, Dividend Yield, Name/Sector/Industry) are omitted. Without curr_date the tool returns a refusal.
+- Vendor depth: as of 2026-10, yfinance quarterly statements begin in 2025, so in the H1 window (2024-01-02..2024-03-28) only annual statements can be visible; the basis is FY2022 for Dec-FYE issuers and FY2023 for AAPL.
+- Split basis: Yahoo restates share counts/EPS and split-adjusts Close to the current basis, so ratios and market cap are split-invariant; per-share levels remain on the vendor's current split basis (P4.10).
+- Residual: Alpha Vantage `get_fundamentals` (OVERVIEW) remains a current snapshot; it is not reachable under the default yfinance configuration. curr_date is still LLM-supplied (P4.6).

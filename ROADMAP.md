@@ -32,6 +32,7 @@ Execute the 2×2 factorial (Market: US vs. Brazil × Macro Agent: absent vs. pre
 - [x] P4.1 (PR #60): temporal look-ahead audit doc with verified file:line citations on main 80d2f80 (leaks + clean paths); no runtime fixes.
 - [x] P4.3 (PR #62): filter financial statements by approximate public availability (quarterly +45 days, annual +3 calendar months, Q4-in-quarterly treated as annual by fiscal-year-end month/day; strict `<` boundary with Dec-31 fallback when annual fiscal-year-end inference is unavailable).
 - [x] P4.4 (PR #62): filter insider transactions by approximate public availability (2 US business days Form 4 lag with strict `<` boundary; B3 yfinance insider rows unavailable in spot-check so CVM month-end+10 rule deferred pending vendor data availability).
+- [x] P4.2 (PR #63): `get_fundamentals` (yfinance) is point-in-time: no `.info`; latest fiscal year public under the P4.3 rule plus unadjusted close ≤ curr_date; forward/analyst fields (Forward PE/EPS, PEG, Beta, Dividend Yield) dropped; fails closed without curr_date.
 
 ## Phase 3: Paper Submission 📝 (planned)
 
