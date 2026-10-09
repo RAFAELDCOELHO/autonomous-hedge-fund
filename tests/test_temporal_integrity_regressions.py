@@ -79,27 +79,39 @@ class _FakeTicker:
 def _setup_fake_yf(monkeypatch):
     monkeypatch.setattr(y_finance, "datetime", _SentinelDatetime)
     monkeypatch.setattr(y_finance, "yf_retry", lambda fn: fn())
-    monkeypatch.setattr(y_finance, "filter_financials_by_date", lambda df, _: df)
+    monkeypatch.setattr(y_finance, "filter_financials_by_date", lambda df, *_, **__: df)
     monkeypatch.setattr(y_finance.yf, "Ticker", lambda _: _FakeTicker())
 
 
 @pytest.mark.parametrize(
-    ("formatter_name", "call_args", "call_kwargs"),
+    ("formatter_name", "call_args", "call_kwargs", "expected_fragment"),
     [
         (
             "get_YFin_data_online",
             ("AAPL", "2024-01-01", "2024-01-03"),
             {},
+            "# Stock data for AAPL from 2024-01-01 to 2024-01-03",
         ),
-        ("get_fundamentals", ("AAPL",), {}),
-        ("get_balance_sheet", ("AAPL",), {"freq": "quarterly", "curr_date": "2024-04-01"}),
-        ("get_cashflow", ("AAPL",), {"freq": "quarterly", "curr_date": "2024-04-01"}),
+        ("get_fundamentals", ("AAPL",), {}, "# Company Fundamentals for AAPL"),
+        (
+            "get_balance_sheet",
+            ("AAPL",),
+            {"freq": "quarterly", "curr_date": "2024-04-01"},
+            "# Balance Sheet data for AAPL (quarterly)",
+        ),
+        (
+            "get_cashflow",
+            ("AAPL",),
+            {"freq": "quarterly", "curr_date": "2024-04-01"},
+            "# Cash Flow data for AAPL (quarterly)",
+        ),
         (
             "get_income_statement",
             ("AAPL",),
             {"freq": "quarterly", "curr_date": "2024-04-01"},
+            "# Income Statement data for AAPL (quarterly)",
         ),
-        ("get_insider_transactions", ("AAPL",), {}),
+        ("get_insider_transactions", ("AAPL",), {}, "# Insider Transactions data for AAPL"),
     ],
 )
 def test_p48_all_yfinance_formatters_exclude_wall_clock_stamp(
@@ -107,6 +119,7 @@ def test_p48_all_yfinance_formatters_exclude_wall_clock_stamp(
     formatter_name,
     call_args,
     call_kwargs,
+    expected_fragment,
 ):
     _setup_fake_yf(monkeypatch)
     formatter = getattr(y_finance, formatter_name)
@@ -114,6 +127,8 @@ def test_p48_all_yfinance_formatters_exclude_wall_clock_stamp(
 
     assert "Data retrieved on" not in out
     assert "2099-01-01 12:34:56" not in out
+    assert expected_fragment in out
+    assert "Error fetching" not in out
 
 
 def test_p48_yfinance_module_source_has_no_stamp_literal():
@@ -149,14 +164,11 @@ def test_p48_remove_only_wall_clock_stamp_from_stock_tool_output(monkeypatch):
     expected_header = "# Stock data for AAPL from 2024-01-01 to 2024-01-03\n"
     expected_header += "# Total records: 1\n"
     csv_body = _FakeTicker().history().round(2).to_csv()
-    expected_with_stamp = (
-        expected_header
-        + "# Data retrieved on: 2099-01-01 12:34:56\n\n"
-        + csv_body
-    )
+    stamp_label = "Data retrieved " + "on"
+    expected_with_stamp = expected_header + f"# {stamp_label}: 2099-01-01 12:34:56\n\n" + csv_body
 
     assert out == expected_with_stamp.replace(
-        "# Data retrieved on: 2099-01-01 12:34:56\n", ""
+        f"# {stamp_label}: 2099-01-01 12:34:56\n", ""
     )
     assert "2099-01-01 12:34:56" not in out
 
