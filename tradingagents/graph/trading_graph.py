@@ -211,8 +211,13 @@ class TradingAgentsGraph:
             ),
         }
 
-    def propagate(self, company_name, trade_date):
-        """Run the trading agents graph for a company on a specific date."""
+    def propagate(self, company_name, trade_date, decision_date=None):
+        """Run the trading agents graph for a company on a specific date.
+
+        trade_date is the information cutoff every agent and tool sees. The
+        backtest runner passes its D-1 there and the session D it trades as
+        decision_date, which only changes how the state log is keyed/named.
+        """
 
         self.ticker = company_name
 
@@ -241,14 +246,19 @@ class TradingAgentsGraph:
         self.curr_state = final_state
 
         # Log state
-        self._log_state(trade_date, final_state)
+        self._log_state(trade_date, final_state, decision_date)
 
         # Return decision and processed signal
         return final_state, self.process_signal(final_state["final_trade_decision"])
 
-    def _log_state(self, trade_date, final_state):
-        """Log the final state to a JSON file."""
-        self.log_states_dict[str(trade_date)] = {
+    def _log_state(self, trade_date, final_state, decision_date=None):
+        """Log the final state to a JSON file.
+
+        With decision_date, the entry is keyed and file-named by decision_date
+        and also records decision_date and data_cutoff (= trade_date).
+        """
+        log_key = trade_date if decision_date is None else decision_date
+        entry = {
             "company_of_interest": final_state["company_of_interest"],
             "trade_date": final_state["trade_date"],
             "market_report": final_state["market_report"],
@@ -277,14 +287,18 @@ class TradingAgentsGraph:
             "investment_plan": final_state["investment_plan"],
             "final_trade_decision": final_state["final_trade_decision"],
         }
+        if decision_date is not None:
+            entry["decision_date"] = decision_date
+            entry["data_cutoff"] = trade_date
+        self.log_states_dict[str(log_key)] = entry
 
         # Save to file
         directory = Path(self.config["results_dir"]) / self.ticker / "TradingAgentsStrategy_logs"
         directory.mkdir(parents=True, exist_ok=True)
 
-        log_path = directory / f"full_states_log_{trade_date}.json"
+        log_path = directory / f"full_states_log_{log_key}.json"
         with open(log_path, "w", encoding="utf-8") as f:
-            json.dump(self.log_states_dict[str(trade_date)], f, indent=4)
+            json.dump(self.log_states_dict[str(log_key)], f, indent=4)
 
     def reflect_and_remember(self, returns_losses):
         """Reflect on decisions and update memory based on returns."""

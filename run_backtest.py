@@ -51,6 +51,7 @@ from tradingagents.backtest import (
     print_comparison,
     run_strategy,
     run_agent_strategy,
+    run_buy_and_hold_at_open,
 )
 from tradingagents.backtest.agent_integration import make_decide_fn
 from tradingagents.backtest.cells import (
@@ -75,6 +76,7 @@ CELLS_EXTRA_COLUMNS = (
     "temperature",
     "max_debate_rounds",
     "max_risk_discuss_rounds",
+    "data_cutoff",
 )
 CELLS_CONFIG_COLUMNS = (
     "deep_think_llm",
@@ -362,6 +364,10 @@ def main(argv=None) -> int:
         curves[strat.name] = run_strategy(strat, args.ticker, args.start, args.end, args.capital)
 
     if not args.skip_agents:
+        # Same convention as the agent arms (decide before the open, fill and mark at opens).
+        curves["Buy & Hold (open)"] = run_buy_and_hold_at_open(
+            args.ticker, args.start, args.end, args.capital, market=market_of(args.ticker)
+        )
         arms = _selected_analysts_by_arm()
         failed_arms: list[str] = []
         if not arms:
@@ -407,6 +413,10 @@ def main(argv=None) -> int:
                     row["start"] = args.start
                     row["end"] = args.end
                     row.update(_cells_config_values(run_config))
+                    # start/end are decision dates; the agent saw closes up to data_cutoff.
+                    row["data_cutoff"] = (
+                        "" if agent_curve is None else agent_curve.attrs.get("data_cutoff", "")
+                    )
                     append_cells(args.cells_out, [row])
                 except ValueError as exc:
                     logging.error("%s", exc)

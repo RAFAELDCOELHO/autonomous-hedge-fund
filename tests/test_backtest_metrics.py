@@ -22,6 +22,7 @@ from tradingagents.backtest import (
     run_agent_strategy,
     run_strategy,
 )
+from tradingagents.backtest.calendar import sessions
 from tradingagents.backtest.metrics import FLAT_RF_SENSITIVITY
 
 
@@ -95,6 +96,14 @@ class BaselineStrategyTests(unittest.TestCase):
         self.assertGreater(eq.iloc[-1], 10_000.0)
 
 
+def _session_prices(n: int) -> pd.DataFrame:
+    """Like _linear_prices on real NYSE sessions: row 0 (2023-12-29) is the pre-window bar."""
+    prices = _linear_prices(n)
+    prices.index = sessions("AAPL", "2023-12-29", "2024-12-31")[:n].rename(None)
+    prices["Open"] = prices["Close"]
+    return prices
+
+
 class RunnerTests(unittest.TestCase):
     def test_run_strategy_uses_loaded_prices(self):
         prices = _linear_prices(20, start=100.0, step=1.0)
@@ -125,33 +134,36 @@ class RunnerTests(unittest.TestCase):
                 self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * ret, places=6)
 
     def test_run_agent_strategy_full_position(self):
-        prices = _linear_prices(10, start=100.0, step=1.0)
+        # Row 0 (2023-12-29) is the pre-window bar; the window starts 2024-01-02.
+        prices = _session_prices(10)
+        end = str(prices.index[-1].date())
         with patch("tradingagents.backtest.runner.load_ohlcv") as load:
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
 
-            # BUY on day 0, SELL on day 9
+            # decider gets D-1: BUY on the first window session, SELL on the last
             def decider(date_str, _window):
                 if date_str == prices.index[0].strftime("%Y-%m-%d"):
                     return "BUY"
-                if date_str == prices.index[-1].strftime("%Y-%m-%d"):
+                if date_str == prices.index[-2].strftime("%Y-%m-%d"):
                     return "SELL"
                 return "HOLD"
 
-            eq = run_agent_strategy(decider, "AAPL", "2024-01-01", "2024-12-31", 1_000.0)
-        # Bought at 100, sold at 109 → final cash = 1000 * 109/100 = 1090
-        self.assertAlmostEqual(eq.iloc[-1], 1_090.0, places=2)
+            eq = run_agent_strategy(decider, "AAPL", "2024-01-02", end, 1_000.0)
+        # Bought at Open 101, sold at Open 109 → final cash = 1000 * 109/101
+        self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * 109.0 / 101.0, places=6)
 
     def test_run_agent_strategy_hold_keeps_cash_flat(self):
-        prices = _linear_prices(5, start=100.0, step=1.0)
+        prices = _session_prices(5)
         with patch("tradingagents.backtest.runner.load_ohlcv") as load:
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
-            eq = run_agent_strategy(lambda d, w: "HOLD", "AAPL", "2024-01-01", "2024-12-31", 500.0)
+            eq = run_agent_strategy(lambda d, w: "HOLD", "AAPL", "2024-01-02",
+                                    str(prices.index[-1].date()), 500.0)
         self.assertTrue(np.allclose(eq.values, 500.0))
 
     def test_run_agent_strategy_decider_exception_falls_back_to_hold(self):
-        prices = _linear_prices(5, start=100.0, step=1.0)
+        prices = _session_prices(6)
         with patch("tradingagents.backtest.runner.load_ohlcv") as load:
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
@@ -164,10 +176,12 @@ class RunnerTests(unittest.TestCase):
                     raise RuntimeError("boom")
                 return "HOLD"
 
-            eq = run_agent_strategy(flaky_decider, "AAPL", "2024-01-01", "2024-12-31", 500.0)
-        self.assertEqual(call_count["n"], len(prices))
-        self.assertEqual(len(eq), len(prices))
-        self.assertEqual(eq.index.tolist(), prices.index.tolist())
+            eq = run_agent_strategy(flaky_decider, "AAPL", "2024-01-02",
+                                    str(prices.index[-1].date()), 500.0)
+        window = prices.index[1:]
+        self.assertEqual(call_count["n"], len(window))
+        self.assertEqual(len(eq), len(window))
+        self.assertEqual(eq.index.tolist(), window.tolist())
         self.assertTrue(np.allclose(eq.values, 500.0))
 
 
