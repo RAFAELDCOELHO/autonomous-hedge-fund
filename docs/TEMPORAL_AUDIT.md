@@ -124,3 +124,13 @@ Known places that violate the rule at `e5ea062` (references only; nothing fixed 
 - `tradingagents/backtest/runner.py:79,100,102` - the agent loop passes prices up to and including D (`prices.iloc[: i + 1]`) and executes at the close of D (see L9 and P4.11 above).
 
 Any code fix is a separate PR and needs Rafa's explicit approval before implementation.
+
+### 10.1) Deliberate conservative cuts when tools receive D-1
+
+With the runner fix (P4.11) the date the agent and its tools receive for the decision of D is D-1, the previous session of the ticker's exchange. Every existing ceiling then applies unchanged at D-1. Two of them are strict (`<`), so they cut one day earlier than the rule requires. This is a deliberate choice: it is conservative and does not leak.
+
+- **Statements (P4.3):** visible only when `available_date < D-1` (`tradingagents/dataflows/stockstats_utils.py:158`). A statement whose proxy availability date is D-1 is excluded, even if it was filed after the D-1 close and was public before the D open.
+- **Insider transactions (P4.4):** visible only when `available_date < D-1` (`tradingagents/dataflows/stockstats_utils.py:204`). Same consequence.
+- Daily SELIC and USD/BRL (`tradingagents/agents/utils/macro_tools.py:39-40`) also read strictly before the date they receive, so the D-1 value is excluded as well (same direction: conservative).
+
+These cuts can withhold information that was public before the open of D. They never admit information published after the D-1 close. Relaxing them would be a separate change and needs Rafa's approval.
