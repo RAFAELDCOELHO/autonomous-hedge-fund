@@ -9,6 +9,8 @@ import pandas as pd
 from tradingagents.dataflows.stockstats_utils import (
     _clean_dataframe,
     filter_financials_by_date,
+    filter_insider_transactions_by_date,
+    get_fiscal_year_end_month_day,
 )
 
 
@@ -39,16 +41,83 @@ class CleanDataFrameTests(unittest.TestCase):
 
 
 class FilterFinancialsByDateTests(unittest.TestCase):
-    def test_filter_financials_by_date_keeps_only_columns_up_to_cutoff(self):
+    def test_quarterly_boundary_is_strict_and_uses_45_day_lag(self):
         data = pd.DataFrame(
             [[1.0, 2.0, 3.0]],
             columns=["2023-12-31", "2024-03-31", "2024-06-30"],
         )
 
-        out = filter_financials_by_date(data, "2024-04-01")
+        out_deadline = filter_financials_by_date(
+            data,
+            "2024-05-15",
+            freq="quarterly",
+            annual_period_ends=["2023-12-31"],
+        )
+        out_after_deadline = filter_financials_by_date(
+            data,
+            "2024-05-16",
+            freq="quarterly",
+            annual_period_ends=["2023-12-31"],
+        )
 
-        self.assertEqual(list(out.columns), ["2023-12-31", "2024-03-31"])
-        self.assertEqual(out.iloc[0].tolist(), [1.0, 2.0])
+        self.assertEqual(list(out_deadline.columns), ["2023-12-31"])
+        self.assertEqual(list(out_after_deadline.columns), ["2023-12-31", "2024-03-31"])
+
+    def test_annual_boundary_is_strict_and_uses_three_calendar_months(self):
+        data = pd.DataFrame(
+            [[1.0, 2.0]],
+            columns=["2023-12-31", "2024-12-31"],
+        )
+
+        out_deadline = filter_financials_by_date(data, "2024-03-31", freq="annual")
+        out_after_deadline = filter_financials_by_date(data, "2024-04-01", freq="annual")
+
+        self.assertEqual(list(out_deadline.columns), [])
+        self.assertEqual(list(out_after_deadline.columns), ["2023-12-31"])
+
+    def test_q4_in_quarterly_series_uses_annual_lag(self):
+        data = pd.DataFrame(
+            [[10.0, 20.0]],
+            columns=["2024-06-30", "2024-09-30"],
+        )
+
+        out_deadline = filter_financials_by_date(
+            data,
+            "2024-12-30",
+            freq="quarterly",
+            annual_period_ends=["2024-09-30"],
+        )
+        out_after_deadline = filter_financials_by_date(
+            data,
+            "2024-12-31",
+            freq="quarterly",
+            annual_period_ends=["2024-09-30"],
+        )
+
+        self.assertEqual(list(out_deadline.columns), ["2024-06-30"])
+        self.assertEqual(list(out_after_deadline.columns), ["2024-06-30", "2024-09-30"])
+
+    def test_fiscal_year_end_falls_back_to_december_31_when_annual_unavailable(self):
+        self.assertEqual(get_fiscal_year_end_month_day([]), (12, 31))
+        self.assertEqual(get_fiscal_year_end_month_day(None), (12, 31))
+
+
+class FilterInsiderTransactionsByDateTests(unittest.TestCase):
+    def test_insider_filter_uses_two_us_business_days_with_strict_boundary(self):
+        # 2024-07-03 + 2 US business days (Jul-04 holiday) => 2024-07-08
+        data = pd.DataFrame(
+            [
+                {"Start Date": "2024-07-03", "Shares": 10},
+                {"Start Date": "2024-07-05", "Shares": 20},  # +2bd => 2024-07-09
+            ]
+        )
+
+        out_deadline = filter_insider_transactions_by_date(data, "2024-07-08")
+        out_after_deadline = filter_insider_transactions_by_date(data, "2024-07-09")
+
+        self.assertEqual(len(out_deadline), 0)
+        self.assertEqual(len(out_after_deadline), 1)
+        self.assertEqual(out_after_deadline.iloc[0]["Shares"], 10)
 
 
 if __name__ == "__main__":

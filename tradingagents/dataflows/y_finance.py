@@ -4,7 +4,14 @@ from dateutil.relativedelta import relativedelta
 import pandas as pd
 import yfinance as yf
 import os
-from .stockstats_utils import StockstatsUtils, _clean_dataframe, yf_retry, load_ohlcv, filter_financials_by_date
+from .stockstats_utils import (
+    StockstatsUtils,
+    _clean_dataframe,
+    yf_retry,
+    load_ohlcv,
+    filter_financials_by_date,
+    filter_insider_transactions_by_date,
+)
 from .indicator_fallback import compute_indicator_with_fallback
 
 def get_YFin_data_online(
@@ -303,13 +310,21 @@ def get_balance_sheet(
     """Get balance sheet data from yfinance."""
     try:
         ticker_obj = yf.Ticker(ticker.upper())
+        annual_period_ends = None
 
         if freq.lower() == "quarterly":
             data = yf_retry(lambda: ticker_obj.quarterly_balance_sheet)
+            try:
+                annual_data = yf_retry(lambda: ticker_obj.balance_sheet)
+                annual_period_ends = annual_data.columns if hasattr(annual_data, "columns") else None
+            except Exception:
+                annual_period_ends = None
         else:
             data = yf_retry(lambda: ticker_obj.balance_sheet)
 
-        data = filter_financials_by_date(data, curr_date)
+        data = filter_financials_by_date(
+            data, curr_date, freq=freq, annual_period_ends=annual_period_ends
+        )
 
         if data.empty:
             return f"No balance sheet data found for symbol '{ticker}'"
@@ -335,13 +350,21 @@ def get_cashflow(
     """Get cash flow data from yfinance."""
     try:
         ticker_obj = yf.Ticker(ticker.upper())
+        annual_period_ends = None
 
         if freq.lower() == "quarterly":
             data = yf_retry(lambda: ticker_obj.quarterly_cashflow)
+            try:
+                annual_data = yf_retry(lambda: ticker_obj.cashflow)
+                annual_period_ends = annual_data.columns if hasattr(annual_data, "columns") else None
+            except Exception:
+                annual_period_ends = None
         else:
             data = yf_retry(lambda: ticker_obj.cashflow)
 
-        data = filter_financials_by_date(data, curr_date)
+        data = filter_financials_by_date(
+            data, curr_date, freq=freq, annual_period_ends=annual_period_ends
+        )
 
         if data.empty:
             return f"No cash flow data found for symbol '{ticker}'"
@@ -367,13 +390,21 @@ def get_income_statement(
     """Get income statement data from yfinance."""
     try:
         ticker_obj = yf.Ticker(ticker.upper())
+        annual_period_ends = None
 
         if freq.lower() == "quarterly":
             data = yf_retry(lambda: ticker_obj.quarterly_income_stmt)
+            try:
+                annual_data = yf_retry(lambda: ticker_obj.income_stmt)
+                annual_period_ends = annual_data.columns if hasattr(annual_data, "columns") else None
+            except Exception:
+                annual_period_ends = None
         else:
             data = yf_retry(lambda: ticker_obj.income_stmt)
 
-        data = filter_financials_by_date(data, curr_date)
+        data = filter_financials_by_date(
+            data, curr_date, freq=freq, annual_period_ends=annual_period_ends
+        )
 
         if data.empty:
             return f"No income statement data found for symbol '{ticker}'"
@@ -392,12 +423,14 @@ def get_income_statement(
 
 
 def get_insider_transactions(
-    ticker: Annotated[str, "ticker symbol of the company"]
+    ticker: Annotated[str, "ticker symbol of the company"],
+    curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None,
 ):
     """Get insider transactions data from yfinance."""
     try:
         ticker_obj = yf.Ticker(ticker.upper())
         data = yf_retry(lambda: ticker_obj.insider_transactions)
+        data = filter_insider_transactions_by_date(data, curr_date)
         
         if data is None or data.empty:
             return f"No insider transactions data found for symbol '{ticker}'"

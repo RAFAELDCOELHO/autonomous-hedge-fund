@@ -23,8 +23,8 @@ def get_fundamentals(
 @tool
 def get_balance_sheet(
     ticker: Annotated[str, "ticker symbol"],
+    curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
-    curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
 ) -> str:
     """
     Retrieve balance sheet data for a given ticker symbol.
@@ -42,8 +42,8 @@ def get_balance_sheet(
 @tool
 def get_cashflow(
     ticker: Annotated[str, "ticker symbol"],
+    curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
-    curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
 ) -> str:
     """
     Retrieve cash flow statement data for a given ticker symbol.
@@ -61,8 +61,8 @@ def get_cashflow(
 @tool
 def get_income_statement(
     ticker: Annotated[str, "ticker symbol"],
+    curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
-    curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
 ) -> str:
     """
     Retrieve income statement data for a given ticker symbol.

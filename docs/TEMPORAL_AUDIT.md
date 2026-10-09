@@ -89,3 +89,21 @@ Minor caveats on those standalone scripts (not the core four agent-tool leaks): 
 | P4.13 | FinGPT argument contract fix |
 
 Note: P4.5, P4.11, and any design-level workflow changes require explicit approval before implementation.
+
+## 9) P4.3/P4.4 availability rule (approximation)
+
+These fixes use a deterministic proxy for "publicly available" timestamps because neither yfinance nor Alpha Vantage exposes filing/publication dates for statement rows/reports or insider rows.
+
+- **Statements (P4.3, strict boundary):** a statement period is visible only when `available_date < curr_date`.
+  - Quarterly periods: `available_date = period_end + 45 calendar days`.
+  - Annual periods: `available_date = period_end + 3 calendar months` (`relativedelta(months=3)`).
+  - **Q4 in quarterly series:** if a quarterly period end matches fiscal year-end month/day, it is treated as annual timing (`+3 calendar months`) rather than 45 days.
+  - Fiscal year-end month/day is inferred from annual statement period ends for that ticker/report path when available; fallback is **Dec 31** when annual inference is unavailable.
+- **Insiders (P4.4, strict boundary):** an insider transaction is visible only when `available_date < curr_date`, where `available_date = transaction_date + 2 US business days` (Form 4 proxy; `CustomBusinessDay` with `USFederalHolidayCalendar`).
+- **B3 insider vendor check:** spot checks for `PETR4.SA`, `VALE3.SA`, and `ITUB4.SA` returned zero `insider_transactions` rows via yfinance at implementation time, so the CVM month-end + 10-day lag rule was not enabled in runtime filtering for this PR.
+- On main, no analyst currently binds `get_insider_transactions`; this P4.4 filter is therefore defensive for any future binding, and exposing that tool to an analyst remains a separate design decision.
+
+Residual risk remains by design:
+- Late filers (or issuers with filing extensions) can still publish after the proxy lag and therefore leak if interpreted as public immediately at `available_date`.
+- Early filers can be hidden longer than necessary (false delay) because the lag is conservative and not issuer/event-specific.
+- FYE is inferred from the most recent annual period returned by yfinance, which may be after `curr_date`; no ticker in the universe changed FYE, and restricting inference to past periods would be worse because yfinance returns only ~4 annual periods.

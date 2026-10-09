@@ -1,4 +1,8 @@
+import json
+
 from .alpha_vantage_common import _make_api_request, format_datetime_for_api
+from .stockstats_utils import US_BUSINESS_DAY
+import pandas as pd
 
 def get_news(ticker, start_date, end_date) -> dict[str, str] | str:
     """Returns live and historical market news & sentiment data from premier news outlets worldwide.
@@ -52,7 +56,7 @@ def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict
     return _make_api_request("NEWS_SENTIMENT", params)
 
 
-def get_insider_transactions(symbol: str) -> dict[str, str] | str:
+def get_insider_transactions(symbol: str, curr_date: str = None) -> dict[str, str] | str:
     """Returns latest and historical insider transactions by key stakeholders.
 
     Covers transactions by founders, executives, board members, etc.
@@ -68,4 +72,34 @@ def get_insider_transactions(symbol: str) -> dict[str, str] | str:
         "symbol": symbol,
     }
 
-    return _make_api_request("INSIDER_TRANSACTIONS", params)
+    result = _make_api_request("INSIDER_TRANSACTIONS", params)
+    if not curr_date:
+        return result
+    # _make_api_request returns the raw response text, not a dict.
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except json.JSONDecodeError:
+            return result
+        if not isinstance(parsed, dict) or "data" not in parsed:
+            return result
+        return json.dumps(_filter_insider_payload(parsed, curr_date), indent=2)
+    if not isinstance(result, dict) or "data" not in result:
+        return result
+    return _filter_insider_payload(result, curr_date)
+
+
+def _filter_insider_payload(result: dict, curr_date: str) -> dict:
+    cutoff = pd.Timestamp(curr_date)
+    filtered_rows = []
+    for row in result.get("data", []):
+        tx_date = pd.to_datetime(row.get("transaction_date"), errors="coerce")
+        if pd.isna(tx_date):
+            continue
+        tx_date = tx_date.tz_localize(None) if getattr(tx_date, "tzinfo", None) else tx_date
+        available_date = tx_date + (2 * US_BUSINESS_DAY)
+        if available_date < cutoff:
+            filtered_rows.append(row)
+
+    result["data"] = filtered_rows
+    return result

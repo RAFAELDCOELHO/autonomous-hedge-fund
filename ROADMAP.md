@@ -33,7 +33,9 @@ Execute the 2×2 factorial (Market: US vs. Brazil × Macro Agent: absent vs. pre
 ## F4: Temporal integrity
 
 - [x] P4.1 (PR #60): temporal look-ahead audit doc with verified file:line citations on main 80d2f80 (leaks + clean paths); no runtime fixes.
-- [x] P4.8 (PR #61): remove wall-clock "Data retrieved on ..." lines from yfinance tool outputs while preserving remaining output format.
+- [x] P4.3 (PR #62): filter financial statements by approximate public availability (quarterly +45 days, annual +3 calendar months, Q4-in-quarterly treated as annual by fiscal-year-end month/day; strict `<` boundary with Dec-31 fallback when annual fiscal-year-end inference is unavailable).
+- [x] P4.4 (PR #62): filter insider transactions by approximate public availability (2 US business days Form 4 lag with strict `<` boundary; B3 yfinance insider rows unavailable in spot-check so CVM month-end+10 rule deferred pending vendor data availability).
+- [x] P4.8 (PR #61): remove wall-clock retrieval timestamp lines from yfinance tool outputs while preserving remaining output format.
 - [x] P4.9 (PR #61): cap `get_stock_data` end date at `curr_date` (inclusive of `curr_date`, excluding later rows).
 - [x] P4.13 (PR #61): pass `(ticker, start_date, end_date)` to FinGPT news routing (`start_date = curr_date - look_back_days`, `end_date = curr_date`).
 
