@@ -107,3 +107,20 @@ Residual risk remains by design:
 - Late filers (or issuers with filing extensions) can still publish after the proxy lag and therefore leak if interpreted as public immediately at `available_date`.
 - Early filers can be hidden longer than necessary (false delay) because the lag is conservative and not issuer/event-specific.
 - FYE is inferred from the most recent annual period returned by yfinance, which may be after `curr_date`; no ticker in the universe changed FYE, and restricting inference to past periods would be worse because yfinance returns only ~4 annual periods.
+
+## 10) Decision-timing rule: decide before the open of D
+
+Decided by Rafa on 2026-10-09 19:48 BRT. Code at `e5ea062` is not changed by this section.
+
+- **Information set for the decision of day D:** everything published up to the close of D-1 (B3 close for prices; for other sources, anything whose publication timestamp is at or before that close).
+- **Execution:** at the open of D.
+- Consequence: any value first known at or after the open of D (the close of D, returns or statistics that use it, data published during D) is look-ahead for the decision of D.
+
+Known places that violate the rule at `e5ea062` (references only; nothing fixed here):
+
+- `scripts/qwen_coldstart_n10.py:84,94` - the prompt's `close` is `closes[idx]` (close of D), and the 20d/60d returns are computed to that close.
+- `brazilbench_mistral_test.py:52,55-56` - same in `compute_stats`: `close = prices[idx]` and `ret_20d`/`ret_60d` to the close of D.
+- `scripts/reliability_diagram.py:102-103` - scoring uses the close-D to close-D+1 return, which does not match execution at the open of D.
+- `tradingagents/backtest/runner.py:79,100,102` - the agent loop passes prices up to and including D (`prices.iloc[: i + 1]`) and executes at the close of D (see L9 and P4.11 above).
+
+Any code fix is a separate PR and needs Rafa's explicit approval before implementation.
