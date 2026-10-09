@@ -2,6 +2,8 @@
 
 import re
 from typing import Annotated
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 from langchain_core.tools import tool
 
@@ -53,8 +55,12 @@ def get_fingpt_sentiment_tool(
     social/news review. If the tool reports unavailable, proceed with
     manual analysis.
     """
+    start_date = (
+        datetime.strptime(curr_date, "%Y-%m-%d") - relativedelta(days=look_back_days)
+    ).strftime("%Y-%m-%d")
+
     try:
-        news_text = route_to_vendor("get_news", symbol, curr_date, look_back_days)
+        news_text = route_to_vendor("get_news", symbol, start_date, curr_date)
     except Exception as e:
         return f"FinGPT sentiment unavailable (news fetch failed: {e})."
 
