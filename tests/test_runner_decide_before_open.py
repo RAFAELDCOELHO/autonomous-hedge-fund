@@ -109,9 +109,10 @@ def test_orders_fill_and_mark_at_opens_closes_ignored():
 
     eq = curves[0]
     shares = 1_000.0 / 20.0  # capital / Open[first session]
-    assert eq.iloc[0] == pytest.approx(shares * 25.0)  # marked at the next session's open
-    assert eq.iloc[1] == pytest.approx(shares * 40.0)
-    assert eq.tolist() == pytest.approx([1_250.0, 2_000.0, 2_000.0, 2_000.0])  # SELL at Open 40
+    assert eq.index[0] == dates[0] and eq.iloc[0] == 1_000.0  # B2: initial point at D-1
+    assert eq.iloc[1] == pytest.approx(shares * 25.0)  # marked at the next session's open
+    assert eq.iloc[2] == pytest.approx(shares * 40.0)
+    assert eq.tolist() == pytest.approx([1_000.0, 1_250.0, 2_000.0, 2_000.0, 2_000.0])  # SELL at Open 40
     pd.testing.assert_series_equal(curves[0], curves[1])
 
 
@@ -174,7 +175,8 @@ def test_vendor_bar_on_a_holiday_is_ignored_with_a_warning(ticker, dates, start,
         eq = run_agent_strategy(decide, ticker, start, end, 1_000.0)
     assert f"ignoring vendor bars on non-{exchange_for(ticker)} sessions: {holiday}" in caplog.text
     assert pd.Timestamp(holiday) not in eq.index
-    assert [c[0] for c in calls] == [_ds(previous_session(ticker, d)) for d in eq.index]
+    assert eq.index[0] == previous_session(ticker, start)  # B2: initial point at D-1
+    assert [c[0] for c in calls] == [_ds(previous_session(ticker, d)) for d in eq.index[1:]]
     assert all(pd.Timestamp(holiday) not in window.index for _, window in calls)
 
 
@@ -315,9 +317,10 @@ def test_previous_session_follows_each_tickers_own_calendar(start, end, frames, 
         assert [c[0] for c in calls] == expected[ticker]
         # Logs record the decision as D and its cutoff as the calendar D-1.
         log = eq.attrs["decision_log"]
-        assert [e["decision_date"] for e in log] == [_ds(d) for d in eq.index]
+        assert _ds(eq.index[0]) == expected[ticker][0]  # B2: initial point = D-1 of D_0
+        assert [e["decision_date"] for e in log] == [_ds(d) for d in eq.index[1:]]
         assert [e["data_cutoff"] for e in log] == expected[ticker]
-        assert [e["data_cutoff"] for e in log] == [_ds(previous_session(ticker, d)) for d in eq.index]
+        assert [e["data_cutoff"] for e in log] == [_ds(previous_session(ticker, d)) for d in eq.index[1:]]
         assert eq.attrs["data_cutoff"] == expected[ticker][0]
 
 
@@ -352,7 +355,8 @@ def test_buy_and_hold_is_the_always_buy_agent():
         agent = run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-05", 1_000.0)
     assert bh.index.equals(agent.index)
     assert bh.tolist() == pytest.approx(agent.tolist(), rel=1e-12)
-    assert bh.iloc[0] == pytest.approx(1_000.0 * 12.0 / 10.0)
+    assert bh.iloc[0] == 1_000.0  # B2: initial point
+    assert bh.iloc[1] == pytest.approx(1_000.0 * 12.0 / 10.0)
     assert bh.iloc[-1] / 1_000.0 - 1 == pytest.approx(16.0 / 10.0 - 1)
 
 

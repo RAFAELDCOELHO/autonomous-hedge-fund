@@ -71,7 +71,8 @@ def test_prompt_date_given_to_propagate_is_data_cutoff_not_decision_date(yahoo):
     eq = api.run_tradingagents("AAPL", "2024-07-01", "2024-07-08", propagate, CAPITAL)
 
     decision_dates = ["2024-07-01", "2024-07-02", "2024-07-03", "2024-07-05", "2024-07-08"]
-    assert [d.strftime("%Y-%m-%d") for d in eq.index] == decision_dates
+    assert [d.strftime("%Y-%m-%d") for d in eq.index] == ["2024-06-28", *decision_dates]  # B2: D-1 of D_0 first
+    assert eq.iloc[0] == CAPITAL
     assert seen == ["2024-06-28", "2024-07-01", "2024-07-02", "2024-07-03", "2024-07-05"]
     assert not set(seen) & {"2024-07-08"}
 
@@ -90,11 +91,11 @@ def test_fill_at_open_of_d_and_pnl_is_open_d_to_open_next(yahoo):
 
     eq = api.run_agent(agent, ticker, days[0], days[-1], CAPITAL)
 
-    assert [d.strftime("%Y-%m-%d") for d in eq.index] == days
+    assert [d.strftime("%Y-%m-%d") for d in eq.index] == ["2024-05-10", *days]  # B2: initial point at D-1
     shares = CAPITAL / o[_ts(days[0])]  # filled at open(D0)
     cash_after_sell = shares * o[_ts(days[2])]  # sold at open(D2)
     expected = [shares * o[_ts(days[1])], shares * o[_ts(days[2])], cash_after_sell, cash_after_sell]
-    np.testing.assert_allclose(eq.values, expected, rtol=1e-12)
+    np.testing.assert_allclose(eq.values, [CAPITAL, *expected], rtol=1e-12)
 
     pnl = api.pnl_by_decision_date(eq, CAPITAL)
     np.testing.assert_allclose(
@@ -215,7 +216,9 @@ def test_first_day_cutoff_lies_before_window_and_inside_lookback(yahoo, ticker, 
 
     eq = api.run_agent(agent, ticker, start, end, CAPITAL)
 
-    assert eq.index[0] == _ts(start)
+    assert eq.index[0] == _ts(cutoff)  # B2: initial-capital point at D-1 of the first session
+    assert eq.iloc[0] == CAPITAL
+    assert eq.index[1] == _ts(start)
     assert agent.dates[0] == cutoff
     first_window = agent.windows[0]
     assert first_window.index.max() == _ts(cutoff)
@@ -252,7 +255,8 @@ def test_buy_and_hold_uses_same_open_to_open_convention(yahoo, ticker):
 
     assert list(bh.index) == list(agent.index)
     np.testing.assert_allclose(bh.values, agent.values, rtol=1e-12)
-    assert bh.iloc[0] == pytest.approx(CAPITAL * o[_ts("2024-05-14")] / o[_ts(start)], rel=1e-12)
+    assert bh.index[0] == _ts("2024-05-10") and bh.iloc[0] == CAPITAL  # B2: initial point
+    assert bh.iloc[1] == pytest.approx(CAPITAL * o[_ts("2024-05-14")] / o[_ts(start)], rel=1e-12)
     assert bh.iloc[-1] == pytest.approx(CAPITAL * o[_ts("2024-05-20")] / o[_ts(start)], rel=1e-12)
 
 
@@ -275,7 +279,7 @@ def test_baseline_signal_for_d_uses_only_data_up_to_d_minus_1(yahoo):
     # Signal on 05-14 -> long from open(05-15) to open(05-16), flat otherwise.
     gain = o[_ts("2024-05-16")] / o[_ts("2024-05-15")]
     np.testing.assert_allclose(
-        eq.values, [CAPITAL, CAPITAL, CAPITAL * gain, CAPITAL * gain, CAPITAL * gain], rtol=1e-12
+        eq.values, [CAPITAL, CAPITAL, CAPITAL, CAPITAL * gain, CAPITAL * gain, CAPITAL * gain], rtol=1e-12
     )
 
 
@@ -294,7 +298,8 @@ def test_decision_log_records_decision_date_d_and_data_cutoff_d_minus_1(yahoo):
     assert list(log[api.DATA_CUTOFF_FIELD]) == [
         "2024-06-28", "2024-07-01", "2024-07-02", "2024-07-03", "2024-07-05",
     ]
-    assert list(log[api.DECISION_DATE_FIELD]) == [d.strftime("%Y-%m-%d") for d in eq.index]
+    assert eq.index[0] == pd.Timestamp("2024-06-28")  # B2: initial point = data_cutoff of D_0
+    assert list(log[api.DECISION_DATE_FIELD]) == [d.strftime("%Y-%m-%d") for d in eq.index[1:]]
 
 
 @pytest.mark.parametrize(("ticker", "cutoff"), [("AAPL", "2023-12-29"), ("PETR4.SA", "2023-12-28")])

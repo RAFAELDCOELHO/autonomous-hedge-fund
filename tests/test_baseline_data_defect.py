@@ -50,12 +50,17 @@ def _rows(cells):
         return list(csv.DictReader(fh))
 
 
+FIRST_DATA_CUTOFF = {"AAPL": "2023-12-29", "PETR4": "2023-12-28", "VALE3": "2023-12-28"}  # D-1 of 2024-01-02
+
+
 def _assert_failed_cell(rows, bare, seed):
     cell = [r for r in rows if r["ticker"] == bare and r["seed"] == str(seed)]
     assert sorted(r["arm"] for r in cell) == ["absent", "present"]  # every planned arm
     for r in cell:
         assert r["status"] == "failed"
-        assert r["sharpe"] == r["sharpe_flat"] == r["data_cutoff"] == ""  # empty, never 0
+        assert r["sharpe"] == r["sharpe_flat"] == ""  # empty, never 0
+        # Like the agent failed row: data_cutoff is the calendar D-1 of the first session.
+        assert r["data_cutoff"] == FIRST_DATA_CUTOFF[bare]
         assert r["failure_reason"].startswith("data defect:")
         assert "2024-02-07" in r["failure_reason"]
 

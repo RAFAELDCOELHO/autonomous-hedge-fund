@@ -88,7 +88,10 @@ def test_rf_outside_snapshot_window_fails():
 
 def test_cash_earns_rf_and_has_zero_excess_sharpe():
     eq = _run(lambda d, w: "HOLD", US_DATES, market="US")
-    rf = daily_rf("US", US_DATES)
+    # B2: initial point at D-1 (01-11); all 4 intervals, the first included, accrue rf.
+    assert eq.index.tolist() == [pd.Timestamp("2024-01-11"), *US_DATES]
+    rf = daily_rf("US", eq.index)
+    assert len(rf) == len(US_DATES)
     assert eq.to_numpy() == pytest.approx(1_000.0 * np.cumprod([1.0, *(1 + rf)]), rel=1e-12)
     assert h1_cell_metrics(eq, "US")["sharpe"] == 0.0
     assert np.allclose(_run(lambda d, w: "HOLD", US_DATES).to_numpy(), 1_000.0)
@@ -205,7 +208,7 @@ def test_only_cash_earns_rf_stock_position_does_not():
     df = _frame(US_DATES, [100.0] * len(US_DATES))
     with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
         eq = run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-12", "2024-01-18", 1_000.0, market="US")
-    assert eq.tolist() == [1_000.0] * len(US_DATES)
+    assert eq.tolist() == [1_000.0] * (len(US_DATES) + 1)  # B2: initial point + 4 decisions
 
 
 def test_partial_rf_coverage_raises_no_zero_fill():

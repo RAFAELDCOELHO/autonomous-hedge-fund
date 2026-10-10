@@ -112,7 +112,8 @@ class RunnerTests(unittest.TestCase):
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
             eq = run_strategy(BuyAndHold(), "AAPL", "2024-01-02", str(prices.index[-2].date()), 1_000.0)
-        self.assertEqual(len(eq), 20)
+        self.assertEqual(len(eq), 21)  # B2: initial-capital point + 20 decisions
+        self.assertEqual(eq.iloc[0], 1_000.0)
         # Bought at Open[first session] 101, marked at the exit open 121.
         self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * (121.0 / 101.0), places=6)
 
@@ -130,11 +131,14 @@ class RunnerTests(unittest.TestCase):
         with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
             for strategy in (BuyAndHold(), SMACrossStrategy(), MACDStrategy()):
                 eq = run_strategy(strategy, "X", str(start.date()), str(end.date()), 1_000.0)
-                self.assertEqual(eq.index[0], start)
+                # B2: initial-capital point at D-1 of start, then the 60 decisions.
+                self.assertEqual(eq.index[0], prices.index[299])
+                self.assertEqual(eq.iloc[0], 1_000.0)
+                self.assertEqual(eq.index[1], start)
                 self.assertEqual(eq.index[-1], end)
-                self.assertEqual(len(eq), 60)
-                # Long from Open[start]: the first mark is the next session's open.
-                self.assertAlmostEqual(eq.iloc[0], 1_000.0 * opens[prices.index[301]] / opens[start])
+                self.assertEqual(len(eq), 61)
+                # Long from Open[start]: the first decision's mark is the next session's open.
+                self.assertAlmostEqual(eq.iloc[1], 1_000.0 * opens[prices.index[301]] / opens[start])
                 self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * opens[exit_day] / opens[start], places=6)
 
     def test_run_agent_strategy_full_position(self):
@@ -184,8 +188,8 @@ class RunnerTests(unittest.TestCase):
                                     str(prices.index[-2].date()), 500.0)
         window = prices.index[1:-1]
         self.assertEqual(call_count["n"], len(window))
-        self.assertEqual(len(eq), len(window))
-        self.assertEqual(eq.index.tolist(), window.tolist())
+        self.assertEqual(len(eq), len(window) + 1)  # B2: initial point + one per decision
+        self.assertEqual(eq.index.tolist(), [prices.index[0], *window])
         self.assertTrue(np.allclose(eq.values, 500.0))
 
 

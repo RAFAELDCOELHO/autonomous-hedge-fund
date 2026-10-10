@@ -114,7 +114,7 @@ def test_rows_round_trip_through_h1_stats_validation(tmp_path):
         ("VALE3", "BR", "present", "2", "BCB-SGS-12"),
     ]
     assert raw[2]["n_decision_errors"] == "1"
-    assert raw[2]["n_days"] == str(len(br))
+    assert raw[2]["n_days"] == str(len(br) - 1) == str(br.attrs["n_days"])  # B2: decisions = returns
     assert float(raw[0]["sharpe"]) == h1_cell_metrics(us, "US")["sharpe"]
     assert float(raw[2]["sharpe"]) == h1_cell_metrics(br, "BR")["sharpe"]
 
@@ -295,7 +295,7 @@ def test_cli_appends_mapped_rows_and_prints_h1_sharpe(tmp_path, capsys):
     assert float(raw[0][SHARPE_FLAT_FIELD]) == flat_rf_metrics(equity)["sharpe"]
     loaded = h1.load_cells(path)
     assert h1.main([str(path)]) == 0
-    assert loaded[0]["n_days"] == len(equity)
+    assert loaded[0]["n_days"] == len(equity) - 1 == equity.attrs["n_days"]  # B2: decisions = returns
 
     printed = capsys.readouterr().out
     shown = f"{h1_cell_metrics(equity, 'BR')['sharpe']:.3f}"

@@ -74,18 +74,25 @@ def agent_window(args: tuple, kwargs: dict) -> Optional[pd.DataFrame]:
 
 
 # --------------------------------------------------------------------------
-# A3. Equity-curve convention. Assumption: the equity series stays indexed by
-# decision dates D_0..D_n, and equity[D_i] is the portfolio value at
-# open(D_{i+1}) after executing decision D_i at open(D_i). equity[D_n] is
-# marked at the open of the session after `end` (the defined exit price).
-# Hence the P&L attributed to decision D is open(D+1)/open(D) - 1 when long.
+# A3. Equity-curve convention (B2, approved): the series opens with the
+# initial-capital point, CAPITAL at the D-1 of the first session (previous
+# session on the ticker's exchange calendar), followed by the decision dates
+# D_0..D_n. equity[D_i] is the portfolio value at open(D_{i+1}) after
+# executing decision D_i at open(D_i); equity[D_n] is marked at the open of
+# the session after `end` (the defined exit price). So n+1 decisions give
+# n+1 returns, and the return labelled D is open(D+1)/open(D) - 1 when long.
 # --------------------------------------------------------------------------
 
 
 def pnl_by_decision_date(equity: pd.Series, initial_capital: float) -> pd.Series:
-    prev = equity.shift(1)
-    prev.iloc[0] = initial_capital
-    return equity / prev - 1.0
+    """Return per decision date D_0..D_n: equity[D_i] / equity[D_{i-1}] - 1, D_{-1} = initial point."""
+    assert equity.iloc[0] == initial_capital, "B2: the curve must open with the initial capital"
+    return (equity / equity.shift(1) - 1.0).iloc[1:]
+
+
+def decision_dates(equity: pd.Series) -> pd.DatetimeIndex:
+    """The decision dates D_0..D_n of a B2 curve (everything after the initial point)."""
+    return pd.DatetimeIndex(equity.index[1:])
 
 
 # --------------------------------------------------------------------------
@@ -171,6 +178,14 @@ def write_cells_grid(cells_path, tickers, arms, seeds, decide_fn_factory, monkey
 # --------------------------------------------------------------------------
 
 FAILURE_REASON_COLUMN = "failure_reason"
+
+
+def first_data_cutoff(ticker: str, start: str) -> str:
+    """cells.csv data_cutoff: the exchange-calendar D-1 of the first session >= start."""
+    from tradingagents.backtest.calendar import previous_session, sessions
+
+    first = sessions(ticker, start, pd.Timestamp(start) + pd.Timedelta(days=14))[0]
+    return previous_session(ticker, first).strftime("%Y-%m-%d")
 
 
 def baseline_failed_row(ticker: str, arm: str, seed: int) -> dict[str, str]:

@@ -78,6 +78,8 @@ def test_baseline_error_becomes_failed_row_in_existing_h1_format(monkeypatch, tm
         assert {k: existing[k] for k in expected} == expected
         assert {k: row.get(k) for k in expected} == expected
         assert (row.get(api.FAILURE_REASON_COLUMN) or "").strip(), "failed row needs a reason"
+        # Same as the agent failed row: data_cutoff = calendar D-1 of the first session.
+        assert row.get(api.CELLS_DATA_CUTOFF_COLUMN) == api.first_data_cutoff(BAD_TICKER, api.prereg_window()[0])
 
 
 def _ok_sharpe(ticker: str, arm: str, seed: int) -> float:
