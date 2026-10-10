@@ -62,7 +62,14 @@ def test_all_cash_prereg_run_has_61_rf_intervals_and_zero_excess(yahoo, ticker, 
     np.testing.assert_allclose((returns - rf).to_numpy(), 0.0, atol=1e-15)
     m = h1_cell_metrics(eq, market)
     assert m["sharpe"] == 0.0
-    assert m["n_days"] == 61
+    # n_days = decisions (= returns) = 61 in cells.csv and attrs; metrics.py stays
+    # unchanged (its compute() counts curve points, 62), so cells.make_cell_row
+    # carries the decision count (PR #64: Megabrain adjustment of SWE's case).
+    from tradingagents.backtest.cells import make_cell_row
+
+    assert m["n_days"] == len(eq) == 62
+    assert eq.attrs["n_days"] == 61
+    assert make_cell_row(ticker, "baseline", 0, eq)["n_days"] == "61"
 
 
 @pytest.mark.parametrize(("ticker", "market", "d_minus_1"), CASES)

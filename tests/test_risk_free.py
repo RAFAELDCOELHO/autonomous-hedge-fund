@@ -128,9 +128,15 @@ def test_decision_errors_are_counted_and_exported_for_cells_csv():
         ],
         "data_cutoff": "2024-01-11",  # D-1 of the first session (cells.csv data_cutoff)
     }
+    # B2: metrics.py is unchanged, so h1_cell_metrics counts curve points (4 decisions +
+    # the D-1 anchor = 5); the cells.csv row carries n_days = decisions = 4.
     assert h1_cell_metrics(eq, "US") | {"sharpe": None} == {
-        "n_days": 4, "n_decision_errors": 3, "sharpe": None, "rf_source": "FRED-DTB3",
+        "n_days": 5, "n_decision_errors": 3, "sharpe": None, "rf_source": "FRED-DTB3",
     }
+    from tradingagents.backtest.cells import make_cell_row
+
+    row = make_cell_row("AAPL", "baseline", 0, eq)
+    assert (row["n_days"], row["n_decision_errors"], row["rf_source"]) == ("4", "3", "FRED-DTB3")
 
 
 @pytest.mark.parametrize("n_errors, exceeded", [(1, False), (2, True)])

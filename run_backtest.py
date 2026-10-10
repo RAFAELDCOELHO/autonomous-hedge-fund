@@ -408,6 +408,7 @@ def main(argv=None) -> int:
                     _append_cell_row(
                         args, arm_name, _build_run_config(selected_analysts=arms[arm_name]),
                         None, "failed", failure_reason=f"data defect: {exc}",
+                        data_cutoff=_first_data_cutoff(args.ticker, args.start, args.end),
                     )
             except ValueError as write_exc:
                 logging.error("%s", write_exc)

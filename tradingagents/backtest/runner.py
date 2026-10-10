@@ -100,19 +100,26 @@ def _simulate_open(ticker, days, opens, decide, initial_capital, market=None) ->
     exit session), so the decision of D earns Open[D] -> Open[D+1], the last
     one included.
 
+    The curve opens with an initial-capital anchor (P4.11 B2): index
+    [D-1 of D_0, D_0, ..., D_n], value initial_capital at D-1, where D-1 is the
+    previous session of the ticker's fixed exchange calendar (never start - 1
+    day). It stands for the capital held at Open[D_0] before the first fill, so
+    n decisions give n + 1 points and n returns, the first decision's included.
+
     market ("BR"/"US"): after D_i's order, cash accrues
-    risk_free.daily_rf(market, days)[D_i] for i >= 1 and nothing for i = 0.
-    That is the per-label rf h1_cell_metrics subtracts from the return
-    equity[D_{i-1}] -> equity[D_i], so an all-cash run has exactly zero excess
-    Sharpe. The rate is lagged one session (the CDI/DTB3 rate of
-    D_{i-1} -> D_i, applied over Open[D_i] -> Open[D_{i+1}]) and the first
-    interval earns none. None keeps cash at 0%.
+    risk_free.daily_rf(market, curve index)[D_i] for every i, the first
+    interval included. That is the per-label rf h1_cell_metrics subtracts from
+    the return equity[prev] -> equity[D_i], so an all-cash run has exactly zero
+    excess Sharpe. The rate is lagged one session (the CDI/DTB3 rate of
+    prev -> D_i, applied over Open[D_i] -> Open[D_{i+1}]). None keeps cash at 0%.
     """
-    cutoffs = [previous_session(ticker, days[0]), *days[:-1]]  # every session has a bar: checked
-    rf = daily_rf(market, days) if market else None
+    initial_day = previous_session(ticker, days[0])
+    cutoffs = [initial_day, *days[:-1]]  # every session has a bar: checked
+    index = pd.DatetimeIndex([initial_day, *days])
+    rf = daily_rf(market, index) if market else None
     cash = float(initial_capital)
     shares = 0.0
-    equity = []
+    equity = [float(initial_capital)]
     decision_log = []
     for i, (day, cutoff) in enumerate(zip(days, cutoffs)):
         action, error = decide(day, cutoff)
@@ -123,7 +130,7 @@ def _simulate_open(ticker, days, opens, decide, initial_capital, market=None) ->
         elif action == "SELL" and shares > 0.0:
             cash = shares * price
             shares = 0.0
-        if rf is not None and i > 0:
+        if rf is not None:
             cash *= 1.0 + rf[day]
         equity.append(cash + shares * opens.iloc[i + 1])
         decision_log.append({
@@ -132,7 +139,7 @@ def _simulate_open(ticker, days, opens, decide, initial_capital, market=None) ->
             "action": action,
             "error": error,
         })
-    out = pd.Series(equity, index=days, name="equity")
+    out = pd.Series(equity, index=index, name="equity")
     out.attrs.update(
         execution="open",
         information_cutoff="previous session close",
@@ -215,7 +222,7 @@ def run_agent_strategy(
             return "HOLD", True
 
     out = _simulate_open(ticker, days, opens, decide, initial_capital, market)
-    n_days = len(out)
+    n_days = len(out.attrs["decision_log"])
     n_decision_errors = sum(e["error"] for e in out.attrs["decision_log"])
     exceeded = n_days == 0 or n_decision_errors / n_days > MAX_DECISION_ERROR_RATE
     out.attrs.update(
