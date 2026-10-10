@@ -86,3 +86,31 @@ def test_prereg_curve_has_61_open_to_open_returns_for_61_decisions(yahoo, ticker
         # Last decision marked at the open of the session after end, never at a close.
         assert curve.iloc[-1] == pytest.approx(CAPITAL * o[pd.Timestamp(EXIT_SESSION)] / o[days[0]], rel=1e-12)
     assert eq.attrs["n_days"] == 61 == len(api.decision_log(eq))
+
+
+@pytest.mark.parametrize(("ticker", "market", "d_minus_1"), CASES)
+def test_agent_and_buy_and_hold_share_the_anchor_in_one_run(yahoo, monkeypatch, ticker, market, d_minus_1):
+    """Lingxi: in one run_backtest.main run (the curves Table 1 compares, as handed
+    to print_comparison) the agent arm and Buy & Hold share the D-1 anchor."""
+    module = api.run_backtest_module()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-dummy")
+    monkeypatch.setattr(module, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(
+        module, "make_decide_fn",
+        lambda **_kw: RecordingAgent(actions=lambda n, _d: "BUY" if n % 7 == 0 else "HOLD"),
+    )
+    captured = {}
+    monkeypatch.setattr(module, "print_comparison", lambda curves, **_kw: captured.update(curves))
+    start, end = api.prereg_window()
+
+    rc = module.main(["--ticker", ticker, "--start", start, "--end", end,
+                      "--capital", str(CAPITAL), "--arms", "baseline"])
+
+    assert rc == 0
+    eq, bh = captured["TradingAgents (baseline)"], captured["Buy & Hold"]
+    assert eq.index.equals(bh.index)
+    assert len(eq) == len(bh) == 62
+    assert eq.index[0] == bh.index[0] == pd.Timestamp(d_minus_1)
+    assert eq.iloc[0] == bh.iloc[0] == CAPITAL
+    assert len(eq.pct_change().iloc[1:]) == len(bh.pct_change().iloc[1:]) == 61
+    assert eq.index[1:].equals(_prereg_sessions(ticker))
