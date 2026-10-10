@@ -22,7 +22,7 @@ from tradingagents.backtest.agent_integration import (
     make_decide_fn,
     run_tradingagents_backtest,
 )
-from tradingagents.backtest.calendar import previous_session, sessions
+from tradingagents.backtest.calendar import next_session, previous_session, sessions
 from tradingagents.backtest.risk_free import RF_DIR, RF_SOURCE, daily_rf, verify_snapshots
 from tradingagents.backtest.runner import MAX_DECISION_ERROR_RATE, run_agent_strategy
 
@@ -35,9 +35,11 @@ def _dtb3_daily(pct: float) -> float:
 
 
 def _frame(dates, opens):
-    """Open/Close frame with one pre-window bar (calendar D-1 of the first window session)."""
-    opens = [opens[0], *opens]
-    return pd.DataFrame({"Date": [previous_session("X", dates[0]), *dates], "Open": opens, "Close": opens})
+    """Open/Close frame with the pre-window bar (calendar D-1 of the first window session)
+    and the exit bar (session after the last one, whose open marks the last decision)."""
+    opens = [opens[0], *opens, opens[-1]]
+    dates = [previous_session("X", dates[0]), *dates, next_session("X", dates[-1])]
+    return pd.DataFrame({"Date": dates, "Open": opens, "Close": opens})
 
 
 def _run(decider, dates, market=None, capital=1_000.0):
@@ -121,7 +123,7 @@ def test_decision_errors_are_counted_and_exported_for_cells_csv():
             {"decision_date": "2024-01-17", "data_cutoff": "2024-01-16", "action": "HOLD", "error": True},
             {"decision_date": "2024-01-18", "data_cutoff": "2024-01-17", "action": "HOLD", "error": True},
         ],
-        "data_cutoff": "2024-01-17",
+        "data_cutoff": "2024-01-11",  # D-1 of the first session (cells.csv data_cutoff)
     }
     assert h1_cell_metrics(eq, "US") | {"sharpe": None} == {
         "n_days": 4, "n_decision_errors": 3, "sharpe": None, "rf_source": "FRED-DTB3",

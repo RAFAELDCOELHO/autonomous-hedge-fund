@@ -104,9 +104,11 @@ def test_run_backtest_counts_unrecognized_verbose_signal_as_decision_error():
         ) == "equity-curve"
     assert captured["market"] == "US"
 
-    # 2023-12-29 is D-1 of the first session; decisions are dated 12-29, 01-02, 01-03.
+    # 2023-12-29 is D-1 of the first session; decisions are dated 12-29, 01-02, 01-03;
+    # 01-05 is the exit session (open of the session after `end`).
     prices = pd.DataFrame(
-        {"Date": pd.to_datetime(["2023-12-29", "2024-01-02", "2024-01-03", "2024-01-04"]), "Open": 100.0, "Close": 100.0}
+        {"Date": pd.to_datetime(["2023-12-29", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]),
+         "Open": 100.0, "Close": 100.0}
     )
     with patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch(
         "tradingagents.backtest.runner.load_ohlcv", return_value=prices

@@ -40,15 +40,7 @@ REPO = Path(__file__).resolve().parents[1]
 DATES = pd.DatetimeIndex(["2024-01-12", "2024-01-16", "2024-01-17", "2024-01-18"])
 OPENS = [100.0, 101.0, 100.5, 102.0]
 PRE_WINDOW = pd.Timestamp("2024-01-11")  # D-1 of the first window session
-
-
-@pytest.fixture(autouse=True)
-def _offline_buy_and_hold_at_open(monkeypatch):
-    # main() adds a "Buy & Hold (open)" curve when agents run; keep it offline.
-    monkeypatch.setattr(
-        "tradingagents.backtest.runner.run_buy_and_hold_at_open",
-        lambda *_a, **_k: pd.Series([100.0, 101.0, 102.0], index=pd.bdate_range("2024-02-01", periods=3)),
-    )
+EXIT = pd.Timestamp("2024-01-19")  # session after the window: the last decision's exit open
 
 
 def _h1_stats():
@@ -70,8 +62,8 @@ def _load_run_backtest():
 
 def _equity(market: str, bad_dates: set[str] | None = None) -> pd.Series:
     bad_dates = bad_dates or set()
-    opens = [OPENS[0], *OPENS]
-    df = pd.DataFrame({"Date": [PRE_WINDOW, *DATES], "Open": opens, "Close": opens})
+    opens = [OPENS[0], *OPENS, OPENS[-1]]
+    df = pd.DataFrame({"Date": [PRE_WINDOW, *DATES, EXIT], "Open": opens, "Close": opens})
 
     # decider gets D-1: "2024-01-11" is the decision for the first session (BUY at its open).
     def decider(date, _window):
@@ -383,17 +375,19 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             "max_debate_rounds": "1",
             "max_risk_discuss_rounds": "1",
             "data_cutoff": "",
+            "failure_reason": "",
         }
     ]
     assert h1.load_cells(path)[0]["status"] == "failed"
 
 
 def test_cli_row_records_data_cutoff_and_keeps_decision_dates(tmp_path):
-    """start/end stay the decision dates; data_cutoff is the calendar D-1 of `end`."""
+    """start/end stay the decision dates; data_cutoff is the calendar D-1 of the first session."""
     run_backtest = _load_run_backtest()
     path = tmp_path / "cells.csv"
     start, end = "2024-01-02", "2024-03-28"
-    dates = [previous_session("PETR4.SA", start), *sessions("PETR4.SA", start, end)]
+    dates = [previous_session("PETR4.SA", start), *sessions("PETR4.SA", start, end),
+             pd.Timestamp("2024-04-01")]  # exit session (03-29 Good Friday)
     prices = pd.DataFrame({"Date": dates, "Open": 100.0, "Close": 100.0})
     decision_dates = []
 
@@ -423,8 +417,8 @@ def test_cli_row_records_data_cutoff_and_keeps_decision_dates(tmp_path):
     assert rc == 0
     [row] = _raw_rows(path)
     assert (row["start"], row["end"]) == (start, end)
-    assert row["data_cutoff"] == str(previous_session("PETR4.SA", end).date()) == "2024-03-27"
-    assert row["n_days"] == str(len(dates) - 1)
+    assert row["data_cutoff"] == str(previous_session("PETR4.SA", start).date()) == "2023-12-28"
+    assert row["n_days"] == str(len(dates) - 2)
     assert decision_dates[0] == start and decision_dates[-1] == end
     h1.load_cells(path)
 

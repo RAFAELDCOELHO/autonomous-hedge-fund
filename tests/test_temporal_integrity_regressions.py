@@ -216,6 +216,27 @@ def test_p49_cap_is_inclusive_of_curr_date_and_excludes_next_day(monkeypatch):
     assert "2024-01-04" not in rows
 
 
+@pytest.mark.parametrize("end_date, expected", [("2024-01-10", "2024-01-03"), ("2024-01-02", "2024-01-02")])
+def test_p49_style_get_news_end_date_capped_at_graph_trade_date(monkeypatch, end_date, expected):
+    from langchain_core.messages import AIMessage
+    from langgraph.prebuilt import ToolNode
+
+    from tradingagents.agents.utils import news_data_tools
+
+    seen = []
+    monkeypatch.setattr(news_data_tools, "route_to_vendor", lambda *args: seen.append(args) or "news")
+    # trade_date is injected from graph state, never an LLM-visible argument.
+    assert "trade_date" not in news_data_tools.get_news.tool_call_schema.model_json_schema()["properties"]
+
+    call = {"name": "get_news", "id": "c1",
+            "args": {"ticker": "AAPL", "start_date": "2023-12-27", "end_date": end_date}}
+    ToolNode([news_data_tools.get_news]).invoke(
+        {"messages": [AIMessage(content="", tool_calls=[call])], "trade_date": "2024-01-03"}
+    )
+
+    assert seen == [("get_news", "AAPL", "2023-12-27", expected)]
+
+
 def test_p413_fingpt_news_call_uses_start_and_end_dates(monkeypatch):
     seen = {}
 

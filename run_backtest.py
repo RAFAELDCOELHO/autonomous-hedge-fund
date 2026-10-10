@@ -22,7 +22,12 @@ the fixed preregistered window (2024-01-02..2024-03-28), existing header
 validity, duplicate (ticker, arm, seed) keys, and rows already logged with a
 different config; if rejected, it exits 2 without touching the file.
 If an arm raises, it records ``status=failed`` and continues with the next arm,
-and any failed arm makes the CLI exit non-zero.
+and any failed arm makes the CLI exit non-zero. A fail-closed price-data defect
+(ValueError/LookupError from the runner, e.g. a missing open or a missing
+D-1/exit bar) in the classical baselines is deterministic, so no agent arm
+runs: every planned arm gets a ``status=failed`` row with empty Sharpe columns
+and ``failure_reason`` set, and the CLI exits 1. A re-run under a new seed
+hits the same defect again.
 
 Usage:
     uv run python run_backtest.py --ticker AAPL --start 2024-01-02 --end 2024-03-28
@@ -51,7 +56,6 @@ from tradingagents.backtest import (
     print_comparison,
     run_strategy,
     run_agent_strategy,
-    run_buy_and_hold_at_open,
 )
 from tradingagents.backtest.agent_integration import make_decide_fn
 from tradingagents.backtest.cells import (
@@ -77,6 +81,7 @@ CELLS_EXTRA_COLUMNS = (
     "max_debate_rounds",
     "max_risk_discuss_rounds",
     "data_cutoff",
+    "failure_reason",
 )
 CELLS_CONFIG_COLUMNS = (
     "deep_think_llm",
@@ -260,6 +265,19 @@ def _find_config_mismatch(
     return None
 
 
+def _append_cell_row(args, arm_name, run_config, agent_curve, status, failure_reason="") -> None:
+    """Append one arm's cells.csv row (status=failed: agent_curve is None)."""
+    _ensure_cells_extra_columns(args.cells_out, (*CELLS_EXTRA_COLUMNS, SHARPE_FLAT_FIELD))
+    row = make_cell_row(args.ticker, arm_name, args.seed, equity=agent_curve, status=status)
+    row["start"] = args.start
+    row["end"] = args.end
+    row.update(_cells_config_values(run_config))
+    # start/end are decision dates; data_cutoff is the D-1 of the first one.
+    row["data_cutoff"] = "" if agent_curve is None else agent_curve.attrs.get("data_cutoff", "")
+    row["failure_reason"] = failure_reason
+    append_cells(args.cells_out, [row])
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run academic backtest comparison.")
     parser.add_argument("--ticker", required=True)
@@ -360,14 +378,27 @@ def main(argv=None) -> int:
             return 2
 
     curves = {}
-    for strat in (BuyAndHold(), MACDStrategy(), SMACrossStrategy()):
-        curves[strat.name] = run_strategy(strat, args.ticker, args.start, args.end, args.capital)
+    try:
+        for strat in (BuyAndHold(), MACDStrategy(), SMACrossStrategy()):
+            curves[strat.name] = run_strategy(strat, args.ticker, args.start, args.end, args.capital)
+    except (ValueError, LookupError) as exc:
+        # Fail-closed price-data defect: the agent arms share the frame and would hit it
+        # too. Count the cell as failed for every planned arm instead of dropping it.
+        logging.error("%s: price data defect, recording planned arms as failed: %s", args.ticker, exc)
+        if args.cells_out is not None:
+            arms = _selected_analysts_by_arm()
+            try:
+                for arm_name in arms_to_write:
+                    _append_cell_row(
+                        args, arm_name, _build_run_config(selected_analysts=arms[arm_name]),
+                        None, "failed", failure_reason=f"data defect: {exc}",
+                    )
+            except ValueError as write_exc:
+                logging.error("%s", write_exc)
+                return 2
+        return 1
 
     if not args.skip_agents:
-        # Same convention as the agent arms (decide before the open, fill and mark at opens).
-        curves["Buy & Hold (open)"] = run_buy_and_hold_at_open(
-            args.ticker, args.start, args.end, args.capital, market=market_of(args.ticker)
-        )
         arms = _selected_analysts_by_arm()
         failed_arms: list[str] = []
         if not arms:
@@ -400,24 +431,7 @@ def main(argv=None) -> int:
             # Append each finished arm immediately so a later arm keeps it.
             if args.cells_out is not None:
                 try:
-                    _ensure_cells_extra_columns(
-                        args.cells_out, (*CELLS_EXTRA_COLUMNS, SHARPE_FLAT_FIELD)
-                    )
-                    row = make_cell_row(
-                        args.ticker,
-                        arm_name,
-                        args.seed,
-                        equity=agent_curve,
-                        status=arm_status,
-                    )
-                    row["start"] = args.start
-                    row["end"] = args.end
-                    row.update(_cells_config_values(run_config))
-                    # start/end are decision dates; the agent saw closes up to data_cutoff.
-                    row["data_cutoff"] = (
-                        "" if agent_curve is None else agent_curve.attrs.get("data_cutoff", "")
-                    )
-                    append_cells(args.cells_out, [row])
+                    _append_cell_row(args, arm_name, run_config, agent_curve, arm_status)
                 except ValueError as exc:
                     logging.error("%s", exc)
                     return 2

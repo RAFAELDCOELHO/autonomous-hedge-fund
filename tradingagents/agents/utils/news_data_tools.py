@@ -1,5 +1,7 @@
 from langchain_core.tools import tool
-from typing import Annotated
+from typing import Annotated, Optional
+from datetime import datetime
+from langgraph.prebuilt import InjectedState
 from tradingagents.dataflows.interface import route_to_vendor
 
 @tool
@@ -7,6 +9,7 @@ def get_news(
     ticker: Annotated[str, "Ticker symbol"],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
     end_date: Annotated[str, "End date in yyyy-mm-dd format"],
+    trade_date: Annotated[Optional[str], InjectedState("trade_date")] = None,
 ) -> str:
     """
     Retrieve news data for a given ticker symbol.
@@ -18,6 +21,13 @@ def get_news(
     Returns:
         str: A formatted string containing news data
     """
+    # P4.9-style ceiling: end_date is capped at the graph's trade_date (the data
+    # cutoff), injected from state and hidden from the LLM. None outside a graph.
+    if trade_date is not None:
+        end_date = min(
+            datetime.strptime(end_date, "%Y-%m-%d"),
+            datetime.strptime(trade_date, "%Y-%m-%d"),
+        ).strftime("%Y-%m-%d")
     return route_to_vendor("get_news", ticker, start_date, end_date)
 
 @tool

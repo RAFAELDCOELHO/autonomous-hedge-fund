@@ -33,3 +33,12 @@ def previous_session(ticker: str, date) -> pd.Timestamp:
     if cal.is_session(date):
         return cal.previous_session(date)
     return cal.date_to_session(date, direction="previous")
+
+
+def next_session(ticker: str, date) -> pd.Timestamp:
+    """The first session strictly after `date` on the ticker's exchange."""
+    cal = _calendar(exchange_for(ticker))
+    date = pd.Timestamp(date)
+    if cal.is_session(date):
+        return cal.next_session(date)
+    return cal.date_to_session(date, direction="next")

@@ -96,33 +96,36 @@ class BaselineStrategyTests(unittest.TestCase):
         self.assertGreater(eq.iloc[-1], 10_000.0)
 
 
-def _session_prices(n: int) -> pd.DataFrame:
-    """Like _linear_prices on real NYSE sessions: row 0 (2023-12-29) is the pre-window bar."""
-    prices = _linear_prices(n)
-    prices.index = sessions("AAPL", "2023-12-29", "2024-12-31")[:n].rename(None)
+def _session_prices(n: int, start: float = 100.0, step: float = 1.0) -> pd.DataFrame:
+    """Like _linear_prices on real NYSE sessions (Open == Close): row 0 (2023-12-29) is the
+    pre-window bar and the last row is the exit session, so runs end at index[-2]."""
+    prices = _linear_prices(n, start, step)
+    prices.index = sessions("AAPL", "2023-12-29", "2026-12-31")[:n].rename(None)
     prices["Open"] = prices["Close"]
     return prices
 
 
 class RunnerTests(unittest.TestCase):
     def test_run_strategy_uses_loaded_prices(self):
-        prices = _linear_prices(20, start=100.0, step=1.0)
+        prices = _session_prices(22)  # pre-window 100, window 101..120, exit 121
         with patch("tradingagents.backtest.runner.load_ohlcv") as load:
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
-            eq = run_strategy(BuyAndHold(), "AAPL", "2024-01-01", "2024-12-31", 1_000.0)
+            eq = run_strategy(BuyAndHold(), "AAPL", "2024-01-02", str(prices.index[-2].date()), 1_000.0)
         self.assertEqual(len(eq), 20)
-        self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * (119.0 / 100.0), places=2)
+        # Bought at Open[first session] 101, marked at the exit open 121.
+        self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * (121.0 / 101.0), places=6)
 
     def test_run_strategy_warms_indicators_before_window(self):
-        prices = _linear_prices(400, start=100.0, step=0.5)
-        start, end = prices.index[300], prices.index[359]
-        warmed = prices.loc[:end, "Close"]
+        prices = _session_prices(401, start=100.0, step=0.5)
+        start, end, exit_day = prices.index[300], prices.index[359], prices.index[360]
+        cutoff = prices.index[358]  # D-1 of the last session: the latest close a signal sees
+        warmed = prices.loc[:cutoff, "Close"]
         for n in (26, 50, 200):
-            self.assertFalse(warmed.rolling(n).mean().loc[start:].isna().any())
+            self.assertFalse(warmed.rolling(n).mean().loc[prices.index[299]:].isna().any())
         self.assertTrue(prices.loc[start:end, "Close"].rolling(200).mean().isna().all())
 
-        ret = prices.loc[end, "Close"] / prices.loc[start, "Close"]
+        opens = prices["Open"]
         df = prices.rename_axis("Date").reset_index()
         with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
             for strategy in (BuyAndHold(), SMACrossStrategy(), MACDStrategy()):
@@ -130,13 +133,14 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(eq.index[0], start)
                 self.assertEqual(eq.index[-1], end)
                 self.assertEqual(len(eq), 60)
-                self.assertAlmostEqual(eq.iloc[0], 1_000.0)
-                self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * ret, places=6)
+                # Long from Open[start]: the first mark is the next session's open.
+                self.assertAlmostEqual(eq.iloc[0], 1_000.0 * opens[prices.index[301]] / opens[start])
+                self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * opens[exit_day] / opens[start], places=6)
 
     def test_run_agent_strategy_full_position(self):
         # Row 0 (2023-12-29) is the pre-window bar; the window starts 2024-01-02.
-        prices = _session_prices(10)
-        end = str(prices.index[-1].date())
+        prices = _session_prices(11)
+        end = str(prices.index[-2].date())
         with patch("tradingagents.backtest.runner.load_ohlcv") as load:
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
@@ -145,7 +149,7 @@ class RunnerTests(unittest.TestCase):
             def decider(date_str, _window):
                 if date_str == prices.index[0].strftime("%Y-%m-%d"):
                     return "BUY"
-                if date_str == prices.index[-2].strftime("%Y-%m-%d"):
+                if date_str == prices.index[-3].strftime("%Y-%m-%d"):
                     return "SELL"
                 return "HOLD"
 
@@ -159,7 +163,7 @@ class RunnerTests(unittest.TestCase):
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
             eq = run_agent_strategy(lambda d, w: "HOLD", "AAPL", "2024-01-02",
-                                    str(prices.index[-1].date()), 500.0)
+                                    str(prices.index[-2].date()), 500.0)
         self.assertTrue(np.allclose(eq.values, 500.0))
 
     def test_run_agent_strategy_decider_exception_falls_back_to_hold(self):
@@ -177,8 +181,8 @@ class RunnerTests(unittest.TestCase):
                 return "HOLD"
 
             eq = run_agent_strategy(flaky_decider, "AAPL", "2024-01-02",
-                                    str(prices.index[-1].date()), 500.0)
-        window = prices.index[1:]
+                                    str(prices.index[-2].date()), 500.0)
+        window = prices.index[1:-1]
         self.assertEqual(call_count["n"], len(window))
         self.assertEqual(len(eq), len(window))
         self.assertEqual(eq.index.tolist(), window.tolist())

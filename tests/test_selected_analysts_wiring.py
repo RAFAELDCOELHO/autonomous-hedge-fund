@@ -26,15 +26,6 @@ def _load_run_backtest():
     return module
 
 
-@pytest.fixture(autouse=True)
-def _offline_buy_and_hold_at_open(monkeypatch):
-    # main() adds a "Buy & Hold (open)" curve when agents run; keep it offline.
-    monkeypatch.setattr(
-        "tradingagents.backtest.runner.run_buy_and_hold_at_open",
-        lambda *_a, **_k: pd.Series([100.0, 101.0, 102.0], index=pd.bdate_range("2024-02-01", periods=3)),
-    )
-
-
 def _expected_cells_config_values() -> dict[str, str]:
     return {
         "deep_think_llm": str(DEFAULT_CONFIG["deep_think_llm"]),

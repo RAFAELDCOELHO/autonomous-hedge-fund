@@ -34,25 +34,32 @@ def yf_retry(func, max_retries=3, base_delay=2.0):
                 raise
 
 
-def _clean_dataframe(data: pd.DataFrame) -> pd.DataFrame:
-    """Normalize a stock DataFrame for stockstats: parse dates, drop invalid rows, fill price gaps."""
+def _clean_dataframe(data: pd.DataFrame, fill_prices: bool = True) -> pd.DataFrame:
+    """Normalize a stock DataFrame for stockstats: parse dates, drop invalid rows, fill price gaps.
+
+    fill_prices=False leaves NaN prices (other than Close) in place, so a caller
+    can fail closed on a missing Open instead of trading on a filled one.
+    """
     data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
     data = data.dropna(subset=["Date"])
 
     price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
     data[price_cols] = data[price_cols].apply(pd.to_numeric, errors="coerce")
     data = data.dropna(subset=["Close"])
-    data[price_cols] = data[price_cols].ffill().bfill()
+    if fill_prices:
+        data[price_cols] = data[price_cols].ffill().bfill()
 
     return data
 
 
-def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
+def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.DataFrame:
     """Fetch OHLCV data with caching, filtered to prevent look-ahead bias.
 
     Downloads 5 years of data up to today and caches per symbol. On
     subsequent calls the cache is reused. Rows after curr_date are
-    filtered out so backtests never see future prices.
+    filtered out so backtests never see future prices. All of OHLC comes
+    from one auto_adjust=True download; the cache file name records that
+    setting. fill_prices: see _clean_dataframe.
     """
     config = get_config()
     curr_date_dt = pd.to_datetime(curr_date)
@@ -66,7 +73,7 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     os.makedirs(config["data_cache_dir"], exist_ok=True)
     data_file = os.path.join(
         config["data_cache_dir"],
-        f"{symbol}-YFin-data-{start_str}-{end_str}.csv",
+        f"{symbol}-YFin-data-{start_str}-{end_str}-adj.csv",  # auto_adjust=True
     )
 
     if os.path.exists(data_file):
@@ -83,7 +90,7 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
         data = data.reset_index()
         data.to_csv(data_file, index=False)
 
-    data = _clean_dataframe(data)
+    data = _clean_dataframe(data, fill_prices=fill_prices)
 
     # Filter to curr_date to prevent look-ahead bias in backtesting
     data = data[data["Date"] <= curr_date_dt]
