@@ -1,0 +1,407 @@
+{
+ "get_balance_sheet": {
+  "description": "Retrieve balance sheet data for a given ticker symbol.\nUses the configured fundamental_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\n    freq (str): Reporting frequency: annual/quarterly (default quarterly)\n    curr_date (str): Current date you are trading at, yyyy-mm-dd\nReturns:\n    str: A formatted report containing balance sheet data",
+  "module": "fundamental_data_tools",
+  "schema": {
+   "description": "Retrieve balance sheet data for a given ticker symbol.\nUses the configured fundamental_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\n    freq (str): Reporting frequency: annual/quarterly (default quarterly)\n    curr_date (str): Current date you are trading at, yyyy-mm-dd\nReturns:\n    str: A formatted report containing balance sheet data",
+   "properties": {
+    "curr_date": {
+     "description": "current date you are trading at, yyyy-mm-dd",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "freq": {
+     "default": "quarterly",
+     "description": "reporting frequency: annual/quarterly",
+     "title": "Freq",
+     "type": "string"
+    },
+    "ticker": {
+     "description": "ticker symbol",
+     "title": "Ticker",
+     "type": "string"
+    }
+   },
+   "required": [
+    "ticker",
+    "curr_date"
+   ],
+   "title": "get_balance_sheet",
+   "type": "object"
+  }
+ },
+ "get_cashflow": {
+  "description": "Retrieve cash flow statement data for a given ticker symbol.\nUses the configured fundamental_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\n    freq (str): Reporting frequency: annual/quarterly (default quarterly)\n    curr_date (str): Current date you are trading at, yyyy-mm-dd\nReturns:\n    str: A formatted report containing cash flow statement data",
+  "module": "fundamental_data_tools",
+  "schema": {
+   "description": "Retrieve cash flow statement data for a given ticker symbol.\nUses the configured fundamental_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\n    freq (str): Reporting frequency: annual/quarterly (default quarterly)\n    curr_date (str): Current date you are trading at, yyyy-mm-dd\nReturns:\n    str: A formatted report containing cash flow statement data",
+   "properties": {
+    "curr_date": {
+     "description": "current date you are trading at, yyyy-mm-dd",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "freq": {
+     "default": "quarterly",
+     "description": "reporting frequency: annual/quarterly",
+     "title": "Freq",
+     "type": "string"
+    },
+    "ticker": {
+     "description": "ticker symbol",
+     "title": "Ticker",
+     "type": "string"
+    }
+   },
+   "required": [
+    "ticker",
+    "curr_date"
+   ],
+   "title": "get_cashflow",
+   "type": "object"
+  }
+ },
+ "get_exchange_rate": {
+  "description": "Get BRL/USD exchange rate (Brazilian Real to US Dollar) from Bacen.\n\n    The exchange rate is critical for Brazilian equities: exporters (VALE3, PETR4,\n    SUZB3, WEGE3) benefit from a weaker real (higher USD/BRL), while importers\n    and companies with dollar-denominated debt suffer. A strengthening real\n    (lower USD/BRL) has the opposite effects.\n\n    Historical context (2020-2024): BRL/USD ranged from ~4.00 to ~5.80.\n\n    Only dates strictly before the current trading date are returned.\n\n    Args:\n        last_days: Number of most recent business days to retrieve. Default 90.\n\n    Returns:\n        Markdown-formatted table with date and BRL per USD, or a clear\n        no-data message if nothing is available before trade_date.",
+  "module": "macro_tools",
+  "schema": {
+   "description": "Get BRL/USD exchange rate (Brazilian Real to US Dollar) from Bacen.\n\nThe exchange rate is critical for Brazilian equities: exporters (VALE3, PETR4,\nSUZB3, WEGE3) benefit from a weaker real (higher USD/BRL), while importers\nand companies with dollar-denominated debt suffer. A strengthening real\n(lower USD/BRL) has the opposite effects.\n\nHistorical context (2020-2024): BRL/USD ranged from ~4.00 to ~5.80.\n\nOnly dates strictly before the current trading date are returned.\n\nArgs:\n    last_days: Number of most recent business days to retrieve. Default 90.\n\nReturns:\n    Markdown-formatted table with date and BRL per USD, or a clear\n    no-data message if nothing is available before trade_date.",
+   "properties": {
+    "last_days": {
+     "default": 90,
+     "title": "Last Days",
+     "type": "integer"
+    }
+   },
+   "title": "get_exchange_rate",
+   "type": "object"
+  }
+ },
+ "get_fingpt_sentiment_tool": {
+  "description": "Obtain an aggregate FinGPT-style sentiment score over recent headlines.\n\n    Call once per analysis as a complementary signal to your qualitative\n    social/news review. If the tool reports unavailable, proceed with\n    manual analysis.",
+  "module": "fingpt_tool",
+  "schema": {
+   "description": "Obtain an aggregate FinGPT-style sentiment score over recent headlines.\n\nCall once per analysis as a complementary signal to your qualitative\nsocial/news review. If the tool reports unavailable, proceed with\nmanual analysis.",
+   "properties": {
+    "curr_date": {
+     "description": "current trading date, YYYY-mm-dd",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "look_back_days": {
+     "default": 7,
+     "description": "how many days of news to analyze",
+     "title": "Look Back Days",
+     "type": "integer"
+    },
+    "symbol": {
+     "description": "ticker symbol of the company",
+     "title": "Symbol",
+     "type": "string"
+    }
+   },
+   "required": [
+    "symbol",
+    "curr_date"
+   ],
+   "title": "get_fingpt_sentiment_tool",
+   "type": "object"
+  }
+ },
+ "get_fundamentals": {
+  "description": "Retrieve comprehensive fundamental data for a given ticker symbol.\nUses the configured fundamental_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\n    curr_date (str): Current date you are trading at, yyyy-mm-dd\nReturns:\n    str: A formatted report containing comprehensive fundamental data",
+  "module": "fundamental_data_tools",
+  "schema": {
+   "description": "Retrieve comprehensive fundamental data for a given ticker symbol.\nUses the configured fundamental_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\n    curr_date (str): Current date you are trading at, yyyy-mm-dd\nReturns:\n    str: A formatted report containing comprehensive fundamental data",
+   "properties": {
+    "curr_date": {
+     "description": "current date you are trading at, yyyy-mm-dd",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "ticker": {
+     "description": "ticker symbol",
+     "title": "Ticker",
+     "type": "string"
+    }
+   },
+   "required": [
+    "ticker",
+    "curr_date"
+   ],
+   "title": "get_fundamentals",
+   "type": "object"
+  }
+ },
+ "get_gdp": {
+  "description": "Get Brazilian GDP (Gross Domestic Product) quarterly data from IBGE.\n\n    GDP growth is the primary measure of economic activity. Positive growth\n    signals economic expansion; negative growth signals recession. Brazilian\n    GDP data from IBGE SIDRA is published quarterly with approximately 2-month lag.\n\n    Use this tool to assess whether the Brazilian economy is expanding or\n    contracting, which affects corporate earnings expectations and equity pricing.\n\n    Only quarters already published by the current trading date are returned\n    (a quarter is treated as published 90 days after it ends).\n\n    Args:\n        last_quarters: Number of most recent quarters to retrieve. Default 8 (two years).\n\n    Returns:\n        Markdown-formatted table with quarterly GDP data, indexed by quarter,\n        or a clear no-data message if nothing is available before trade_date.",
+  "module": "macro_tools",
+  "schema": {
+   "description": "Get Brazilian GDP (Gross Domestic Product) quarterly data from IBGE.\n\nGDP growth is the primary measure of economic activity. Positive growth\nsignals economic expansion; negative growth signals recession. Brazilian\nGDP data from IBGE SIDRA is published quarterly with approximately 2-month lag.\n\nUse this tool to assess whether the Brazilian economy is expanding or\ncontracting, which affects corporate earnings expectations and equity pricing.\n\nOnly quarters already published by the current trading date are returned\n(a quarter is treated as published 90 days after it ends).\n\nArgs:\n    last_quarters: Number of most recent quarters to retrieve. Default 8 (two years).\n\nReturns:\n    Markdown-formatted table with quarterly GDP data, indexed by quarter,\n    or a clear no-data message if nothing is available before trade_date.",
+   "properties": {
+    "last_quarters": {
+     "default": 8,
+     "title": "Last Quarters",
+     "type": "integer"
+    }
+   },
+   "title": "get_gdp",
+   "type": "object"
+  }
+ },
+ "get_global_news": {
+  "description": "Retrieve global news data.\nUses the configured news_data vendor.\nArgs:\n    curr_date (str): Current date in yyyy-mm-dd format\n    look_back_days (int): Number of days to look back (default 7)\n    limit (int): Maximum number of articles to return (default 5)\nReturns:\n    str: A formatted string containing global news data",
+  "module": "news_data_tools",
+  "schema": {
+   "description": "Retrieve global news data.\nUses the configured news_data vendor.\nArgs:\n    curr_date (str): Current date in yyyy-mm-dd format\n    look_back_days (int): Number of days to look back (default 7)\n    limit (int): Maximum number of articles to return (default 5)\nReturns:\n    str: A formatted string containing global news data",
+   "properties": {
+    "curr_date": {
+     "description": "Current date in yyyy-mm-dd format",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "limit": {
+     "default": 5,
+     "description": "Maximum number of articles to return",
+     "title": "Limit",
+     "type": "integer"
+    },
+    "look_back_days": {
+     "default": 7,
+     "description": "Number of days to look back",
+     "title": "Look Back Days",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "curr_date"
+   ],
+   "title": "get_global_news",
+   "type": "object"
+  }
+ },
+ "get_income_statement": {
+  "description": "Retrieve income statement data for a given ticker symbol.\nUses the configured fundamental_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\n    freq (str): Reporting frequency: annual/quarterly (default quarterly)\n    curr_date (str): Current date you are trading at, yyyy-mm-dd\nReturns:\n    str: A formatted report containing income statement data",
+  "module": "fundamental_data_tools",
+  "schema": {
+   "description": "Retrieve income statement data for a given ticker symbol.\nUses the configured fundamental_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\n    freq (str): Reporting frequency: annual/quarterly (default quarterly)\n    curr_date (str): Current date you are trading at, yyyy-mm-dd\nReturns:\n    str: A formatted report containing income statement data",
+   "properties": {
+    "curr_date": {
+     "description": "current date you are trading at, yyyy-mm-dd",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "freq": {
+     "default": "quarterly",
+     "description": "reporting frequency: annual/quarterly",
+     "title": "Freq",
+     "type": "string"
+    },
+    "ticker": {
+     "description": "ticker symbol",
+     "title": "Ticker",
+     "type": "string"
+    }
+   },
+   "required": [
+    "ticker",
+    "curr_date"
+   ],
+   "title": "get_income_statement",
+   "type": "object"
+  }
+ },
+ "get_indicators": {
+  "description": "Retrieve a single technical indicator for a given ticker symbol.\nUses the configured technical_indicators vendor.\nArgs:\n    symbol (str): Ticker symbol of the company, e.g. AAPL, TSM\n    indicator (str): A single technical indicator name, e.g. 'rsi', 'macd'. Call this tool once per indicator.\n    curr_date (str): The current trading date you are trading on, YYYY-mm-dd\n    look_back_days (int): How many days to look back, default is 30\nReturns:\n    str: A formatted dataframe containing the technical indicators for the specified ticker symbol and indicator.",
+  "module": "technical_indicators_tools",
+  "schema": {
+   "description": "Retrieve a single technical indicator for a given ticker symbol.\nUses the configured technical_indicators vendor.\nArgs:\n    symbol (str): Ticker symbol of the company, e.g. AAPL, TSM\n    indicator (str): A single technical indicator name, e.g. 'rsi', 'macd'. Call this tool once per indicator.\n    curr_date (str): The current trading date you are trading on, YYYY-mm-dd\n    look_back_days (int): How many days to look back, default is 30\nReturns:\n    str: A formatted dataframe containing the technical indicators for the specified ticker symbol and indicator.",
+   "properties": {
+    "curr_date": {
+     "description": "The current trading date you are trading on, YYYY-mm-dd",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "indicator": {
+     "description": "technical indicator to get the analysis and report of",
+     "title": "Indicator",
+     "type": "string"
+    },
+    "look_back_days": {
+     "default": 30,
+     "description": "how many days to look back",
+     "title": "Look Back Days",
+     "type": "integer"
+    },
+    "symbol": {
+     "description": "ticker symbol of the company",
+     "title": "Symbol",
+     "type": "string"
+    }
+   },
+   "required": [
+    "symbol",
+    "indicator",
+    "curr_date"
+   ],
+   "title": "get_indicators",
+   "type": "object"
+  }
+ },
+ "get_inflation": {
+  "description": "Get the Brazilian IPCA (official consumer price index / inflation rate).\n\n    IPCA is the official inflation measure in Brazil, calculated monthly by IBGE\n    and used as the target for the Central Bank's monetary policy. The inflation\n    target is 3.0% per year (with a tolerance band of +/- 1.5%).\n\n    Values returned are monthly inflation rates (not annualized). To understand\n    the inflation environment, sum the last 12 months or compare recent trends.\n\n    Only months already published by the current trading date are returned\n    (month M is treated as published on the 15th of month M+1).\n\n    Args:\n        last_months: Number of most recent months to retrieve. Default 12.\n\n    Returns:\n        Markdown-formatted table with date (first day of each month) and\n        monthly inflation rate (in percent), or a clear no-data message if\n        nothing is available before trade_date.",
+  "module": "macro_tools",
+  "schema": {
+   "description": "Get the Brazilian IPCA (official consumer price index / inflation rate).\n\nIPCA is the official inflation measure in Brazil, calculated monthly by IBGE\nand used as the target for the Central Bank's monetary policy. The inflation\ntarget is 3.0% per year (with a tolerance band of +/- 1.5%).\n\nValues returned are monthly inflation rates (not annualized). To understand\nthe inflation environment, sum the last 12 months or compare recent trends.\n\nOnly months already published by the current trading date are returned\n(month M is treated as published on the 15th of month M+1).\n\nArgs:\n    last_months: Number of most recent months to retrieve. Default 12.\n\nReturns:\n    Markdown-formatted table with date (first day of each month) and\n    monthly inflation rate (in percent), or a clear no-data message if\n    nothing is available before trade_date.",
+   "properties": {
+    "last_months": {
+     "default": 12,
+     "title": "Last Months",
+     "type": "integer"
+    }
+   },
+   "title": "get_inflation",
+   "type": "object"
+  }
+ },
+ "get_insider_transactions": {
+  "description": "Retrieve insider transaction information about a company.\nUses the configured news_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\nReturns:\n    str: A report of insider transaction data",
+  "module": "news_data_tools",
+  "schema": {
+   "description": "Retrieve insider transaction information about a company.\nUses the configured news_data vendor.\nArgs:\n    ticker (str): Ticker symbol of the company\nReturns:\n    str: A report of insider transaction data",
+   "properties": {
+    "curr_date": {
+     "description": "current date in yyyy-mm-dd format",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "ticker": {
+     "description": "ticker symbol",
+     "title": "Ticker",
+     "type": "string"
+    }
+   },
+   "required": [
+    "ticker",
+    "curr_date"
+   ],
+   "title": "get_insider_transactions",
+   "type": "object"
+  }
+ },
+ "get_kronos_forecast": {
+  "description": "Obtain a Kronos short-horizon directional forecast for the ticker.\n\n    Call this once per analysis as a complementary input to classical\n    indicators. Kronos is a time-series foundation model; its output is a\n    directional signal (BUY/HOLD/SELL) with an expected return. If the\n    model is unavailable for any reason, the tool returns a message\n    saying so and the analyst should proceed with indicators only.",
+  "module": "kronos_tool",
+  "schema": {
+   "description": "Obtain a Kronos short-horizon directional forecast for the ticker.\n\nCall this once per analysis as a complementary input to classical\nindicators. Kronos is a time-series foundation model; its output is a\ndirectional signal (BUY/HOLD/SELL) with an expected return. If the\nmodel is unavailable for any reason, the tool returns a message\nsaying so and the analyst should proceed with indicators only.",
+   "properties": {
+    "curr_date": {
+     "description": "current trading date, YYYY-mm-dd",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "pred_len": {
+     "default": 5,
+     "description": "forecast horizon in business days",
+     "title": "Pred Len",
+     "type": "integer"
+    },
+    "symbol": {
+     "description": "ticker symbol of the company",
+     "title": "Symbol",
+     "type": "string"
+    }
+   },
+   "required": [
+    "symbol",
+    "curr_date"
+   ],
+   "title": "get_kronos_forecast",
+   "type": "object"
+  }
+ },
+ "get_news": {
+  "description": "Retrieve news data for a given ticker symbol.\nUses the configured news_data vendor.\nArgs:\n    ticker (str): Ticker symbol\n    start_date (str): Start date in yyyy-mm-dd format\n    end_date (str): End date in yyyy-mm-dd format\nReturns:\n    str: A formatted string containing news data",
+  "module": "news_data_tools",
+  "schema": {
+   "description": "Retrieve news data for a given ticker symbol.\nUses the configured news_data vendor.\nArgs:\n    ticker (str): Ticker symbol\n    start_date (str): Start date in yyyy-mm-dd format\n    end_date (str): End date in yyyy-mm-dd format\nReturns:\n    str: A formatted string containing news data",
+   "properties": {
+    "end_date": {
+     "description": "End date in yyyy-mm-dd format",
+     "title": "End Date",
+     "type": "string"
+    },
+    "start_date": {
+     "description": "Start date in yyyy-mm-dd format",
+     "title": "Start Date",
+     "type": "string"
+    },
+    "ticker": {
+     "description": "Ticker symbol",
+     "title": "Ticker",
+     "type": "string"
+    }
+   },
+   "required": [
+    "ticker",
+    "start_date",
+    "end_date"
+   ],
+   "title": "get_news",
+   "type": "object"
+  }
+ },
+ "get_selic": {
+  "description": "Get the Brazilian SELIC rate (benchmark interest rate set by the Central Bank).\n\n    SELIC is the primary monetary policy tool in Brazil. High SELIC typically\n    signals tight monetary policy; low SELIC signals accommodative policy.\n    Historical range (2020-2024): 2.0% to 14.25% annualized.\n\n    Only dates strictly before the current trading date are returned.\n\n    Args:\n        last_days: Number of most recent business days to retrieve. Default 90.\n\n    Returns:\n        Markdown-formatted table with date and daily SELIC rate (in percent),\n        or a clear no-data message if nothing is available before trade_date.",
+  "module": "macro_tools",
+  "schema": {
+   "description": "Get the Brazilian SELIC rate (benchmark interest rate set by the Central Bank).\n\nSELIC is the primary monetary policy tool in Brazil. High SELIC typically\nsignals tight monetary policy; low SELIC signals accommodative policy.\nHistorical range (2020-2024): 2.0% to 14.25% annualized.\n\nOnly dates strictly before the current trading date are returned.\n\nArgs:\n    last_days: Number of most recent business days to retrieve. Default 90.\n\nReturns:\n    Markdown-formatted table with date and daily SELIC rate (in percent),\n    or a clear no-data message if nothing is available before trade_date.",
+   "properties": {
+    "last_days": {
+     "default": 90,
+     "title": "Last Days",
+     "type": "integer"
+    }
+   },
+   "title": "get_selic",
+   "type": "object"
+  }
+ },
+ "get_stock_data": {
+  "description": "Retrieve stock price data (OHLCV) for a given ticker symbol.\nUses the configured core_stock_apis vendor.\nArgs:\n    symbol (str): Ticker symbol of the company, e.g. AAPL, TSM\n    start_date (str): Start date in yyyy-mm-dd format\n    end_date (str): End date in yyyy-mm-dd format\nReturns:\n    str: A formatted dataframe containing the stock price data for the specified ticker symbol in the specified date range.",
+  "module": "core_stock_tools",
+  "schema": {
+   "description": "Retrieve stock price data (OHLCV) for a given ticker symbol.\nUses the configured core_stock_apis vendor.\nArgs:\n    symbol (str): Ticker symbol of the company, e.g. AAPL, TSM\n    start_date (str): Start date in yyyy-mm-dd format\n    end_date (str): End date in yyyy-mm-dd format\nReturns:\n    str: A formatted dataframe containing the stock price data for the specified ticker symbol in the specified date range.",
+   "properties": {
+    "curr_date": {
+     "description": "Current trading date in yyyy-mm-dd format",
+     "title": "Curr Date",
+     "type": "string"
+    },
+    "end_date": {
+     "description": "End date in yyyy-mm-dd format",
+     "title": "End Date",
+     "type": "string"
+    },
+    "start_date": {
+     "description": "Start date in yyyy-mm-dd format",
+     "title": "Start Date",
+     "type": "string"
+    },
+    "symbol": {
+     "description": "ticker symbol of the company",
+     "title": "Symbol",
+     "type": "string"
+    }
+   },
+   "required": [
+    "symbol",
+    "start_date",
+    "end_date",
+    "curr_date"
+   ],
+   "title": "get_stock_data",
+   "type": "object"
+  }
+ }
+}

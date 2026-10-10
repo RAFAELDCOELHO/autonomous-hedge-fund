@@ -106,12 +106,27 @@ def test_non_data_baseline_error_still_propagates(env, monkeypatch):
     cells = tmp_path / "cells.csv"
 
     def boom(*_a, **_k):
-        raise RuntimeError("network down")
+        raise ValueError("code bug, not a data defect")  # plain ValueError: no longer caught
 
     monkeypatch.setattr(module, "run_strategy", boom)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValueError) as exc:
         _run(module, "AAPL", 0, cells)
+    assert type(exc.value) is ValueError
     assert not cells.exists()
+
+
+def test_data_defect_error_from_a_baseline_gives_failed_rows(env, monkeypatch):
+    from tradingagents.backtest.runner import DataDefectError
+
+    _yahoo, module, tmp_path = env
+    cells = tmp_path / "cells.csv"
+
+    def defect(*_a, **_k):
+        raise DataDefectError("AAPL: duplicate vendor bars on 2024-02-07")
+
+    monkeypatch.setattr(module, "run_strategy", defect)
+    assert _run(module, "AAPL", 0, cells) == 1
+    _assert_failed_cell(_rows(cells), "AAPL", 0)
 
 
 def test_h1_stats_counts_baseline_failure_as_failed_exclusion(env):

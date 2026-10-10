@@ -29,6 +29,14 @@ logger = logging.getLogger(__name__)
 MAX_DECISION_ERROR_RATE = 0.05
 
 
+class DataDefectError(ValueError, LookupError):
+    """A fail-closed vendor price-data defect (runner checks, snapshot.validate_snapshot).
+
+    Deterministic for a given snapshot, so run_backtest records the cell as
+    failed; any other exception is a code bug and propagates.
+    """
+
+
 def _execution_plan(ticker: str, start: str, end: str):
     """Vendor frame, decision sessions D_0..D_n and the opens of D_0..D_n plus the exit session.
 
@@ -36,10 +44,12 @@ def _execution_plan(ticker: str, start: str, end: str):
     after the last D) with fill_prices=False, so opens and closes share one
     auto_adjust=True download and a missing Open is never filled. Vendor bars
     on non-sessions are dropped with a warning: the calendar alone defines the
-    sessions and D-1. Fail closed (ValueError naming ticker and date) on a
-    missing D-1 bar of the first session (no slide back to an older bar), a
-    missing bar for any D or the exit session, a missing Open column, or a
-    NaN/non-positive Open on any D or the exit session (no Close fallback).
+    sessions and D-1. Fail closed (DataDefectError naming ticker and date) on
+    a duplicated vendor date, a missing D-1 bar of the first session (no slide
+    back to an older bar), a missing bar for any D or the exit session, a
+    missing Open column, or a NaN/non-positive Open on any D or the exit
+    session (no Close fallback). A window with no sessions is a plain
+    ValueError (bad input, not data).
     """
     window = sessions(ticker, start, end)
     if window.empty:
@@ -48,8 +58,11 @@ def _execution_plan(ticker: str, start: str, end: str):
     frame = load_ohlcv(ticker, exit_day.strftime("%Y-%m-%d"), fill_prices=False).copy()
     frame["Date"] = pd.to_datetime(frame["Date"])
     frame = frame.sort_values("Date").set_index("Date").loc[:exit_day]
+    dup = frame.index[frame.index.duplicated()]
+    if not dup.empty:
+        raise DataDefectError(f"{ticker}: duplicate vendor bars on {dup[0]:%Y-%m-%d}")
     if "Open" not in frame.columns:
-        raise ValueError(f"{ticker}: no Open column; execution at the open needs opens")
+        raise DataDefectError(f"{ticker}: no Open column; execution at the open needs opens")
     if not frame.empty:
         off = frame.index.difference(sessions(ticker, frame.index[0], exit_day))
         if not off.empty:
@@ -60,22 +73,22 @@ def _execution_plan(ticker: str, start: str, end: str):
             frame = frame.drop(off)
     first_prev = previous_session(ticker, window[0])
     if first_prev not in frame.index:
-        raise ValueError(
+        raise DataDefectError(
             f"{ticker}: no vendor bar on {first_prev:%Y-%m-%d}, D-1 of the first window "
             f"session {window[0]:%Y-%m-%d}; the look-back must cover it"
         )
     missing = window.difference(frame.index)
     if not missing.empty:
-        raise ValueError(f"{ticker}: no vendor bar on session {missing[0]:%Y-%m-%d}")
+        raise DataDefectError(f"{ticker}: no vendor bar on session {missing[0]:%Y-%m-%d}")
     if exit_day not in frame.index:
-        raise ValueError(
+        raise DataDefectError(
             f"{ticker}: no vendor bar on {exit_day:%Y-%m-%d}, the exit session after {end}"
         )
     exec_days = frame.index[frame.index.isin(window) | (frame.index == exit_day)]  # vendor index name
     opens = frame.loc[exec_days, "Open"].astype(float)
     bad = opens[~(opens > 0)]
     if not bad.empty:
-        raise ValueError(f"{ticker}: missing or non-positive Open on {bad.index[0]:%Y-%m-%d}")
+        raise DataDefectError(f"{ticker}: missing or non-positive Open on {bad.index[0]:%Y-%m-%d}")
     return frame, exec_days[:-1], opens
 
 

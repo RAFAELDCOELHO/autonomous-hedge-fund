@@ -1,7 +1,7 @@
 from langchain_core.tools import tool
 from typing import Annotated, Optional
-from datetime import datetime
 from langgraph.prebuilt import InjectedState
+from tradingagents.agents.utils.temporal import cap_date
 from tradingagents.dataflows.interface import route_to_vendor
 
 @tool
@@ -23,11 +23,7 @@ def get_news(
     """
     # P4.9-style ceiling: end_date is capped at the graph's trade_date (the data
     # cutoff), injected from state and hidden from the LLM. None outside a graph.
-    if trade_date is not None:
-        end_date = min(
-            datetime.strptime(end_date, "%Y-%m-%d"),
-            datetime.strptime(trade_date, "%Y-%m-%d"),
-        ).strftime("%Y-%m-%d")
+    end_date = cap_date(end_date, trade_date)
     return route_to_vendor("get_news", ticker, start_date, end_date)
 
 @tool
@@ -51,17 +47,14 @@ def get_global_news(
     # the graph's trade_date (the data cutoff D-1), injected from state and hidden
     # from the LLM. The look-back window is then counted back from the capped date.
     # None outside a graph.
-    if trade_date is not None:
-        curr_date = min(
-            datetime.strptime(curr_date, "%Y-%m-%d"),
-            datetime.strptime(trade_date, "%Y-%m-%d"),
-        ).strftime("%Y-%m-%d")
+    curr_date = cap_date(curr_date, trade_date)
     return route_to_vendor("get_global_news", curr_date, look_back_days, limit)
 
 @tool
 def get_insider_transactions(
     ticker: Annotated[str, "ticker symbol"],
     curr_date: Annotated[str, "current date in yyyy-mm-dd format"],
+    trade_date: Annotated[Optional[str], InjectedState("trade_date")] = None,
 ) -> str:
     """
     Retrieve insider transaction information about a company.
@@ -71,4 +64,5 @@ def get_insider_transactions(
     Returns:
         str: A report of insider transaction data
     """
-    return route_to_vendor("get_insider_transactions", ticker, curr_date)
+    # P4.11: curr_date capped at the graph's trade_date (cap_date).
+    return route_to_vendor("get_insider_transactions", ticker, cap_date(curr_date, trade_date))

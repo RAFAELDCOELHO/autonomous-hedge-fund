@@ -374,8 +374,8 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             "temperature": "provider-default",
             "max_debate_rounds": "1",
             "max_risk_discuss_rounds": "1",
-            "data_cutoff": "",
-            "failure_reason": "",
+            "data_cutoff": "2023-12-29",  # NYSE D-1 of 2024-01-02, from the calendar
+            "failure_reason": "RuntimeError: pipeline down",
         }
     ]
     assert h1.load_cells(path)[0]["status"] == "failed"

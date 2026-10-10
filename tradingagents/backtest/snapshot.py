@@ -26,12 +26,13 @@ from tradingagents.dataflows.stockstats_utils import load_ohlcv
 
 from .calendar import exchange_for, next_session, previous_session, sessions
 from .cells import PREREG_TICKERS, PREREG_WINDOW_END, PREREG_WINDOW_START
+from .runner import DataDefectError
 
 FIELD_BAR = "bar"
 FIELD_OPEN = "Open"
 
 
-class SnapshotIncomplete(ValueError):
+class SnapshotIncomplete(DataDefectError):
     """Raised by validate_snapshot.
 
     ``missing`` lists every gap as ``(ticker, "YYYY-MM-DD", "bar" | "Open")``.
@@ -75,7 +76,7 @@ def validate_snapshot(
 ) -> dict[str, dict]:
     """Return ``{ticker: {exchange, n_sessions, first_d_minus_1, exit_session}}`` or raise.
 
-    Raises SnapshotIncomplete (a ValueError) whose ``missing`` names every gap.
+    Raises SnapshotIncomplete (a runner.DataDefectError) whose ``missing`` names every gap.
     """
     tickers = list(tickers) if tickers is not None else prereg_tickers()
     start = start or PREREG_WINDOW_START

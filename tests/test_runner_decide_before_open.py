@@ -193,6 +193,47 @@ def test_last_session_is_decided_and_marked_at_the_exit_open():
     assert eq.attrs["data_cutoff"] == "2023-12-29"  # D-1 of the first session
 
 
+@pytest.mark.parametrize(
+    "dates, dup",
+    [
+        (["2023-12-29", "2024-01-02", "2024-01-02", "2024-01-03"], "2024-01-02"),  # a decision session
+        (["2023-12-28", "2023-12-28", "2023-12-29", "2024-01-02", "2024-01-03"], "2023-12-28"),  # look-back
+        (["2023-12-29", "2024-01-02", "2024-01-03", "2024-01-03"], "2024-01-03"),  # exit session
+    ],
+)
+def test_duplicate_vendor_dates_fail_closed(dates, dup):
+    from tradingagents.backtest.runner import DataDefectError, run_buy_and_hold
+
+    decide, calls = _recording("BUY")
+    with patch(LOAD, return_value=_ohlcv(dates, [10.0 + i for i in range(len(dates))])):
+        for run in (lambda: run_agent_strategy(decide, "X", "2024-01-02", "2024-01-02", 1_000.0),
+                    lambda: run_buy_and_hold("X", "2024-01-02", "2024-01-02", 1_000.0)):
+            with pytest.raises(DataDefectError, match=rf"X: duplicate vendor bars on {dup}"):
+                run()
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        _ohlcv(["2024-01-02", "2024-01-03"], [10.0] * 2),  # no D-1 bar
+        _ohlcv(["2023-12-29", "2024-01-03"], [10.0] * 2),  # no bar on the session
+        _ohlcv(["2023-12-29", "2024-01-02"], [10.0] * 2),  # no exit bar
+        _ohlcv(["2023-12-29", "2024-01-02", "2024-01-03"], [10.0] * 3).drop(columns="Open"),
+        _ohlcv(["2023-12-29", "2024-01-02", "2024-01-03"], [10.0, np.nan, 10.0]),
+    ],
+    ids=["d_minus_1", "session", "exit", "open_column", "bad_open"],
+)
+def test_every_fail_closed_check_is_a_data_defect_error(frame):
+    from tradingagents.backtest.runner import DataDefectError
+    from tradingagents.backtest.snapshot import SnapshotIncomplete
+
+    with patch(LOAD, return_value=frame), pytest.raises(DataDefectError):
+        run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-02", 1_000.0)
+    assert issubclass(DataDefectError, ValueError) and issubclass(DataDefectError, LookupError)
+    assert issubclass(SnapshotIncomplete, DataDefectError)
+
+
 def test_missing_exit_session_bar_fails_closed():
     dates = _nyse("2023-12-29", "2024-01-04")  # no bar for the exit session 01-05
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * 4)), pytest.raises(

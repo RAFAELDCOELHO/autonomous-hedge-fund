@@ -118,6 +118,12 @@ def test_global_limit_is_applied_after_the_date_filter(monkeypatch):
     assert text.count("### OK") == 2
 
 
+@pytest.mark.parametrize("limit", [0, -1])
+def test_global_non_positive_limit_gives_no_news_not_a_bare_header(monkeypatch, limit):
+    text = _global_news(monkeypatch, ITEMS_INCLUDED, limit=limit)
+    assert text.startswith("No ") and "##" not in text
+
+
 def test_global_repro_flat_2026_headlines_are_not_shown_for_2024(monkeypatch):
     items = [flat(f"H{i}", _epoch("2026-10-07T12:00:00")) for i in range(5)]
     text = _global_news(monkeypatch, items, limit=5)

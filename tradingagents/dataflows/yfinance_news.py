@@ -184,11 +184,12 @@ def get_global_news_yfinance(
             if len(all_news) >= limit:
                 break
 
-        if not all_news:
+        kept = all_news[:max(limit, 0)]
+        if not kept:  # limit <= 0 too: never a bare header
             return f"No global news found for {curr_date}"
 
         news_str = ""
-        for article in all_news[:limit]:
+        for article in kept:
             data = _extract_article_data(article)
             title, publisher, link = data["title"], data["publisher"], data["link"]
             summary = data["summary"] if "content" in article else ""

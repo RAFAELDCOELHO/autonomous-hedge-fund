@@ -14,6 +14,27 @@ from tradingagents.dataflows.stockstats_utils import (
 )
 
 
+def test_price_cache_key_records_auto_adjust(monkeypatch, tmp_path):
+    """The cache file name carries -adj, so an old unadjusted cache is never reused."""
+    from _pr7_fakes import install_fake_yahoo
+
+    from tradingagents.dataflows.stockstats_utils import load_ohlcv
+
+    install_fake_yahoo(monkeypatch, tmp_path)
+    cache = tmp_path / "ohlcv-cache"
+    cache.mkdir()
+    today = pd.Timestamp.today()
+    span = f"{(today - pd.DateOffset(years=5)):%Y-%m-%d}-{today:%Y-%m-%d}"
+    pd.DataFrame({"Date": ["2024-05-14"], "Open": [987654.0], "High": [987654.0], "Low": [987654.0],
+                  "Close": [987654.0], "Volume": [1.0]}).to_csv(cache / f"AAPL-YFin-data-{span}.csv", index=False)
+
+    data = load_ohlcv("AAPL", "2024-05-15")
+
+    assert (cache / f"AAPL-YFin-data-{span}-adj.csv").exists()
+    assert not (data[["Open", "Close"]] == 987654.0).any().any()
+    assert len(data) > 1
+
+
 class CleanDataFrameTests(unittest.TestCase):
     def test_clean_dataframe_parses_dates_drops_bad_rows_and_fills_prices(self):
         raw = pd.DataFrame(
