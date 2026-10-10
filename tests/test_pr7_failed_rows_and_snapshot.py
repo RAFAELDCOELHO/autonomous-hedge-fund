@@ -156,6 +156,15 @@ def test_prereg_grid_is_9_tickers_and_61_sessions_on_each_exchange_calendar():
         sessions = api.exchange_sessions(t, start, end)
         assert len(sessions) == 61, (t, len(sessions))
         assert sessions[0] == start and sessions[-1] == end
+        # Per-month split locks the exchange: NYSE 21/20/20, B3 22/19/20 (Jan/Feb/Mar 2024).
+        per_month = [sum(d.startswith(f"2024-{m:02d}") for d in sessions) for m in (1, 2, 3)]
+        assert per_month == ([22, 19, 20] if t.endswith(".SA") else [21, 20, 20]), (t, per_month)
+        if t.endswith(".SA"):
+            assert {"2024-02-12", "2024-02-13"}.isdisjoint(sessions), t  # Carnaval: B3 closed
+            assert "2024-01-15" in sessions, t
+        else:
+            assert "2024-01-15" not in sessions, t  # MLK Day: NYSE closed
+            assert {"2024-02-12", "2024-02-13"} <= set(sessions), t
 
 
 @pytest.fixture
