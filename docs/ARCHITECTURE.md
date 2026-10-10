@@ -74,7 +74,7 @@ A full trading-day decision costs roughly 17–25 LLM calls depending on selecte
 
 **Step 4 — Signal extraction.** `SignalProcessor.process_signal` (a quick-thinking LLM call) reduces the final decision text to exactly one of five classes: `BUY`, `OVERWEIGHT`, `HOLD`, `UNDERWEIGHT`, `SELL`.
 
-**What exits.** In single-day mode, the decision is printed/returned. In backtest mode, `agent_integration.map_signal` collapses the 5 classes to 3 actions, `runner.run_agent_strategy` executes the action at that day's close (full-position, long-only), and the loop emits a daily equity `pd.Series`. `metrics.py` computes CR/AR/Sharpe/MDD from that curve and `report.py` renders comparison tables — the same path classical baselines exit through.
+**What exits.** In single-day mode, the decision is printed/returned. In backtest mode, `agent_integration.map_signal` collapses the 5 classes to 3 actions, `runner.run_agent_strategy` decides for each session D on data up to the close of D-1, executes the action at the open of D and marks it at the next session's open (full-position, long-only; P4.11, TEMPORAL_AUDIT 10.2), and the loop emits an equity `pd.Series` that opens with the initial-capital anchor at D-1. `metrics.py` computes CR/AR/Sharpe/MDD from that curve and `report.py` renders comparison tables — the same path classical baselines exit through.
 
 ## 3. Agent Responsibilities
 
