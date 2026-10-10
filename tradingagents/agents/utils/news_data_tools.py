@@ -35,6 +35,7 @@ def get_global_news(
     curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
     look_back_days: Annotated[int, "Number of days to look back"] = 7,
     limit: Annotated[int, "Maximum number of articles to return"] = 5,
+    trade_date: Annotated[Optional[str], InjectedState("trade_date")] = None,
 ) -> str:
     """
     Retrieve global news data.
@@ -46,6 +47,15 @@ def get_global_news(
     Returns:
         str: A formatted string containing global news data
     """
+    # Same ceiling as get_news (P4.11): the model-supplied curr_date is capped at
+    # the graph's trade_date (the data cutoff D-1), injected from state and hidden
+    # from the LLM. The look-back window is then counted back from the capped date.
+    # None outside a graph.
+    if trade_date is not None:
+        curr_date = min(
+            datetime.strptime(curr_date, "%Y-%m-%d"),
+            datetime.strptime(trade_date, "%Y-%m-%d"),
+        ).strftime("%Y-%m-%d")
     return route_to_vendor("get_global_news", curr_date, look_back_days, limit)
 
 @tool

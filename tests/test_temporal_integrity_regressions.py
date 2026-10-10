@@ -237,6 +237,67 @@ def test_p49_style_get_news_end_date_capped_at_graph_trade_date(monkeypatch, end
     assert seen == [("get_news", "AAPL", "2023-12-27", expected)]
 
 
+def _invoke_global_news(curr_date: str, trade_date: str | None):
+    from langchain_core.messages import AIMessage
+    from langgraph.prebuilt import ToolNode
+
+    from tradingagents.agents.utils import news_data_tools
+
+    call = {"name": "get_global_news", "id": "g1",
+            "args": {"curr_date": curr_date, "look_back_days": 7, "limit": 5}}
+    state = {"messages": [AIMessage(content="", tool_calls=[call])]}
+    if trade_date is not None:
+        state["trade_date"] = trade_date
+    out = ToolNode([news_data_tools.get_global_news]).invoke(state)
+    return out["messages"][-1].content
+
+
+@pytest.mark.parametrize("model_date", ["2024-01-03", "2024-01-04", "2024-02-01"])
+def test_p411_get_global_news_curr_date_capped_at_graph_trade_date(monkeypatch, model_date):
+    from tradingagents.agents.utils import news_data_tools
+
+    seen = []
+    monkeypatch.setattr(news_data_tools, "route_to_vendor", lambda *args: seen.append(args) or "news")
+    # trade_date is injected from graph state, never an LLM-visible argument.
+    assert "trade_date" not in news_data_tools.get_global_news.tool_call_schema.model_json_schema()["properties"]
+
+    _invoke_global_news(model_date, trade_date="2024-01-03")  # D = 2024-01-04, D-1 = 2024-01-03
+
+    assert seen == [("get_global_news", "2024-01-03", 7, 5)]
+
+
+def test_p411_get_global_news_earlier_model_date_is_kept(monkeypatch):
+    from tradingagents.agents.utils import news_data_tools
+
+    seen = []
+    monkeypatch.setattr(news_data_tools, "route_to_vendor", lambda *args: seen.append(args) or "news")
+    _invoke_global_news("2023-12-20", trade_date="2024-01-03")
+    assert seen == [("get_global_news", "2023-12-20", 7, 5)]
+
+
+@pytest.mark.parametrize("model_date", ["2024-01-04", "2024-01-10"])
+def test_p411_global_news_sentinel_dated_d_never_reaches_the_agent(monkeypatch, model_date):
+    """End to end through the real vendor route (yfinance): an item published during D
+    (2024-01-04 14:30 UTC) must not appear for the decision of D, whatever date the model
+    asks for; a control item from D-1 does appear."""
+    from tradingagents.dataflows import yfinance_news
+
+    def article(title, pub):
+        return {"content": {"title": title, "summary": "", "provider": {"displayName": "X"},
+                            "canonicalUrl": {"url": "https://example.test/" + title}, "pubDate": pub}}
+
+    class FakeSearch:
+        def __init__(self, *args, **kwargs):
+            self.news = [article("SENTINEL_GLOBAL_D", "2024-01-04T14:30:00Z"),
+                         article("control_global_d_minus_1", "2024-01-03T15:00:00Z")]
+
+    monkeypatch.setattr(yfinance_news.yf, "Search", FakeSearch)
+    text = _invoke_global_news(model_date, trade_date="2024-01-03")
+
+    assert "control_global_d_minus_1" in text
+    assert "SENTINEL_GLOBAL_D" not in text
+
+
 def test_p413_fingpt_news_call_uses_start_and_end_dates(monkeypatch):
     seen = {}
 
