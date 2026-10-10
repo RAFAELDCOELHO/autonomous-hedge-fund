@@ -12,10 +12,28 @@ from tradingagents.agents.utils import core_stock_tools, fingpt_tool
 from tradingagents.dataflows import y_finance
 
 
+_SENTINEL_YEAR = "2099"
+
+
 class _SentinelDatetime(datetime):
+    """Freeze every wall-clock constructor on one far-future instant.
+
+    ``now()``, ``today()`` and ``utcnow()`` all return the same 2099 timestamp,
+    so a reintroduced retrieval stamp in *any* format (``strftime``,
+    ``isoformat()``, ``str()``, a different label) surfaces the sentinel year.
+    """
+
     @classmethod
     def now(cls, tz=None):  # pragma: no cover - regression guard only
         return cls(2099, 1, 1, 12, 34, 56)
+
+    @classmethod
+    def today(cls):  # pragma: no cover - regression guard only
+        return cls.now()
+
+    @classmethod
+    def utcnow(cls):  # pragma: no cover - regression guard only
+        return cls.now()
 
 
 class _FakeTicker:
@@ -125,10 +143,16 @@ def test_p48_all_yfinance_formatters_exclude_wall_clock_stamp(
     formatter = getattr(y_finance, formatter_name)
     out = formatter(*call_args, **call_kwargs)
 
+    # No wall-clock stamp in any format: the fake vendor data never contains the
+    # sentinel year, so any occurrence must come from now()/today()/utcnow().
     assert "Data retrieved on" not in out
-    assert "2099-01-01 12:34:56" not in out
+    assert _SENTINEL_YEAR not in out, out
+    # The formatters' error paths use "Error retrieving ..." (y_finance) or
+    # "Error fetching ..." (legacy wording); neither may appear on the happy path.
+    assert "Error retrieving" not in out, out
+    assert "Error fetching" not in out, out
+    assert not out.startswith("Error"), out
     assert expected_fragment in out
-    assert "Error fetching" not in out
 
 
 def test_p48_yfinance_module_source_has_no_stamp_literal():

@@ -97,7 +97,7 @@ These fixes use a deterministic proxy for "publicly available" timestamps becaus
 - **Statements (P4.3, strict boundary):** a statement period is visible only when `available_date < curr_date`.
   - Quarterly periods: `available_date = period_end + 45 calendar days`.
   - Annual periods: `available_date = period_end + 3 calendar months` (`relativedelta(months=3)`).
-  - **Q4 in quarterly series:** if a quarterly period end matches fiscal year-end month/day, it is treated as annual timing (`+3 calendar months`) rather than 45 days.
+  - **Q4 in quarterly series:** if a quarterly period end falls within **±7 calendar days** of the inferred fiscal year-end month/day (checked against that anchor in the period's year and the adjacent years; day clamped to month length, e.g. Feb-29 → Feb-28), it is treated as annual timing (`+3 calendar months`) rather than 45 days (`_is_fiscal_year_end_quarter`, `tolerance_days=7`). The tolerance absorbs leap-year Feb-28/29 drift and 52/53-week fiscal years whose period ends move by a few days.
   - Fiscal year-end month/day is inferred from annual statement period ends for that ticker/report path when available; fallback is **Dec 31** when annual inference is unavailable.
 - **Insiders (P4.4, strict boundary):** an insider transaction is visible only when `available_date < curr_date`, where `available_date = transaction_date + 2 US business days` (Form 4 proxy; `CustomBusinessDay` with `USFederalHolidayCalendar`).
 - **B3 insider vendor check:** spot checks for `PETR4.SA`, `VALE3.SA`, and `ITUB4.SA` returned zero `insider_transactions` rows via yfinance at implementation time, so the CVM month-end + 10-day lag rule was not enabled in runtime filtering for this PR.
