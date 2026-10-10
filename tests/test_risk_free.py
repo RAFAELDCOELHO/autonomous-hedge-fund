@@ -22,6 +22,7 @@ from tradingagents.backtest.agent_integration import (
     make_decide_fn,
     run_tradingagents_backtest,
 )
+from tradingagents.backtest.calendar import next_session, previous_session, sessions
 from tradingagents.backtest.risk_free import RF_DIR, RF_SOURCE, daily_rf, verify_snapshots
 from tradingagents.backtest.runner import MAX_DECISION_ERROR_RATE, run_agent_strategy
 
@@ -33,8 +34,16 @@ def _dtb3_daily(pct: float) -> float:
     return (1 + pct / 100) ** (1 / 252) - 1
 
 
+def _frame(dates, opens):
+    """Open/Close frame with the pre-window bar (calendar D-1 of the first window session)
+    and the exit bar (session after the last one, whose open marks the last decision)."""
+    opens = [opens[0], *opens, opens[-1]]
+    dates = [previous_session("X", dates[0]), *dates, next_session("X", dates[-1])]
+    return pd.DataFrame({"Date": dates, "Open": opens, "Close": opens})
+
+
 def _run(decider, dates, market=None, capital=1_000.0):
-    df = pd.DataFrame({"Date": dates, "Close": np.linspace(100.0, 110.0, len(dates))})
+    df = _frame(dates, list(np.linspace(100.0, 110.0, len(dates))))
     with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
         return run_agent_strategy(decider, "X", str(dates[0].date()), str(dates[-1].date()),
                                   capital, market=market)
@@ -79,7 +88,10 @@ def test_rf_outside_snapshot_window_fails():
 
 def test_cash_earns_rf_and_has_zero_excess_sharpe():
     eq = _run(lambda d, w: "HOLD", US_DATES, market="US")
-    rf = daily_rf("US", US_DATES)
+    # B2: initial point at D-1 (01-11); all 4 intervals, the first included, accrue rf.
+    assert eq.index.tolist() == [pd.Timestamp("2024-01-11"), *US_DATES]
+    rf = daily_rf("US", eq.index)
+    assert len(rf) == len(US_DATES)
     assert eq.to_numpy() == pytest.approx(1_000.0 * np.cumprod([1.0, *(1 + rf)]), rel=1e-12)
     assert h1_cell_metrics(eq, "US")["sharpe"] == 0.0
     assert np.allclose(_run(lambda d, w: "HOLD", US_DATES).to_numpy(), 1_000.0)
@@ -95,6 +107,7 @@ def test_sharpe_is_on_excess_return_over_daily_rf():
 
 
 def test_decision_errors_are_counted_and_exported_for_cells_csv():
+    # decider gets D-1: 01-11 (pre-window), 01-12, 01-16, 01-17.
     bad = {"2024-01-12": "raise", "2024-01-16": "MAYBE", "2024-01-17": None}
 
     def decider(date, _window):
@@ -104,15 +117,31 @@ def test_decision_errors_are_counted_and_exported_for_cells_csv():
         return action
 
     eq = _run(decider, US_DATES, market="US")
-    assert eq.attrs == {"n_days": 4, "n_decision_errors": 3, "decision_errors_exceed_limit": True}
-    assert h1_cell_metrics(eq, "US") | {"sharpe": None} == {
-        "n_days": 4, "n_decision_errors": 3, "sharpe": None, "rf_source": "FRED-DTB3",
+    assert eq.attrs == {
+        "n_days": 4, "n_decision_errors": 3, "decision_errors_exceed_limit": True,
+        "execution": "open", "information_cutoff": "previous session close",
+        "decision_log": [
+            {"decision_date": "2024-01-12", "data_cutoff": "2024-01-11", "action": "BUY", "error": False},
+            {"decision_date": "2024-01-16", "data_cutoff": "2024-01-12", "action": "HOLD", "error": True},
+            {"decision_date": "2024-01-17", "data_cutoff": "2024-01-16", "action": "HOLD", "error": True},
+            {"decision_date": "2024-01-18", "data_cutoff": "2024-01-17", "action": "HOLD", "error": True},
+        ],
+        "data_cutoff": "2024-01-11",  # D-1 of the first session (cells.csv data_cutoff)
     }
+    # B2: metrics.py is unchanged, so h1_cell_metrics counts curve points (4 decisions +
+    # the D-1 anchor = 5); the cells.csv row carries n_days = decisions = 4.
+    assert h1_cell_metrics(eq, "US") | {"sharpe": None} == {
+        "n_days": 5, "n_decision_errors": 3, "sharpe": None, "rf_source": "FRED-DTB3",
+    }
+    from tradingagents.backtest.cells import make_cell_row
+
+    row = make_cell_row("AAPL", "baseline", 0, eq)
+    assert (row["n_days"], row["n_decision_errors"], row["rf_source"]) == ("4", "3", "FRED-DTB3")
 
 
 @pytest.mark.parametrize("n_errors, exceeded", [(1, False), (2, True)])
 def test_error_limit_is_exclusive_at_5_percent(n_errors, exceeded, caplog):
-    dates = pd.bdate_range("2024-01-02", periods=20)
+    dates = sessions("X", "2024-01-02", "2024-02-15")[:20]
     bad = {d.strftime("%Y-%m-%d") for d in dates[:n_errors]}
     with caplog.at_level("WARNING", logger="tradingagents.backtest.runner"):
         eq = _run(lambda d, w: "MAYBE" if d in bad else "HOLD", dates)
@@ -154,7 +183,7 @@ def test_tradingagents_backtest_counts_propagate_and_parse_errors():
             raise RuntimeError("api down")
         return {}, "no idea" if date == "2024-01-16" else "BUY"
 
-    df = pd.DataFrame({"Date": US_DATES, "Close": [100.0, 101.0, 102.0, 103.0]})
+    df = _frame(US_DATES, [100.0, 101.0, 102.0, 103.0])
     with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
         eq = run_tradingagents_backtest("X", "2024-01-12", "2024-01-18", {}, 1_000.0,
                                         propagate_fn=propagate, market="US")
@@ -182,10 +211,10 @@ def test_cdi_uses_prior_trading_day_not_date_t():
 
 
 def test_only_cash_earns_rf_stock_position_does_not():
-    df = pd.DataFrame({"Date": US_DATES, "Close": 100.0})
+    df = _frame(US_DATES, [100.0] * len(US_DATES))
     with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
         eq = run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-12", "2024-01-18", 1_000.0, market="US")
-    assert eq.tolist() == [1_000.0] * len(US_DATES)
+    assert eq.tolist() == [1_000.0] * (len(US_DATES) + 1)  # B2: initial point + 4 decisions
 
 
 def test_partial_rf_coverage_raises_no_zero_fill():

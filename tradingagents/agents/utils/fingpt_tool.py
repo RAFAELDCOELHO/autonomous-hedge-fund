@@ -1,12 +1,14 @@
 """LangChain tool wrapping FinGPT sentiment for the social_media_analyst."""
 
 import re
-from typing import Annotated
+from typing import Annotated, Optional
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
+from tradingagents.agents.utils.temporal import cap_date
 from tradingagents.dataflows.fingpt_analyst import get_fingpt_sentiment
 from tradingagents.dataflows.interface import route_to_vendor
 
@@ -48,6 +50,7 @@ def get_fingpt_sentiment_tool(
     symbol: Annotated[str, "ticker symbol of the company"],
     curr_date: Annotated[str, "current trading date, YYYY-mm-dd"],
     look_back_days: Annotated[int, "how many days of news to analyze"] = 7,
+    trade_date: Annotated[Optional[str], InjectedState("trade_date")] = None,
 ) -> str:
     """Obtain an aggregate FinGPT-style sentiment score over recent headlines.
 
@@ -55,6 +58,9 @@ def get_fingpt_sentiment_tool(
     social/news review. If the tool reports unavailable, proceed with
     manual analysis.
     """
+    # P4.11: this calls the news vendor directly (not through get_news), so it
+    # applies the same trade_date cap itself; the window ends at the capped date.
+    curr_date = cap_date(curr_date, trade_date)
     start_date = (
         datetime.strptime(curr_date, "%Y-%m-%d") - relativedelta(days=look_back_days)
     ).strftime("%Y-%m-%d")

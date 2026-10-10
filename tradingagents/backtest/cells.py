@@ -102,7 +102,10 @@ def make_cell_row(
         if equity is None:
             raise ValueError("ok rows need an equity curve")
         metrics = h1_cell_metrics(equity, market)
-        n_days = metrics["n_days"]
+        # P4.11 B2: the runner curve opens with an initial-capital anchor at D-1, so
+        # it has one point more than decisions. n_days = decisions (= returns), which
+        # the runner exports in attrs["n_days"]; other curves keep len(curve).
+        n_days = int(equity.attrs.get("n_days", metrics["n_days"]))
         n_errors = metrics["n_decision_errors"]
         sharpe = _format_sharpe(metrics["sharpe"])
         rf_source = metrics["rf_source"]

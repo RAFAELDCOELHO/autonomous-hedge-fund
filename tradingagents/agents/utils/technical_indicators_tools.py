@@ -1,5 +1,7 @@
 from langchain_core.tools import tool
-from typing import Annotated
+from typing import Annotated, Optional
+from langgraph.prebuilt import InjectedState
+from tradingagents.agents.utils.temporal import cap_date
 from tradingagents.dataflows.interface import route_to_vendor
 
 @tool
@@ -8,6 +10,7 @@ def get_indicators(
     indicator: Annotated[str, "technical indicator to get the analysis and report of"],
     curr_date: Annotated[str, "The current trading date you are trading on, YYYY-mm-dd"],
     look_back_days: Annotated[int, "how many days to look back"] = 30,
+    trade_date: Annotated[Optional[str], InjectedState("trade_date")] = None,
 ) -> str:
     """
     Retrieve a single technical indicator for a given ticker symbol.
@@ -23,6 +26,7 @@ def get_indicators(
     # LLMs sometimes pass multiple indicators as a comma-separated string;
     # split and process each individually.
     indicators = [i.strip().lower() for i in indicator.split(",") if i.strip()]
+    curr_date = cap_date(curr_date, trade_date)  # P4.11: never past the graph's trade_date
     results = []
     for ind in indicators:
         try:

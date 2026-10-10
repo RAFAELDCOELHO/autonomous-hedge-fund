@@ -3,6 +3,12 @@
 Data is pulled via `tradingagents.dataflows.stockstats_utils.load_ohlcv`,
 which is backed by yfinance and cached locally — no external API key
 required. This keeps the academic demo frictionless.
+
+Every curve here follows one convention (P4.11, decision before the open):
+decision sessions D come from the ticker's exchange calendar (calendar.py),
+the decision for D sees data up to the close of D-1 only, executes at
+Open[D] and is marked at the next session's open. The paper/BrazilBench
+simulators (baselines._simulate, brazilbench, scripts/) stay close-to-close.
 """
 
 from __future__ import annotations
@@ -14,7 +20,7 @@ import pandas as pd
 
 from tradingagents.dataflows.stockstats_utils import load_ohlcv
 
-from .baselines import _simulate
+from .calendar import exchange_for, next_session, previous_session, sessions
 from .risk_free import daily_rf
 
 logger = logging.getLogger(__name__)
@@ -23,21 +29,124 @@ logger = logging.getLogger(__name__)
 MAX_DECISION_ERROR_RATE = 0.05
 
 
-def load_price_history(ticker: str, end: str) -> pd.DataFrame:
-    """Load all cached OHLCV up to and including `end`, indexed by date (ascending)."""
-    df = load_ohlcv(ticker, end)
-    df = df.copy()
-    df["Date"] = pd.to_datetime(df["Date"])
-    df = df.sort_values("Date").set_index("Date")
-    return df.loc[: pd.to_datetime(end)]
+class DataDefectError(ValueError, LookupError):
+    """A fail-closed vendor price-data defect (runner checks, snapshot.validate_snapshot).
+
+    Deterministic for a given snapshot, so run_backtest records the cell as
+    failed; any other exception is a code bug and propagates.
+    """
 
 
-def load_price_window(ticker: str, start: str, end: str) -> pd.DataFrame:
-    """Load OHLCV for [start, end] indexed by date (ascending)."""
-    df = load_price_history(ticker, end).loc[pd.to_datetime(start):]
-    if df.empty:
-        raise ValueError(f"No price data for {ticker} in {start}..{end}")
-    return df
+def _execution_plan(ticker: str, start: str, end: str):
+    """Vendor frame, decision sessions D_0..D_n and the opens of D_0..D_n plus the exit session.
+
+    The frame is loaded once through the exit session (the calendar session
+    after the last D) with fill_prices=False, so opens and closes share one
+    auto_adjust=True download and a missing Open is never filled. Vendor bars
+    on non-sessions are dropped with a warning: the calendar alone defines the
+    sessions and D-1. Fail closed (DataDefectError naming ticker and date) on
+    a duplicated vendor date, a missing D-1 bar of the first session (no slide
+    back to an older bar), a missing bar for any D or the exit session, a
+    missing Open column, or a NaN/non-positive Open on any D or the exit
+    session (no Close fallback). A window with no sessions is a plain
+    ValueError (bad input, not data).
+    """
+    window = sessions(ticker, start, end)
+    if window.empty:
+        raise ValueError(f"{ticker}: no {exchange_for(ticker)} sessions in {start}..{end}")
+    exit_day = next_session(ticker, window[-1])
+    frame = load_ohlcv(ticker, exit_day.strftime("%Y-%m-%d"), fill_prices=False).copy()
+    frame["Date"] = pd.to_datetime(frame["Date"])
+    frame = frame.sort_values("Date").set_index("Date").loc[:exit_day]
+    dup = frame.index[frame.index.duplicated()]
+    if not dup.empty:
+        raise DataDefectError(f"{ticker}: duplicate vendor bars on {dup[0]:%Y-%m-%d}")
+    if "Open" not in frame.columns:
+        raise DataDefectError(f"{ticker}: no Open column; execution at the open needs opens")
+    if not frame.empty:
+        off = frame.index.difference(sessions(ticker, frame.index[0], exit_day))
+        if not off.empty:
+            logger.warning(
+                "%s: ignoring vendor bars on non-%s sessions: %s",
+                ticker, exchange_for(ticker), ", ".join(f"{d:%Y-%m-%d}" for d in off),
+            )
+            frame = frame.drop(off)
+    first_prev = previous_session(ticker, window[0])
+    if first_prev not in frame.index:
+        raise DataDefectError(
+            f"{ticker}: no vendor bar on {first_prev:%Y-%m-%d}, D-1 of the first window "
+            f"session {window[0]:%Y-%m-%d}; the look-back must cover it"
+        )
+    missing = window.difference(frame.index)
+    if not missing.empty:
+        raise DataDefectError(f"{ticker}: no vendor bar on session {missing[0]:%Y-%m-%d}")
+    if exit_day not in frame.index:
+        raise DataDefectError(
+            f"{ticker}: no vendor bar on {exit_day:%Y-%m-%d}, the exit session after {end}"
+        )
+    exec_days = frame.index[frame.index.isin(window) | (frame.index == exit_day)]  # vendor index name
+    opens = frame.loc[exec_days, "Open"].astype(float)
+    bad = opens[~(opens > 0)]
+    if not bad.empty:
+        raise DataDefectError(f"{ticker}: missing or non-positive Open on {bad.index[0]:%Y-%m-%d}")
+    return frame, exec_days[:-1], opens
+
+
+def _simulate_open(ticker, days, opens, decide, initial_capital, market=None) -> pd.Series:
+    """Full-position open-to-open simulation over the decision sessions `days`.
+
+    decide(day, cutoff) -> (action, error) with cutoff = D-1. The order fills
+    at Open[D_i]; equity[D_i] = cash + shares * Open[D_{i+1}] (D_{n+1} = the
+    exit session), so the decision of D earns Open[D] -> Open[D+1], the last
+    one included.
+
+    The curve opens with an initial-capital anchor (P4.11 B2): index
+    [D-1 of D_0, D_0, ..., D_n], value initial_capital at D-1, where D-1 is the
+    previous session of the ticker's fixed exchange calendar (never start - 1
+    day). It stands for the capital held at Open[D_0] before the first fill, so
+    n decisions give n + 1 points and n returns, the first decision's included.
+
+    market ("BR"/"US"): after D_i's order, cash accrues
+    risk_free.daily_rf(market, curve index)[D_i] for every i, the first
+    interval included. That is the per-label rf h1_cell_metrics subtracts from
+    the return equity[prev] -> equity[D_i], so an all-cash run has exactly zero
+    excess Sharpe. The rate is lagged one session (the CDI/DTB3 rate of
+    prev -> D_i, applied over Open[D_i] -> Open[D_{i+1}]). None keeps cash at 0%.
+    """
+    initial_day = previous_session(ticker, days[0])
+    cutoffs = [initial_day, *days[:-1]]  # every session has a bar: checked
+    index = pd.DatetimeIndex([initial_day, *days])
+    rf = daily_rf(market, index) if market else None
+    cash = float(initial_capital)
+    shares = 0.0
+    equity = [float(initial_capital)]
+    decision_log = []
+    for i, (day, cutoff) in enumerate(zip(days, cutoffs)):
+        action, error = decide(day, cutoff)
+        price = opens.iloc[i]
+        if action == "BUY" and shares == 0.0:
+            shares = cash / price
+            cash = 0.0
+        elif action == "SELL" and shares > 0.0:
+            cash = shares * price
+            shares = 0.0
+        if rf is not None:
+            cash *= 1.0 + rf[day]
+        equity.append(cash + shares * opens.iloc[i + 1])
+        decision_log.append({
+            "decision_date": day.strftime("%Y-%m-%d"),
+            "data_cutoff": cutoff.strftime("%Y-%m-%d"),
+            "action": action,
+            "error": error,
+        })
+    out = pd.Series(equity, index=index, name="equity")
+    out.attrs.update(
+        execution="open",
+        information_cutoff="previous session close",
+        decision_log=decision_log,
+        data_cutoff=decision_log[0]["data_cutoff"],
+    )
+    return out
 
 
 def run_strategy(
@@ -47,17 +156,20 @@ def run_strategy(
     end: str,
     initial_capital: float = 100_000.0,
 ) -> pd.Series:
-    """Signals see pre-window history (indicator warm-up); equity covers [start, end] only.
+    """A baseline under the decision-before-the-open convention (_simulate_open).
 
-    Same semantics as brazilbench.run_cell: the curve starts at `initial_capital`
-    on the first window bar, so Buy & Hold still buys on `start`.
+    The in-position signal is computed on the vendor history up to the D-1 of
+    the last session (indicator warm-up included, nothing dated D_n or later)
+    and the signal at D-1 sets the position taken at Open[D]: True buys,
+    False sells. Buy & Hold therefore buys at Open[first session].
     """
-    history = load_price_history(ticker, end)
-    prices = history.loc[pd.to_datetime(start):]
-    if prices.empty:
-        raise ValueError(f"No price data for {ticker} in {start}..{end}")
-    sig = strategy.signals(history).loc[prices.index]
-    return _simulate(prices, sig, initial_capital)
+    frame, days, opens = _execution_plan(ticker, start, end)
+    sig = strategy.signals(frame.loc[: previous_session(ticker, days[-1])]).astype(bool)
+
+    def decide(_day, cutoff):
+        return ("BUY" if sig.loc[cutoff] else "SELL"), False
+
+    return _simulate_open(ticker, days, opens, decide, initial_capital)
 
 
 def run_buy_and_hold(ticker: str, start: str, end: str, initial_capital: float = 100_000.0) -> pd.Series:
@@ -73,51 +185,45 @@ def run_agent_strategy(
     initial_capital: float = 100_000.0,
     market: Optional[str] = None,
 ) -> pd.Series:
-    """Run a day-by-day agent loop with full-position sizing.
+    """Run a day-by-day agent loop with full-position sizing (P4.11).
 
-    decide_fn(curr_date, prices_up_to_date) -> {"BUY", "SELL", "HOLD"}.
-    Signals are executed at the close of curr_date. Look-ahead is
-    prevented because decide_fn only receives prices up to curr_date.
+    Decision before the open: for each calendar session D in [start, end],
+    decide_fn(prev_date, history_up_to_prev) -> {"BUY", "SELL", "HOLD"} is
+    called with prev_date = D-1 and the vendor rows dated <= D-1 (window.attrs
+    carries decision_date=D and data_cutoff=D-1). The agent and every tool
+    keyed on that date see information up to the close of D-1 only; no row
+    dated D or later is passed (the exit session's bar is loaded for its open
+    only). Sessions and fail-closed checks: _execution_plan. Fill, open-to-open
+    marking and rf accrual (market): _simulate_open.
 
-    market ("BR"/"US"): cash earns the daily rf of risk_free.daily_rf;
-    None keeps cash at 0%. A decide_fn that raises or returns anything
-    else falls back to HOLD and is counted in equity.attrs["n_decision_errors"].
-    attrs also carry n_days (one decision per trading day) and
-    decision_errors_exceed_limit (E4: error rate > MAX_DECISION_ERROR_RATE).
+    A decide_fn that raises or returns anything else falls back to HOLD and
+    is counted in equity.attrs["n_decision_errors"]. attrs also carry n_days
+    (one decision per session), decision_errors_exceed_limit (E4: error rate
+    > MAX_DECISION_ERROR_RATE), execution="open", information_cutoff=
+    "previous session close", decision_log (one {"decision_date": D,
+    "data_cutoff": D-1, "action", "error"} per session, ISO dates) and
+    data_cutoff (D-1 of the first session, the cells.csv data_cutoff).
     """
-    prices = load_price_window(ticker, start, end)
-    closes = prices["Close"].astype(float)
-    rf = daily_rf(market, prices.index) if market else None
+    frame, days, opens = _execution_plan(ticker, start, end)
 
-    cash = float(initial_capital)
-    shares = 0.0
-    equity = []
-    n_decision_errors = 0
-
-    for i, (date, price) in enumerate(closes.items()):
-        if rf is not None and i > 0:
-            cash *= 1.0 + rf[date]
-        window = prices.iloc[: i + 1]
+    def decide(day, cutoff):
+        window = frame.loc[:cutoff].copy()
+        window.attrs = {
+            "decision_date": day.strftime("%Y-%m-%d"),
+            "data_cutoff": cutoff.strftime("%Y-%m-%d"),
+        }
         try:
-            action = str(decide_fn(date.strftime("%Y-%m-%d"), window)).upper()
+            action = str(decide_fn(cutoff.strftime("%Y-%m-%d"), window)).upper()
             if action not in ("BUY", "SELL", "HOLD"):
                 raise ValueError(f"invalid action {action!r}")
+            return action, False
         except Exception as e:
-            logger.warning("agent decide_fn failed on %s: %s", date, e)
-            n_decision_errors += 1
-            action = "HOLD"
+            logger.warning("agent decide_fn failed on %s: %s", day, e)
+            return "HOLD", True
 
-        if action == "BUY" and shares == 0.0 and price > 0:
-            shares = cash / price
-            cash = 0.0
-        elif action == "SELL" and shares > 0.0:
-            cash = shares * price
-            shares = 0.0
-
-        equity.append(cash + shares * price)
-
-    out = pd.Series(equity, index=prices.index, name="equity")
-    n_days = len(out)
+    out = _simulate_open(ticker, days, opens, decide, initial_capital, market)
+    n_days = len(out.attrs["decision_log"])
+    n_decision_errors = sum(e["error"] for e in out.attrs["decision_log"])
     exceeded = n_days == 0 or n_decision_errors / n_days > MAX_DECISION_ERROR_RATE
     out.attrs.update(
         n_days=n_days,

@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
+from tradingagents.backtest.calendar import previous_session, sessions
 from tradingagents.backtest.cells import (
     COLUMNS,
     HARNESS_TO_ARM,
@@ -37,7 +38,9 @@ from tradingagents.backtest.runner import run_agent_strategy
 
 REPO = Path(__file__).resolve().parents[1]
 DATES = pd.DatetimeIndex(["2024-01-12", "2024-01-16", "2024-01-17", "2024-01-18"])
-CLOSES = [100.0, 101.0, 100.5, 102.0]
+OPENS = [100.0, 101.0, 100.5, 102.0]
+PRE_WINDOW = pd.Timestamp("2024-01-11")  # D-1 of the first window session
+EXIT = pd.Timestamp("2024-01-19")  # session after the window: the last decision's exit open
 
 
 def _h1_stats():
@@ -59,12 +62,14 @@ def _load_run_backtest():
 
 def _equity(market: str, bad_dates: set[str] | None = None) -> pd.Series:
     bad_dates = bad_dates or set()
-    df = pd.DataFrame({"Date": DATES, "Close": CLOSES})
+    opens = [OPENS[0], *OPENS, OPENS[-1]]
+    df = pd.DataFrame({"Date": [PRE_WINDOW, *DATES, EXIT], "Open": opens, "Close": opens})
 
+    # decider gets D-1: "2024-01-11" is the decision for the first session (BUY at its open).
     def decider(date, _window):
         if date in bad_dates:
             raise RuntimeError("api down")
-        return "BUY" if date == "2024-01-12" else "HOLD"
+        return "BUY" if date == "2024-01-11" else "HOLD"
 
     with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
         return run_agent_strategy(
@@ -109,7 +114,7 @@ def test_rows_round_trip_through_h1_stats_validation(tmp_path):
         ("VALE3", "BR", "present", "2", "BCB-SGS-12"),
     ]
     assert raw[2]["n_decision_errors"] == "1"
-    assert raw[2]["n_days"] == str(len(br))
+    assert raw[2]["n_days"] == str(len(br) - 1) == str(br.attrs["n_days"])  # B2: decisions = returns
     assert float(raw[0]["sharpe"]) == h1_cell_metrics(us, "US")["sharpe"]
     assert float(raw[2]["sharpe"]) == h1_cell_metrics(br, "BR")["sharpe"]
 
@@ -290,7 +295,7 @@ def test_cli_appends_mapped_rows_and_prints_h1_sharpe(tmp_path, capsys):
     assert float(raw[0][SHARPE_FLAT_FIELD]) == flat_rf_metrics(equity)["sharpe"]
     loaded = h1.load_cells(path)
     assert h1.main([str(path)]) == 0
-    assert loaded[0]["n_days"] == len(equity)
+    assert loaded[0]["n_days"] == len(equity) - 1 == equity.attrs["n_days"]  # B2: decisions = returns
 
     printed = capsys.readouterr().out
     shown = f"{h1_cell_metrics(equity, 'BR')['sharpe']:.3f}"
@@ -369,9 +374,53 @@ def test_cli_failed_arm_is_a_failed_row(tmp_path):
             "temperature": "provider-default",
             "max_debate_rounds": "1",
             "max_risk_discuss_rounds": "1",
+            "data_cutoff": "2023-12-29",  # NYSE D-1 of 2024-01-02, from the calendar
+            "failure_reason": "RuntimeError: pipeline down",
         }
     ]
     assert h1.load_cells(path)[0]["status"] == "failed"
+
+
+def test_cli_row_records_data_cutoff_and_keeps_decision_dates(tmp_path):
+    """start/end stay the decision dates; data_cutoff is the calendar D-1 of the first session."""
+    run_backtest = _load_run_backtest()
+    path = tmp_path / "cells.csv"
+    start, end = "2024-01-02", "2024-03-28"
+    dates = [previous_session("PETR4.SA", start), *sessions("PETR4.SA", start, end),
+             pd.Timestamp("2024-04-01")]  # exit session (03-29 Good Friday)
+    prices = pd.DataFrame({"Date": dates, "Open": 100.0, "Close": 100.0})
+    decision_dates = []
+
+    class FakeGraph:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def propagate(self, ticker, trade_date, decision_date=None):
+            decision_dates.append(decision_date)
+            return {}, "HOLD"
+
+    def fake_run_strategy(*_args, **_kwargs):
+        return pd.Series([100.0, 101.0], index=pd.DatetimeIndex(dates[1:3]))
+
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "ci-dummy-key"}), patch.object(
+        run_backtest, "load_dotenv"
+    ), patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch(
+        "tradingagents.backtest.runner.load_ohlcv", return_value=prices
+    ), patch.object(run_backtest, "run_strategy", side_effect=fake_run_strategy), patch.object(
+        run_backtest, "print_comparison"
+    ):
+        rc = run_backtest.main(
+            ["--ticker", "PETR4.SA", "--start", start, "--end", end,
+             "--arms", "baseline", "--cells-out", str(path)]
+        )
+
+    assert rc == 0
+    [row] = _raw_rows(path)
+    assert (row["start"], row["end"]) == (start, end)
+    assert row["data_cutoff"] == str(previous_session("PETR4.SA", start).date()) == "2023-12-28"
+    assert row["n_days"] == str(len(dates) - 2)
+    assert decision_dates[0] == start and decision_dates[-1] == end
+    h1.load_cells(path)
 
 
 def test_cli_skip_agents_and_negative_seed(tmp_path):

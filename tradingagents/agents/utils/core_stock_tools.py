@@ -1,6 +1,7 @@
 from langchain_core.tools import tool
-from typing import Annotated
-from datetime import datetime
+from typing import Annotated, Optional
+from langgraph.prebuilt import InjectedState
+from tradingagents.agents.utils.temporal import cap_date
 from tradingagents.dataflows.interface import route_to_vendor
 
 
@@ -10,6 +11,7 @@ def get_stock_data(
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
     end_date: Annotated[str, "End date in yyyy-mm-dd format"],
     curr_date: Annotated[str, "Current trading date in yyyy-mm-dd format"],
+    trade_date: Annotated[Optional[str], InjectedState("trade_date")] = None,
 ) -> str:
     """
     Retrieve stock price data (OHLCV) for a given ticker symbol.
@@ -21,8 +23,6 @@ def get_stock_data(
     Returns:
         str: A formatted dataframe containing the stock price data for the specified ticker symbol in the specified date range.
     """
-    effective_end_date = min(
-        datetime.strptime(end_date, "%Y-%m-%d"),
-        datetime.strptime(curr_date, "%Y-%m-%d"),
-    ).strftime("%Y-%m-%d")
+    # P4.9 end_date <= curr_date, with curr_date capped at the graph's trade_date (P4.11).
+    effective_end_date = cap_date(end_date, cap_date(curr_date, trade_date))
     return route_to_vendor("get_stock_data", symbol, start_date, effective_end_date)

@@ -127,11 +127,12 @@ def make_decide_fn(
     and raises UnparseableSignal when the raw signal has no valid label, so
     run_agent_strategy counts it as a decision error (PREREGISTRATION §4).
 
-    The prices_up_to_date argument is accepted (to honor run_agent_strategy's
-    look-ahead prevention contract) but not used — TradingAgentsGraph fetches
-    its own data internally, keyed by date. Look-ahead safety is preserved
-    because propagate is called with curr_date, so agents only query data up
-    to that date.
+    run_agent_strategy passes the information cutoff: the ticker's previous
+    session D-1 of the trading session D whose open executes the order, and
+    prices up to D-1. The prices_up_to_date argument is accepted but not used
+    — TradingAgentsGraph fetches its own data internally, keyed by date.
+    Look-ahead safety is preserved because propagate is called with D-1, so
+    agents and their tools only see data up to the close of D-1.
 
     Args:
         ticker: Symbol passed to propagate each day (e.g. "AAPL", "PETR4.SA").
@@ -152,12 +153,16 @@ def make_decide_fn(
         if selected_analysts is not None:
             graph_kwargs["selected_analysts"] = selected_analysts
         ta = TradingAgentsGraph(**graph_kwargs)
-        _propagate = ta.propagate
+
+        def _propagate(symbol, date, window):
+            # The graph sees D-1; its state log is keyed by the session D it trades.
+            return ta.propagate(symbol, date, decision_date=window.attrs.get("decision_date"))
     else:
-        _propagate = propagate_fn
+        def _propagate(symbol, date, _window):
+            return propagate_fn(symbol, date)
 
     def decide_fn(curr_date: str, prices_up_to_date: pd.DataFrame) -> str:
-        _, raw_signal = _propagate(ticker, curr_date)
+        _, raw_signal = _propagate(ticker, curr_date, prices_up_to_date)
         if not is_parseable_signal(raw_signal):
             raise UnparseableSignal(f"no BUY/HOLD/SELL label in {raw_signal!r}")
         return map_signal(raw_signal)

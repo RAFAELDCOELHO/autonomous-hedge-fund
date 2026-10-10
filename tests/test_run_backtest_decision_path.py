@@ -20,6 +20,15 @@ def _load_module():
     return module
 
 
+def _window(decision_date: str, data_cutoff: str):
+    """The frame run_agent_strategy hands to decide_fn carries D and D-1 in attrs."""
+    import pandas as pd
+
+    window = pd.DataFrame()
+    window.attrs = {"decision_date": decision_date, "data_cutoff": data_cutoff}
+    return window
+
+
 def test_run_backtest_uses_map_signal_for_verbose_llm_output():
     run_backtest = _load_module()
 
@@ -27,16 +36,17 @@ def test_run_backtest_uses_map_signal_for_verbose_llm_output():
         def __init__(self, *args, **kwargs):
             pass
 
-        def propagate(self, ticker: str, curr_date: str):
+        def propagate(self, ticker: str, curr_date: str, decision_date=None):
             assert ticker == "AAPL"
             assert curr_date == "2024-01-03"
+            assert decision_date == "2024-01-04"
             return {}, "Rating: OVERWEIGHT."
 
     captured = {}
 
     def fake_runner(decide_fn, ticker, start, end, capital, market=None):
         captured["market"] = market
-        captured["decision"] = decide_fn("2024-01-03", None)
+        captured["decision"] = decide_fn("2024-01-03", _window("2024-01-04", "2024-01-03"))
         captured["args"] = (ticker, start, end, capital)
         return "equity-curve"
 
@@ -70,7 +80,7 @@ def test_run_backtest_counts_unrecognized_verbose_signal_as_decision_error():
         def __init__(self, *args, **kwargs):
             pass
 
-        def propagate(self, ticker: str, curr_date: str):
+        def propagate(self, ticker: str, curr_date: str, decision_date=None):
             assert ticker == "AAPL"
             return {}, "Model uncertain: wait-and-see." if curr_date == "2024-01-03" else "HOLD"
 
@@ -79,7 +89,7 @@ def test_run_backtest_counts_unrecognized_verbose_signal_as_decision_error():
     def fake_runner(decide_fn, ticker, start, end, capital, market=None):
         captured["market"] = market
         with pytest.raises(UnparseableSignal):
-            decide_fn("2024-01-03", None)
+            decide_fn("2024-01-03", _window("2024-01-04", "2024-01-03"))
         return "equity-curve"
 
     with patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch.object(
@@ -94,7 +104,12 @@ def test_run_backtest_counts_unrecognized_verbose_signal_as_decision_error():
         ) == "equity-curve"
     assert captured["market"] == "US"
 
-    prices = pd.DataFrame({"Date": pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]), "Close": 100.0})
+    # 2023-12-29 is D-1 of the first session; decisions are dated 12-29, 01-02, 01-03;
+    # 01-05 is the exit session (open of the session after `end`).
+    prices = pd.DataFrame(
+        {"Date": pd.to_datetime(["2023-12-29", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]),
+         "Open": 100.0, "Close": 100.0}
+    )
     with patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch(
         "tradingagents.backtest.runner.load_ohlcv", return_value=prices
     ):

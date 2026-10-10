@@ -1,9 +1,11 @@
 """LangChain tool wrapping Kronos forecast for the market_analyst agent."""
 
-from typing import Annotated
+from typing import Annotated, Optional
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
+from tradingagents.agents.utils.temporal import cap_date
 from tradingagents.dataflows.kronos_analyst import get_kronos_signal
 from tradingagents.dataflows.stockstats_utils import load_ohlcv
 
@@ -13,6 +15,7 @@ def get_kronos_forecast(
     symbol: Annotated[str, "ticker symbol of the company"],
     curr_date: Annotated[str, "current trading date, YYYY-mm-dd"],
     pred_len: Annotated[int, "forecast horizon in business days"] = 5,
+    trade_date: Annotated[Optional[str], InjectedState("trade_date")] = None,
 ) -> str:
     """Obtain a Kronos short-horizon directional forecast for the ticker.
 
@@ -22,7 +25,8 @@ def get_kronos_forecast(
     model is unavailable for any reason, the tool returns a message
     saying so and the analyst should proceed with indicators only.
     """
-    df = load_ohlcv(symbol, curr_date)
+    # P4.11: bars up to min(curr_date, graph trade_date) only (load_ohlcv keeps Date <= it).
+    df = load_ohlcv(symbol, cap_date(curr_date, trade_date))
     result = get_kronos_signal(df, symbol, pred_len=pred_len)
     if result is None:
         return "Kronos model unavailable for this run."

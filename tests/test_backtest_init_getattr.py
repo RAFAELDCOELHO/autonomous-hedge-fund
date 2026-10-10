@@ -27,15 +27,20 @@ class BacktestInitGetattrTests(unittest.TestCase):
         fake_runner = self._fake_runner_module()
         original_runner = sys.modules.get("tradingagents.backtest.runner")
         sys.modules["tradingagents.backtest.runner"] = fake_runner
-        try:
-            import tradingagents.backtest as backtest
+        import tradingagents.backtest as backtest
 
+        # Restore the package namespace too: leaving `runner` popped breaks later
+        # dotted-path monkeypatches like "tradingagents.backtest.runner.<name>".
+        saved_dict = dict(backtest.__dict__)
+        try:
             # Force module-level lookup path to execute __getattr__.
             backtest.__dict__.pop("runner", None)
             for name in ("run_strategy", "run_buy_and_hold", "run_agent_strategy"):
                 backtest.__dict__.pop(name, None)
                 self.assertIs(getattr(backtest, name), getattr(fake_runner, name))
         finally:
+            backtest.__dict__.clear()
+            backtest.__dict__.update(saved_dict)
             if original_runner is None:
                 sys.modules.pop("tradingagents.backtest.runner", None)
             else:
