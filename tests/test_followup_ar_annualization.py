@@ -13,6 +13,7 @@ import pytest
 import _pr7_api as api
 from _pr7_fakes import RecordingAgent, install_fake_yahoo
 from tradingagents.backtest.metrics import FLAT_RF_SENSITIVITY, ExtendedMetricsCalculator
+from tradingagents.backtest.risk_free import market_of
 
 CAPITAL = 100_000.0
 
@@ -21,7 +22,7 @@ CAPITAL = 100_000.0
 def test_ar_exponent_counts_curve_points_not_returns(monkeypatch, tmp_path, ticker):
     install_fake_yahoo(monkeypatch, tmp_path)
     start, end = api.prereg_window()
-    eq = api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, start, end, CAPITAL)
+    eq = api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, start, end, CAPITAL, market=market_of(ticker))
     assert len(eq) == 62 and eq.attrs["n_days"] == 61
 
     m = ExtendedMetricsCalculator(annual_rf_rate=FLAT_RF_SENSITIVITY).compute(eq)

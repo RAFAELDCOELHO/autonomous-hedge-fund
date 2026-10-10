@@ -8,8 +8,14 @@ or `--skip-agents` to run only classical baselines. Prints a rich table
 of CR / AR / Sharpe / MDD. The TradingAgents arms' cash earns the market's
 daily rf (CDI for .SA tickers, DTB3 otherwise) from data/rf/, so the agent
 window must lie inside 2023-12-01..2024-04-30 (daily_rf raises otherwise).
-The table shows Sharpe at the flat exploratory rf for every strategy, and the
-agent arm's H1 Sharpe (excess over the daily rf) beside it.
+The classical baselines' cash earns the same daily rf, so the table shows Sharpe
+at the flat exploratory rf for every strategy and the H1 Sharpe (excess over
+the daily rf) for all of them. Outside the rf snapshot every strategy fails
+closed (DataDefectError, exit 1). ``--no-rf`` is the explicit opt-out for
+exploratory/paper runs outside it (e.g. PAPER Table 3, AAPL 2023): cash earns
+0% in EVERY strategy of the run (agent arms included, so no asymmetry), it is
+logged, and the table is labelled "Cash rf: none (--no-rf)". It is refused
+with ``--cells-out`` (H1 runs always use the daily rf).
 ``--cells-out`` appends one PREREGISTRATION §4 row per agent arm
 (baseline → absent, macro → present; B3 tickers stored without ``.SA``),
 plus ``start``/``end`` and the five config columns
@@ -73,6 +79,7 @@ from tradingagents.backtest.cells import (
     prereg_arm,
 )
 from tradingagents.backtest.risk_free import market_of
+from tradingagents.backtest.cash_rate import _REQUIRED, _cash_rate
 from tradingagents.backtest.runner import DataDefectError
 from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -121,12 +128,18 @@ def _run_agent_decider(
     capital: float,
     run_config: dict[str, object],
     raise_unavailable: bool = False,
+    *,
+    market=_REQUIRED,
+    no_rf: bool = False,
 ):
     """Run TradingAgents once per trading day and return an equity curve.
 
-    Falls back to None if the pipeline cannot be constructed, unless
-    raise_unavailable (main: the exception becomes the row's failure_reason).
+    Cash rate REQUIRED, exactly one of market="BR"/"US" or no_rf=True (same rule
+    as the runner; checked before the pipeline is built). Falls back to None if
+    the pipeline cannot be constructed, unless raise_unavailable (main: the
+    exception becomes the row's failure_reason).
     """
+    _cash_rate(market, no_rf)
     try:
         decide_fn = make_decide_fn(ticker=ticker, config=run_config)
     except Exception as e:
@@ -135,7 +148,9 @@ def _run_agent_decider(
         logging.warning("TradingAgents pipeline unavailable (%s)", e)
         return None
 
-    return run_agent_strategy(decide_fn, ticker, start, end, capital, market=market_of(ticker))
+    # --no-rf: same 0% cash as the baselines of the run; otherwise the daily rf (fails closed).
+    rate = {"no_rf": True} if no_rf else {"market": market}
+    return run_agent_strategy(decide_fn, ticker, start, end, capital, **rate)
 
 
 def _build_run_config(selected_analysts: list[str] | None = None) -> dict[str, object]:
@@ -273,6 +288,20 @@ def _find_config_mismatch(
     return None
 
 
+NO_RF_LABEL = "none (--no-rf)"
+
+
+def _rf_kwargs(ticker: str, no_rf: bool) -> dict:
+    """Exactly one cash rate for every strategy of the run: the daily rf, or 0% under --no-rf."""
+    return {"no_rf": True} if no_rf else {"market": market_of(ticker)}
+
+
+def _label_no_rf(curve):
+    if curve is not None:
+        curve.attrs["rf_source"] = NO_RF_LABEL
+    return curve
+
+
 def _first_data_cutoff(ticker: str, start: str, end: str) -> str:
     """D-1 of the first calendar session in start..end (no price data needed)."""
     return previous_session(ticker, sessions(ticker, start, end)[0]).strftime("%Y-%m-%d")
@@ -318,7 +347,16 @@ def main(argv=None) -> int:
         default=0,
         help="Replicate index written with --cells-out (integer >= 0, default: 0)",
     )
+    parser.add_argument(
+        "--no-rf",
+        action="store_true",
+        help="Exploratory/paper runs only: cash earns 0%% in every strategy (agent arms "
+        "included) instead of the daily rf; needed outside the data/rf snapshot "
+        "(2023-12-01..2024-04-30). Refused with --cells-out.",
+    )
     args = parser.parse_args(argv)
+    if args.no_rf and args.cells_out is not None:
+        parser.error("--no-rf is refused with --cells-out: H1 runs always use the daily rf")
     if args.seed < 0:
         parser.error("--seed must be >= 0")
     try:
@@ -393,14 +431,19 @@ def main(argv=None) -> int:
             return 2
 
     curves = {}
+    rf_kwargs = _rf_kwargs(args.ticker, args.no_rf)
+    if args.no_rf:
+        logging.warning("--no-rf: cash earns 0% in every strategy of this run (exploratory, not H1)")
     try:
         for strat in (BuyAndHold(), MACDStrategy(), SMACrossStrategy()):
-            curves[strat.name] = run_strategy(strat, args.ticker, args.start, args.end, args.capital)
+            # Exactly one cash rate (runner fails closed on neither/both).
+            curve = run_strategy(strat, args.ticker, args.start, args.end, args.capital, **rf_kwargs)
+            curves[strat.name] = _label_no_rf(curve) if args.no_rf else curve
     except DataDefectError as exc:
-        # Fail-closed price-data defect: the agent arms share the frame and would hit it
-        # too. Count the cell as failed for every planned arm instead of dropping it.
-        # Any other exception is a code bug and propagates.
-        logging.error("%s: price data defect, recording planned arms as failed: %s", args.ticker, exc)
+        # Fail-closed data defect (prices, or no daily rf for the window): the agent arms
+        # share the frame and the rf and would hit it too. Count the cell as failed for
+        # every planned arm instead of dropping it. Any other exception is a code bug.
+        logging.error("%s: data defect, recording planned arms as failed: %s", args.ticker, exc)
         if args.cells_out is not None:
             arms = _selected_analysts_by_arm()
             try:
@@ -439,7 +482,10 @@ def main(argv=None) -> int:
                     args.capital,
                     run_config=run_config,
                     raise_unavailable=True,
+                    **rf_kwargs,
                 )
+                if args.no_rf:
+                    agent_curve = _label_no_rf(agent_curve)
             except Exception as exc:
                 logging.exception("TradingAgents arm '%s' failed; recording status=failed", arm_name)
                 failure_reason = f"{type(exc).__name__}: {exc}"

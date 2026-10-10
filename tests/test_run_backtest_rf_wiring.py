@@ -46,6 +46,7 @@ def test_agent_arm_passes_market_of_ticker(ticker, market):
             "2024-01-31",
             100_000.0,
             run_config=run_backtest.DEFAULT_CONFIG.copy(),
+            market=market,
         )
 
     assert result == "equity-curve"

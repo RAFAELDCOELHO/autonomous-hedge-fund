@@ -51,7 +51,7 @@ def test_agent_window_ends_at_previous_session_and_never_contains_day_d(yahoo, t
     yahoo.bars[ticker] = bars
     agent = RecordingAgent()
 
-    api.run_agent(agent, ticker, day, day, CAPITAL)
+    api.run_agent(agent, ticker, day, day, CAPITAL, no_rf=True)
 
     assert agent.dates == [cutoff]
     window = agent.windows[0]
@@ -68,7 +68,7 @@ def test_prompt_date_given_to_propagate_is_data_cutoff_not_decision_date(yahoo):
         seen.append(date_str)
         return {}, "HOLD"
 
-    eq = api.run_tradingagents("AAPL", "2024-07-01", "2024-07-08", propagate, CAPITAL)
+    eq = api.run_tradingagents("AAPL", "2024-07-01", "2024-07-08", propagate, CAPITAL, no_rf=True)
 
     decision_dates = ["2024-07-01", "2024-07-02", "2024-07-03", "2024-07-05", "2024-07-08"]
     assert [d.strftime("%Y-%m-%d") for d in eq.index] == ["2024-06-28", *decision_dates]  # B2: D-1 of D_0 first
@@ -89,7 +89,7 @@ def test_fill_at_open_of_d_and_pnl_is_open_d_to_open_next(yahoo):
     o = _opens(yahoo, ticker)
     agent = RecordingAgent(actions=["BUY", "HOLD", "SELL", "HOLD"])
 
-    eq = api.run_agent(agent, ticker, days[0], days[-1], CAPITAL)
+    eq = api.run_agent(agent, ticker, days[0], days[-1], CAPITAL, no_rf=True)
 
     assert [d.strftime("%Y-%m-%d") for d in eq.index] == ["2024-05-10", *days]  # B2: initial point at D-1
     shares = CAPITAL / o[_ts(days[0])]  # filled at open(D0)
@@ -117,8 +117,8 @@ def test_open_prices_and_marks_come_from_one_auto_adjust_setting(monkeypatch, tm
     install_fake_yahoo(monkeypatch, tmp_path, yahoo)
     ticker = "AAPL"
     days = ["2024-02-27", "2024-02-28", "2024-02-29", "2024-03-01", "2024-03-04"]
-    agent_eq = api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, days[0], days[-1], CAPITAL)
-    bh_eq = api.run_buy_and_hold(ticker, days[0], days[-1], CAPITAL)
+    agent_eq = api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, days[0], days[-1], CAPITAL, no_rf=True)
+    bh_eq = api.run_buy_and_hold(ticker, days[0], days[-1], CAPITAL, no_rf=True)
 
     used = {call["auto_adjust"] for call in yahoo.download_calls}
     assert len(used) == 1, f"open/close fetched with mixed auto_adjust settings: {used}"
@@ -137,7 +137,7 @@ def test_missing_open_on_decision_day_fails_closed(yahoo, missing_day):
     yahoo.bars[ticker] = bars
 
     with pytest.raises(api.FAIL_CLOSED_ERRORS):
-        api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, "2024-05-13", "2024-05-16", CAPITAL)
+        api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, "2024-05-13", "2024-05-16", CAPITAL, no_rf=True)
 
 
 # --------------------------------------------------------------------------
@@ -164,7 +164,7 @@ CALENDAR_CASES = [
 @pytest.mark.parametrize(("ticker", "day", "cutoff", "why"), CALENDAR_CASES, ids=[c[3] for c in CALENDAR_CASES])
 def test_data_cutoff_is_previous_session_of_ticker_exchange(yahoo, ticker, day, cutoff, why):
     agent = RecordingAgent()
-    api.run_agent(agent, ticker, day, day, CAPITAL)
+    api.run_agent(agent, ticker, day, day, CAPITAL, no_rf=True)
     assert agent.dates == [cutoff], why
     assert agent.windows[0].index.max() == _ts(cutoff), why
 
@@ -184,7 +184,7 @@ def test_calendar_not_vendor_bars_defines_previous_session(yahoo, ticker, day, b
     yahoo.bars[ticker] = bars.sort_index()
     agent = RecordingAgent()
 
-    api.run_agent(agent, ticker, day, day, CAPITAL)
+    api.run_agent(agent, ticker, day, day, CAPITAL, no_rf=True)
 
     assert agent.dates == [cutoff]
     assert agent.windows[0].index.max() == _ts(cutoff)
@@ -200,7 +200,7 @@ def test_missing_vendor_bar_at_previous_session_fails_closed(yahoo, ticker, day,
     agent = RecordingAgent()
 
     with pytest.raises(api.FAIL_CLOSED_ERRORS):
-        api.run_agent(agent, ticker, day, day, CAPITAL)
+        api.run_agent(agent, ticker, day, day, CAPITAL, no_rf=True)
     assert all(d != drop for d in agent.dates)
 
 
@@ -214,7 +214,7 @@ def test_first_day_cutoff_lies_before_window_and_inside_lookback(yahoo, ticker, 
     start, end = "2024-01-02", "2024-01-04"  # PREREG window start
     agent = RecordingAgent()
 
-    eq = api.run_agent(agent, ticker, start, end, CAPITAL)
+    eq = api.run_agent(agent, ticker, start, end, CAPITAL, no_rf=True)
 
     assert eq.index[0] == _ts(cutoff)  # B2: initial-capital point at D-1 of the first session
     assert eq.iloc[0] == CAPITAL
@@ -232,7 +232,7 @@ def test_last_day_exit_price_is_open_of_next_session(yahoo, ticker):
     start, end = "2024-03-25", "2024-03-28"  # PREREG window end
     o = _opens(yahoo, ticker)
 
-    eq = api.run_agent(RecordingAgent(actions=["BUY"]), ticker, start, end, CAPITAL)
+    eq = api.run_agent(RecordingAgent(actions=["BUY"]), ticker, start, end, CAPITAL, no_rf=True)
 
     assert eq.index[-1] == _ts(end)
     assert np.isfinite(eq.iloc[-1])
@@ -242,7 +242,7 @@ def test_last_day_exit_price_is_open_of_next_session(yahoo, ticker):
 def test_last_day_without_next_session_bar_fails_closed(yahoo):
     yahoo.bars["AAPL"] = make_bars("AAPL").drop(index=_ts("2024-04-01"))
     with pytest.raises(api.FAIL_CLOSED_ERRORS):
-        api.run_agent(RecordingAgent(actions=["BUY"]), "AAPL", "2024-03-25", "2024-03-28", CAPITAL)
+        api.run_agent(RecordingAgent(actions=["BUY"]), "AAPL", "2024-03-25", "2024-03-28", CAPITAL, no_rf=True)
 
 
 @pytest.mark.parametrize("ticker", ["AAPL", "PETR4.SA"])
@@ -250,8 +250,8 @@ def test_buy_and_hold_uses_same_open_to_open_convention(yahoo, ticker):
     start, end = "2024-05-13", "2024-05-17"
     o = _opens(yahoo, ticker)
 
-    bh = api.run_buy_and_hold(ticker, start, end, CAPITAL)
-    agent = api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, start, end, CAPITAL)
+    bh = api.run_buy_and_hold(ticker, start, end, CAPITAL, no_rf=True)
+    agent = api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, start, end, CAPITAL, no_rf=True)
 
     assert list(bh.index) == list(agent.index)
     np.testing.assert_allclose(bh.values, agent.values, rtol=1e-12)
@@ -274,7 +274,7 @@ def test_baseline_signal_for_d_uses_only_data_up_to_d_minus_1(yahoo):
     from tradingagents.backtest.runner import run_strategy
 
     o = _opens(yahoo, "AAPL")
-    eq = run_strategy(OneDaySignal(), "AAPL", "2024-05-13", "2024-05-17", CAPITAL)
+    eq = run_strategy(OneDaySignal(), "AAPL", "2024-05-13", "2024-05-17", CAPITAL, no_rf=True)
 
     # Signal on 05-14 -> long from open(05-15) to open(05-16), flat otherwise.
     gain = o[_ts("2024-05-16")] / o[_ts("2024-05-15")]
@@ -289,7 +289,7 @@ def test_baseline_signal_for_d_uses_only_data_up_to_d_minus_1(yahoo):
 
 
 def test_decision_log_records_decision_date_d_and_data_cutoff_d_minus_1(yahoo):
-    eq = api.run_agent(RecordingAgent(), "AAPL", "2024-07-01", "2024-07-08", CAPITAL)
+    eq = api.run_agent(RecordingAgent(), "AAPL", "2024-07-01", "2024-07-08", CAPITAL, no_rf=True)
 
     log = api.decision_log(eq)
     assert list(log[api.DECISION_DATE_FIELD]) == [
@@ -347,9 +347,9 @@ def test_multi_day_run_raises_on_one_bad_day_instead_of_skipping_it(yahoo, ticke
     agent = RecordingAgent(actions=lambda n, d: "HOLD")
 
     with pytest.raises(api.FAIL_CLOSED_ERRORS):
-        api.run_agent(agent, ticker, "2024-02-01", "2024-02-15", CAPITAL)
+        api.run_agent(agent, ticker, "2024-02-01", "2024-02-15", CAPITAL, no_rf=True)
     with pytest.raises(api.FAIL_CLOSED_ERRORS):
-        api.run_buy_and_hold(ticker, "2024-02-01", "2024-02-15", CAPITAL)
+        api.run_buy_and_hold(ticker, "2024-02-01", "2024-02-15", CAPITAL, no_rf=True)
 
 
 @pytest.mark.parametrize("kind", ["missing_open", "missing_bar"])

@@ -28,25 +28,29 @@ def run_agent(
     start: str,
     end: str,
     initial_capital: float = 100_000.0,
-    market: Optional[str] = None,
+    **cash_rate,
 ) -> pd.Series:
+    """cash_rate: market="BR"/"US" or no_rf=True, required by the runner (passed through)."""
     from tradingagents.backtest.runner import run_agent_strategy
 
-    return run_agent_strategy(decide_fn, ticker, start, end, initial_capital, market=market)
+    return run_agent_strategy(decide_fn, ticker, start, end, initial_capital, **cash_rate)
 
 
-def run_buy_and_hold(ticker: str, start: str, end: str, initial_capital: float = 100_000.0) -> pd.Series:
+def run_buy_and_hold(ticker: str, start: str, end: str, initial_capital: float = 100_000.0, **cash_rate) -> pd.Series:
+    """cash_rate: market="BR"/"US" or no_rf=True, required by the runner (passed through)."""
     from tradingagents.backtest.runner import run_buy_and_hold as _bh
 
-    return _bh(ticker, start, end, initial_capital)
+    return _bh(ticker, start, end, initial_capital, **cash_rate)
 
 
-def run_tradingagents(ticker: str, start: str, end: str, propagate_fn, initial_capital: float = 100_000.0):
+def run_tradingagents(ticker: str, start: str, end: str, propagate_fn, initial_capital: float = 100_000.0,
+                      **cash_rate):
+    """cash_rate: market="BR"/"US" or no_rf=True, required by the runner (passed through)."""
     from tradingagents.backtest.agent_integration import run_tradingagents_backtest
 
     return run_tradingagents_backtest(
         ticker=ticker, start=start, end=end, config={}, initial_capital=initial_capital,
-        propagate_fn=propagate_fn,
+        propagate_fn=propagate_fn, **cash_rate,
     )
 
 

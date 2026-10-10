@@ -59,6 +59,7 @@ def test_run_backtest_uses_map_signal_for_verbose_llm_output():
             end="2024-01-31",
             capital=100_000.0,
             run_config=run_backtest.DEFAULT_CONFIG.copy(),
+            market="US",
         )
 
     assert result == "equity-curve"
@@ -101,6 +102,7 @@ def test_run_backtest_counts_unrecognized_verbose_signal_as_decision_error():
             "2024-01-31",
             100_000.0,
             run_config=run_backtest.DEFAULT_CONFIG.copy(),
+            market="US",
         ) == "equity-curve"
     assert captured["market"] == "US"
 
@@ -119,6 +121,7 @@ def test_run_backtest_counts_unrecognized_verbose_signal_as_decision_error():
             "2024-01-04",
             100_000.0,
             run_config=run_backtest.DEFAULT_CONFIG.copy(),
+            market="US",
         )
     assert eq.attrs["n_decision_errors"] == 1
     assert eq.attrs["n_days"] == 3
@@ -136,6 +139,7 @@ def test_run_backtest_returns_none_when_graph_import_unavailable():
             end="2024-01-31",
             capital=100_000.0,
             run_config=run_backtest.DEFAULT_CONFIG.copy(),
+            no_rf=True,
         )
 
     assert result is None

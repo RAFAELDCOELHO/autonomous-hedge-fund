@@ -101,6 +101,16 @@ def make_cell_row(
     if status == "ok":
         if equity is None:
             raise ValueError("ok rows need an equity curve")
+        # Defense in depth (independent of run_backtest's --no-rf/--cells-out guard):
+        # an H1 row needs a curve whose cash earned this market's daily rf. A runner
+        # curve records it in attrs["rf_source"]; "none (--no-rf)", "none" (no_rf=True)
+        # or another market's source is refused.
+        curve_rf = equity.attrs.get("rf_source")
+        if curve_rf is not None and curve_rf != RF_SOURCE[market]:
+            raise ValueError(
+                f"refusing cells.csv row for {symbol}: curve cash rf is {curve_rf!r}, "
+                f"H1 needs {RF_SOURCE[market]} (daily rf); --no-rf / no_rf=True runs are exploratory"
+            )
         metrics = h1_cell_metrics(equity, market)
         # P4.11 B2: the runner curve opens with an initial-capital anchor at D-1, so
         # it has one point more than decisions. n_days = decisions (= returns), which

@@ -16,6 +16,7 @@ import pytest
 
 from tradingagents.backtest.agent_integration import make_decide_fn
 from tradingagents.backtest.calendar import exchange_for, previous_session, sessions
+from tradingagents.backtest.risk_free import market_of
 from tradingagents.backtest.runner import run_agent_strategy
 
 LOAD = "tradingagents.backtest.runner.load_ohlcv"
@@ -81,7 +82,7 @@ def test_decision_sees_only_previous_session_never_d():
     closes = [10.5, 11.5, 12.5, 13.5, 14.5, CLOSE_SENTINEL]
     decide, calls = _recording()
     with patch(LOAD, return_value=_ohlcv(dates, opens, closes)):  # dates[-1]: exit session
-        run_agent_strategy(decide, "X", _ds(dates[1]), _ds(dates[-2]), 1_000.0)
+        run_agent_strategy(decide, "X", _ds(dates[1]), _ds(dates[-2]), 1_000.0, no_rf=True)
 
     window_sessions = dates[1:-1]
     assert len(calls) == len(window_sessions)
@@ -105,7 +106,7 @@ def test_orders_fill_and_mark_at_opens_closes_ignored():
     for closes in ([CLOSE_SENTINEL] * 6, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]):
         decide, _ = _recording(action)
         with patch(LOAD, return_value=_ohlcv(dates, opens, closes)):
-            curves.append(run_agent_strategy(decide, "X", "2024-01-02", "2024-01-05", 1_000.0))
+            curves.append(run_agent_strategy(decide, "X", "2024-01-02", "2024-01-05", 1_000.0, no_rf=True))
 
     eq = curves[0]
     shares = 1_000.0 / 20.0  # capital / Open[first session]
@@ -120,7 +121,7 @@ def test_first_session_d_minus_1_is_the_calendar_previous_session():
     dates = _nyse("2023-12-27", "2024-01-04")  # 12-27, 12-28, 12-29, 01-02, 01-03, exit 01-04
     decide, calls = _recording()
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * 6)):
-        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-03", 1_000.0)
+        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-03", 1_000.0, no_rf=True)
     date, window = calls[0]
     assert date == "2023-12-29"  # 01-01 is an NYSE holiday
     assert window.index.tolist() == list(dates[:3])
@@ -132,7 +133,7 @@ def test_no_pre_window_bar_fails_closed():
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * 3)), pytest.raises(
         ValueError, match=r"X: no vendor bar on 2023-12-29.*look-back must cover"
     ):
-        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-04", 1_000.0)
+        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-04", 1_000.0, no_rf=True)
     assert calls == []
 
 
@@ -141,7 +142,7 @@ def test_missing_d_minus_1_bar_never_slides_back_to_an_older_bar():
     df = _ohlcv(["2023-12-28", "2024-01-02", "2024-01-03"], [10.0] * 3)
     decide, calls = _recording()
     with patch(LOAD, return_value=df), pytest.raises(ValueError, match=r"X: no vendor bar on 2023-12-29"):
-        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-03", 1_000.0)
+        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-03", 1_000.0, no_rf=True)
     assert calls == []
 
 
@@ -151,7 +152,7 @@ def test_missing_window_session_bar_fails_closed():
     with patch(LOAD, return_value=df), pytest.raises(
         ValueError, match=r"X: no vendor bar on session 2024-01-03"
     ):
-        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-05", 1_000.0)
+        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-05", 1_000.0, no_rf=True)
     assert calls == []
 
 
@@ -172,7 +173,7 @@ def test_vendor_bar_on_a_holiday_is_ignored_with_a_warning(ticker, dates, start,
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * len(dates))), caplog.at_level(
         "WARNING", logger="tradingagents.backtest.runner"
     ):
-        eq = run_agent_strategy(decide, ticker, start, end, 1_000.0)
+        eq = run_agent_strategy(decide, ticker, start, end, 1_000.0, no_rf=True)
     assert f"ignoring vendor bars on non-{exchange_for(ticker)} sessions: {holiday}" in caplog.text
     assert pd.Timestamp(holiday) not in eq.index
     assert eq.index[0] == previous_session(ticker, start)  # B2: initial point at D-1
@@ -184,7 +185,7 @@ def test_last_session_is_decided_and_marked_at_the_exit_open():
     dates = _nyse("2023-12-29", "2024-01-05")  # 01-05: exit session after end
     decide, calls = _recording("BUY")
     with patch(LOAD, return_value=_ohlcv(dates, [10.0, 20.0, 30.0, 40.0, 50.0], [5.0] * 5)):
-        eq = run_agent_strategy(decide, "X", "2024-01-02", "2024-01-04", 1_000.0)
+        eq = run_agent_strategy(decide, "X", "2024-01-02", "2024-01-04", 1_000.0, market="US")
     assert eq.index[-1] == dates[-2]
     assert eq.iloc[-1] == pytest.approx(1_000.0 / 20.0 * 50.0)
     assert len(calls) == 3 and calls[-1][0] == _ds(dates[-3])
@@ -208,8 +209,8 @@ def test_duplicate_vendor_dates_fail_closed(dates, dup):
 
     decide, calls = _recording("BUY")
     with patch(LOAD, return_value=_ohlcv(dates, [10.0 + i for i in range(len(dates))])):
-        for run in (lambda: run_agent_strategy(decide, "X", "2024-01-02", "2024-01-02", 1_000.0),
-                    lambda: run_buy_and_hold("X", "2024-01-02", "2024-01-02", 1_000.0)):
+        for run in (lambda: run_agent_strategy(decide, "X", "2024-01-02", "2024-01-02", 1_000.0, no_rf=True),
+                    lambda: run_buy_and_hold("X", "2024-01-02", "2024-01-02", 1_000.0, no_rf=True)):
             with pytest.raises(DataDefectError, match=rf"X: duplicate vendor bars on {dup}"):
                 run()
     assert calls == []
@@ -231,7 +232,7 @@ def test_every_fail_closed_check_is_a_data_defect_error(frame):
     from tradingagents.backtest.snapshot import SnapshotIncomplete
 
     with patch(LOAD, return_value=frame), pytest.raises(DataDefectError):
-        run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-02", 1_000.0)
+        run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-02", 1_000.0, no_rf=True)
     assert issubclass(DataDefectError, ValueError) and issubclass(DataDefectError, LookupError)
     assert issubclass(SnapshotIncomplete, DataDefectError)
 
@@ -241,13 +242,13 @@ def test_missing_exit_session_bar_fails_closed():
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * 4)), pytest.raises(
         ValueError, match=r"X: no vendor bar on 2024-01-05, the exit session"
     ):
-        run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-04", 1_000.0)
+        run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-04", 1_000.0, no_rf=True)
 
 
 def test_missing_open_column_fails_closed():
     df = _ohlcv(_nyse("2023-12-29", "2024-01-03"), [10.0] * 3).drop(columns="Open")
     with patch(LOAD, return_value=df), pytest.raises(ValueError, match="Open"):
-        run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-03", 1_000.0)
+        run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-03", 1_000.0, no_rf=True)
 
 
 @pytest.mark.parametrize("pos, day", [(2, "2024-01-04"), (4, "2024-01-08")])  # decision / exit session
@@ -259,13 +260,13 @@ def test_bad_open_names_ticker_and_date_never_uses_close(bad, pos, day):
     opens[pos] = bad
     df = _ohlcv(dates, opens, [10.0] * 5)
     with patch(LOAD, return_value=df), pytest.raises(ValueError, match=rf"PETR4\.SA.*{day}"):
-        run_agent_strategy(lambda d, w: "BUY", "PETR4.SA", "2024-01-03", "2024-01-05", 1_000.0)
+        run_agent_strategy(lambda d, w: "BUY", "PETR4.SA", "2024-01-03", "2024-01-05", 1_000.0, no_rf=True)
 
 
 def test_runner_loads_prices_unfilled_so_a_missing_open_reaches_the_check():
     dates = _nyse("2023-12-29", "2024-01-03")
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * 3)) as load:
-        run_agent_strategy(lambda d, w: "HOLD", "X", "2024-01-02", "2024-01-02", 1_000.0)
+        run_agent_strategy(lambda d, w: "HOLD", "X", "2024-01-02", "2024-01-02", 1_000.0, no_rf=True)
     load.assert_called_once_with("X", "2024-01-03", fill_prices=False)  # through the exit session
 
 
@@ -273,7 +274,7 @@ def test_monday_decision_uses_previous_friday():
     dates = ["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09", "2024-01-10"]  # Thu..Wed (exit)
     decide, calls = _recording()
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * 5)):
-        run_agent_strategy(decide, "X", "2024-01-05", "2024-01-09", 1_000.0)
+        run_agent_strategy(decide, "X", "2024-01-05", "2024-01-09", 1_000.0, no_rf=True)
     assert [c[0] for c in calls] == ["2024-01-04", "2024-01-05", "2024-01-08"]
     assert calls[1][1].attrs == {"decision_date": "2024-01-08", "data_cutoff": "2024-01-05"}
 
@@ -313,7 +314,7 @@ def test_previous_session_follows_each_tickers_own_calendar(start, end, frames, 
     for ticker in frames:
         decide, calls = _recording()
         with patch(LOAD, side_effect=lambda t, *_a, **_k: data[t]):
-            eq = run_agent_strategy(decide, ticker, start, end, 1_000.0)
+            eq = run_agent_strategy(decide, ticker, start, end, 1_000.0, market=market_of(ticker))
         assert [c[0] for c in calls] == expected[ticker]
         # Logs record the decision as D and its cutoff as the calendar D-1.
         log = eq.attrs["decision_log"]
@@ -334,7 +335,7 @@ def test_decision_log_records_action_and_error_per_session():
 
     decide, _ = _recording(action)
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * 6)):
-        eq = run_agent_strategy(decide, "X", "2024-01-02", "2024-01-05", 1_000.0)
+        eq = run_agent_strategy(decide, "X", "2024-01-02", "2024-01-05", 1_000.0, market="US")
     assert eq.attrs["decision_log"] == [
         {"decision_date": "2024-01-02", "data_cutoff": "2023-12-29", "action": "BUY", "error": False},
         {"decision_date": "2024-01-03", "data_cutoff": "2024-01-02", "action": "HOLD", "error": True},
@@ -351,8 +352,8 @@ def test_buy_and_hold_is_the_always_buy_agent():
     opens = [9.0, 10.0, 12.0, 11.0, 15.0, 16.0]
     df = _ohlcv(dates, opens, [CLOSE_SENTINEL] * 6)
     with patch(LOAD, return_value=df):
-        bh = run_buy_and_hold("X", "2024-01-02", "2024-01-05", 1_000.0)
-        agent = run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-05", 1_000.0)
+        bh = run_buy_and_hold("X", "2024-01-02", "2024-01-05", 1_000.0, no_rf=True)
+        agent = run_agent_strategy(lambda d, w: "BUY", "X", "2024-01-02", "2024-01-05", 1_000.0, no_rf=True)
     assert bh.index.equals(agent.index)
     assert bh.tolist() == pytest.approx(agent.tolist(), rel=1e-12)
     assert bh.iloc[0] == 1_000.0  # B2: initial point
@@ -370,7 +371,7 @@ def test_make_decide_fn_propagates_previous_session_dates_only():
 
     with patch(LOAD, return_value=_ohlcv(dates, [10.0] * 6)):
         run_agent_strategy(make_decide_fn("AAPL", {}, propagate_fn=propagate), "AAPL",
-                           "2024-01-02", "2024-01-05", 1_000.0)
+                           "2024-01-02", "2024-01-05", 1_000.0, no_rf=True)
     assert seen == [_ds(d) for d in dates[:-2]]
 
 
@@ -389,7 +390,7 @@ def test_make_decide_fn_real_graph_gets_cutoff_as_trade_date_and_d_as_decision_d
     with patch("tradingagents.graph.trading_graph.TradingAgentsGraph", FakeGraph), patch(
         LOAD, return_value=_ohlcv(dates, [10.0] * 5)
     ):
-        run_agent_strategy(make_decide_fn("AAPL", {}), "AAPL", "2024-01-02", "2024-01-04", 1_000.0)
+        run_agent_strategy(make_decide_fn("AAPL", {}), "AAPL", "2024-01-02", "2024-01-04", 1_000.0, no_rf=True)
     assert seen == [(_ds(p), _ds(d)) for p, d in pairwise(dates[:-1])]
 
 
@@ -471,7 +472,7 @@ def test_get_stock_data_at_runner_date_hides_session_d():
     with patch(LOAD, return_value=df), patch(
         "tradingagents.agents.utils.core_stock_tools.route_to_vendor", side_effect=vendor
     ):
-        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-05", 1_000.0)
+        run_agent_strategy(decide, "X", "2024-01-02", "2024-01-05", 1_000.0, no_rf=True)
 
     assert len(texts) == 4
     assert "13.5" in texts[-1]  # D-1's close is visible to the decision for D

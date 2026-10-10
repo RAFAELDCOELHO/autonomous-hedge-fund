@@ -111,7 +111,7 @@ class RunnerTests(unittest.TestCase):
         with patch("tradingagents.backtest.runner.load_ohlcv") as load:
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
-            eq = run_strategy(BuyAndHold(), "AAPL", "2024-01-02", str(prices.index[-2].date()), 1_000.0)
+            eq = run_strategy(BuyAndHold(), "AAPL", "2024-01-02", str(prices.index[-2].date()), 1_000.0, no_rf=True)
         self.assertEqual(len(eq), 21)  # B2: initial-capital point + 20 decisions
         self.assertEqual(eq.iloc[0], 1_000.0)
         # Bought at Open[first session] 101, marked at the exit open 121.
@@ -130,7 +130,7 @@ class RunnerTests(unittest.TestCase):
         df = prices.rename_axis("Date").reset_index()
         with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
             for strategy in (BuyAndHold(), SMACrossStrategy(), MACDStrategy()):
-                eq = run_strategy(strategy, "X", str(start.date()), str(end.date()), 1_000.0)
+                eq = run_strategy(strategy, "X", str(start.date()), str(end.date()), 1_000.0, no_rf=True)
                 # B2: initial-capital point at D-1 of start, then the 60 decisions.
                 self.assertEqual(eq.index[0], prices.index[299])
                 self.assertEqual(eq.iloc[0], 1_000.0)
@@ -157,7 +157,7 @@ class RunnerTests(unittest.TestCase):
                     return "SELL"
                 return "HOLD"
 
-            eq = run_agent_strategy(decider, "AAPL", "2024-01-02", end, 1_000.0)
+            eq = run_agent_strategy(decider, "AAPL", "2024-01-02", end, 1_000.0, no_rf=True)
         # Bought at Open 101, sold at Open 109 → final cash = 1000 * 109/101
         self.assertAlmostEqual(eq.iloc[-1], 1_000.0 * 109.0 / 101.0, places=6)
 
@@ -167,7 +167,7 @@ class RunnerTests(unittest.TestCase):
             df = prices.reset_index().rename(columns={"index": "Date"})
             load.return_value = df
             eq = run_agent_strategy(lambda d, w: "HOLD", "AAPL", "2024-01-02",
-                                    str(prices.index[-2].date()), 500.0)
+                                    str(prices.index[-2].date()), 500.0, no_rf=True)
         self.assertTrue(np.allclose(eq.values, 500.0))
 
     def test_run_agent_strategy_decider_exception_falls_back_to_hold(self):
@@ -185,7 +185,7 @@ class RunnerTests(unittest.TestCase):
                 return "HOLD"
 
             eq = run_agent_strategy(flaky_decider, "AAPL", "2024-01-02",
-                                    str(prices.index[-2].date()), 500.0)
+                                    str(prices.index[-2].date()), 500.0, no_rf=True)
         window = prices.index[1:-1]
         self.assertEqual(call_count["n"], len(window))
         self.assertEqual(len(eq), len(window) + 1)  # B2: initial point + one per decision

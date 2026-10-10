@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, Optional
 
 import pandas as pd
 
+from .cash_rate import _REQUIRED, _cash_rate
 from .runner import run_agent_strategy
 
 
@@ -178,7 +179,9 @@ def run_tradingagents_backtest(
     initial_capital: float = 100_000.0,
     propagate_fn: Optional[Callable[[str, str], tuple]] = None,
     debug: bool = False,
-    market: Optional[str] = None,
+    market: Optional[str] = _REQUIRED,
+    *,
+    no_rf: bool = False,
 ) -> pd.Series:
     """Run a day-by-day backtest of TradingAgents over [start, end].
 
@@ -196,13 +199,16 @@ def run_tradingagents_backtest(
             depending on ticker).
         propagate_fn: Optional mock for testing without API calls.
         debug: Forwarded to TradingAgentsGraph when propagate_fn is None.
-        market: "BR"/"US" makes cash earn that market's rf (H1 path);
-            None keeps cash at 0%.
+        market: "BR"/"US" makes cash earn that market's rf (H1 path).
+        no_rf: keyword-only explicit 0% cash. Exactly one of market / no_rf=True
+            is required (runner._cash_rate): neither -> TypeError, both ->
+            ValueError, checked before the graph is built or prices load.
 
     Returns:
         pd.Series of daily equity values indexed by date. Feed this
         directly to ExtendedMetricsCalculator.compute().
     """
+    _cash_rate(market, no_rf)  # fail closed before building the graph
     decide_fn = make_decide_fn(
         ticker=ticker,
         config=config,
@@ -216,4 +222,5 @@ def run_tradingagents_backtest(
         end=end,
         initial_capital=initial_capital,
         market=market,
+        no_rf=no_rf,
     )

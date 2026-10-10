@@ -39,7 +39,7 @@ def _run_tool_on_day(monkeypatch, tmp_path, yahoo: FakeYahoo, ticker: str, day: 
     install_fake_yahoo(monkeypatch, tmp_path, yahoo)
     outputs: list[str] = []
     agent = RecordingAgent(on_call=lambda date: outputs.append(str(tool_call(date))))
-    api.run_agent(agent, ticker, day, day, 100_000.0)
+    api.run_agent(agent, ticker, day, day, 100_000.0, no_rf=True)
     assert not agent.errors, agent.errors
     assert len(outputs) == 1
     return agent.dates[0], outputs[0]
