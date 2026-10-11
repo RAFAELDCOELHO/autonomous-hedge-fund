@@ -6,7 +6,9 @@ exchange calendar (calendar.py):
 
 - each session D in [start, end] needs a bar with a finite positive Open;
 - the D-1 of the first session needs a bar (the agent's first cutoff);
-- the session after ``end`` (the exit) needs a bar with a finite positive Open.
+- the session after ``end`` (the exit) needs a bar with a finite positive Open;
+- no vendor date up to the exit session may appear twice (the runner raises on
+  a duplicate anywhere in the frame it loads, look-back included).
 
 Vendor bars on non-sessions are ignored, so a holiday on only one exchange is
 never flagged for the other. Bars are loaded through the runner's own vendor
@@ -30,17 +32,20 @@ from .runner import DataDefectError
 
 FIELD_BAR = "bar"
 FIELD_OPEN = "Open"
+FIELD_DUPLICATE = "duplicate"
+_DESCRIBE = {FIELD_BAR: "no bar", FIELD_OPEN: "Open missing/NaN/<=0", FIELD_DUPLICATE: "duplicate vendor bars"}
 
 
 class SnapshotIncomplete(DataDefectError):
     """Raised by validate_snapshot.
 
-    ``missing`` lists every gap as ``(ticker, "YYYY-MM-DD", "bar" | "Open")``.
+    ``missing`` lists every defect as ``(ticker, "YYYY-MM-DD", "bar" | "Open" | "duplicate")``,
+    duplicates first for each ticker (one entry per duplicated date).
     """
 
     def __init__(self, missing: list[tuple[str, str, str]]):
         self.missing = missing
-        lines = [f"{t} {d}: {'no bar' if f == FIELD_BAR else 'Open missing/NaN/<=0'}" for t, d, f in missing]
+        lines = [f"{t} {d}: {_DESCRIBE[f]}" for t, d, f in missing]
         super().__init__(f"{len(missing)} missing snapshot item(s):\n" + "\n".join(lines))
 
 
@@ -90,6 +95,10 @@ def validate_snapshot(
         first_prev = previous_session(ticker, window[0])
         exit_day = next_session(ticker, window[-1])
         frame = _frame(ticker, exit_day, prices_by_ticker)
+        if frame is not None:  # same rule as runner._execution_plan, but list them all
+            upto = frame.index[frame.index <= exit_day]
+            for day in upto[upto.duplicated()].unique().sort_values():
+                missing.append((ticker, day.strftime("%Y-%m-%d"), FIELD_DUPLICATE))
         checks = [(first_prev, False)] + [(d, True) for d in window] + [(exit_day, True)]
         for day, needs_open in checks:
             key = day.strftime("%Y-%m-%d")

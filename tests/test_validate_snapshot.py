@@ -78,3 +78,58 @@ def test_one_exchange_holiday_is_flagged_only_on_the_other(holiday_of, days, fla
     with pytest.raises(SnapshotIncomplete) as exc:
         _check(prices, tickers)
     assert exc.value.missing == [(flagged, d, "bar") for d in days]
+
+
+def _with_duplicate(frame: pd.DataFrame, day: str) -> pd.DataFrame:
+    return pd.concat([frame, frame.loc[[pd.Timestamp(day)]]]).sort_index()
+
+
+def test_single_duplicate_vendor_date_is_a_listed_defect():
+    prices = _snapshot()
+    prices["AAPL"] = _with_duplicate(prices["AAPL"], "2024-02-07")
+
+    with pytest.raises(SnapshotIncomplete) as exc:
+        _check(prices)
+    assert exc.value.missing == [("AAPL", "2024-02-07", "duplicate")]
+    assert "duplicate vendor bars" in str(exc.value)
+    assert isinstance(exc.value, ValueError) and isinstance(exc.value, LookupError)
+
+
+def test_duplicates_on_two_tickers_are_all_listed():
+    prices = _snapshot()
+    prices["AAPL"] = _with_duplicate(_with_duplicate(prices["AAPL"], "2024-01-03"), "2024-03-28")
+    prices["PETR4.SA"] = _with_duplicate(prices["PETR4.SA"], "2023-12-28")  # first D-1 (look-back)
+    prices["VALE3.SA"] = _with_duplicate(prices["VALE3.SA"], "2024-04-01")  # exit session
+    prices["VALE3.SA"] = prices["VALE3.SA"].drop(pd.Timestamp("2024-02-20"))  # plus a plain gap
+
+    with pytest.raises(SnapshotIncomplete) as exc:
+        _check(prices)
+    assert sorted(exc.value.missing) == sorted([
+        ("AAPL", "2024-01-03", "duplicate"),
+        ("AAPL", "2024-03-28", "duplicate"),
+        ("PETR4.SA", "2023-12-28", "duplicate"),
+        ("VALE3.SA", "2024-04-01", "duplicate"),
+        ("VALE3.SA", "2024-02-20", "bar"),
+    ])
+
+
+def test_duplicate_after_the_exit_session_is_ignored_and_clean_snapshot_passes():
+    prices = _snapshot()
+    prices["AAPL"] = _with_duplicate(prices["AAPL"], "2024-04-15")  # after exit: never loaded by the runner
+    assert len(_check(prices)) == 9
+
+
+def test_runner_and_snapshot_agree_on_a_duplicate():
+    """The runner already fails closed on the same duplicate (runner._execution_plan)."""
+    from unittest.mock import patch
+
+    from tradingagents.backtest.runner import DataDefectError, run_agent_strategy
+
+    frame = _with_duplicate(_frame(), "2024-02-07").rename_axis("Date").reset_index()
+    with patch("tradingagents.backtest.runner.load_ohlcv", return_value=frame), pytest.raises(
+        DataDefectError, match="duplicate vendor bars on 2024-02-07"
+    ):
+        run_agent_strategy(lambda d, w: "HOLD", "AAPL", PREREG_WINDOW_START, PREREG_WINDOW_END, 1_000.0)
+    with pytest.raises(SnapshotIncomplete) as exc:
+        _check({"AAPL": frame}, ["AAPL"])
+    assert exc.value.missing == [("AAPL", "2024-02-07", "duplicate")]

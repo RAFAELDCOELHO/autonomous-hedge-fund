@@ -44,9 +44,11 @@ def _published_in_window(article: dict, start_date: str | None, end_date: str) -
     """Look-ahead guard shared by the ticker and global paths (P4.11).
 
     Kept: start_date 00:00 UTC <= pub < (end_date + 1 day) 00:00 UTC, i.e. strictly
-    before midnight UTC at the start of the day after end_date. With end_date = D-1
-    that is ``pub < D 00:00:00 UTC``. Items with no parseable publication instant
-    are dropped (same as insider rows with no date).
+    before midnight UTC at the start of the calendar day after end_date. With
+    end_date = D-1 (previous session) that is ``pub < (D-1 + 1 day) 00:00:00 UTC``,
+    which equals D 00:00 UTC only when D follows D-1 on the calendar (after a
+    Friday or a pre-holiday session it is earlier: conservative). Items with no
+    parseable publication instant are dropped (same as insider rows with no date).
     """
     pub = _parse_pub_date(article)
     if pub is None:
