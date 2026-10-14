@@ -192,7 +192,7 @@ def run_strategy(
     def decide(_day, cutoff):
         return ("BUY" if sig.loc[cutoff] else "SELL"), False
 
-    return _simulate_open(ticker, days, opens, decide, initial_capital, market, no_rf=market is None)
+    return _simulate_open(ticker, days, opens, decide, initial_capital, market, no_rf=no_rf)
 
 
 def run_buy_and_hold(
@@ -260,7 +260,7 @@ def run_agent_strategy(
             logger.warning("agent decide_fn failed on %s: %s", day, e)
             return "HOLD", True
 
-    out = _simulate_open(ticker, days, opens, decide, initial_capital, market, no_rf=market is None)
+    out = _simulate_open(ticker, days, opens, decide, initial_capital, market, no_rf=no_rf)
     n_days = len(out.attrs["decision_log"])
     n_decision_errors = sum(e["error"] for e in out.attrs["decision_log"])
     exceeded = n_days == 0 or n_decision_errors / n_days > MAX_DECISION_ERROR_RATE
