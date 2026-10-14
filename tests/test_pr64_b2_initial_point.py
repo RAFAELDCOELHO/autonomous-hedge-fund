@@ -78,8 +78,8 @@ def test_prereg_curve_has_61_open_to_open_returns_for_61_decisions(yahoo, ticker
     days = _prereg_sessions(ticker)
     o = yahoo.frame(ticker, True)["Open"].astype(float)
 
-    eq = api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, start, end, CAPITAL)
-    bh = api.run_buy_and_hold(ticker, start, end, CAPITAL)
+    eq = api.run_agent(RecordingAgent(actions=lambda n, d: "BUY"), ticker, start, end, CAPITAL, market=market)
+    bh = api.run_buy_and_hold(ticker, start, end, CAPITAL, market=market)
 
     marks = [*days, pd.Timestamp(EXIT_SESSION)]
     expected = [o[marks[i + 1]] / o[marks[i]] - 1 for i in range(61)]

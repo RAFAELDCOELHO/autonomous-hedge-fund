@@ -42,11 +42,12 @@ def _frame(dates, opens):
     return pd.DataFrame({"Date": dates, "Open": opens, "Close": opens})
 
 
-def _run(decider, dates, market=None, capital=1_000.0):
+def _run(decider, dates, capital=1_000.0, **cash_rate):
+    """cash_rate: market="US" or no_rf=True, required by the runner (passed through)."""
     df = _frame(dates, list(np.linspace(100.0, 110.0, len(dates))))
     with patch("tradingagents.backtest.runner.load_ohlcv", return_value=df):
         return run_agent_strategy(decider, "X", str(dates[0].date()), str(dates[-1].date()),
-                                  capital, market=market)
+                                  capital, **cash_rate)
 
 
 def test_committed_snapshots_pass_sha_check():
@@ -94,7 +95,16 @@ def test_cash_earns_rf_and_has_zero_excess_sharpe():
     assert len(rf) == len(US_DATES)
     assert eq.to_numpy() == pytest.approx(1_000.0 * np.cumprod([1.0, *(1 + rf)]), rel=1e-12)
     assert h1_cell_metrics(eq, "US")["sharpe"] == 0.0
-    assert np.allclose(_run(lambda d, w: "HOLD", US_DATES).to_numpy(), 1_000.0)
+    assert np.allclose(_run(lambda d, w: "HOLD", US_DATES, no_rf=True).to_numpy(), 1_000.0)
+    # The negative control above cannot pass vacuously: the window's daily rf is
+    # strictly positive on every interval, the first (anchor D-1 -> D_0) included ...
+    assert rf.index.equals(eq.index[1:])
+    assert rf.iloc[0] > 0 and (rf > 0).all()
+    # ... and the strict pair: same window, same all-cash run, real market vs no_rf.
+    flat = _run(lambda d, w: "HOLD", US_DATES, no_rf=True)
+    assert flat.index.equals(eq.index)
+    assert eq.iloc[0] == flat.iloc[0] == 1_000.0  # anchor = CAPITAL in both
+    assert (eq.to_numpy()[1:] > flat.to_numpy()[1:]).all()
 
 
 def test_sharpe_is_on_excess_return_over_daily_rf():
@@ -127,6 +137,8 @@ def test_decision_errors_are_counted_and_exported_for_cells_csv():
             {"decision_date": "2024-01-18", "data_cutoff": "2024-01-17", "action": "HOLD", "error": True},
         ],
         "data_cutoff": "2024-01-11",  # D-1 of the first session (cells.csv data_cutoff)
+        "rf_market": "US",  # cash earned the US daily rf (report.py H1 Sharpe column)
+        "rf_source": "FRED-DTB3",  # report caption "Cash rf: ..."
     }
     # B2: metrics.py is unchanged, so h1_cell_metrics counts curve points (4 decisions +
     # the D-1 anchor = 5); the cells.csv row carries n_days = decisions = 4.
@@ -144,7 +156,7 @@ def test_error_limit_is_exclusive_at_5_percent(n_errors, exceeded, caplog):
     dates = sessions("X", "2024-01-02", "2024-02-15")[:20]
     bad = {d.strftime("%Y-%m-%d") for d in dates[:n_errors]}
     with caplog.at_level("WARNING", logger="tradingagents.backtest.runner"):
-        eq = _run(lambda d, w: "MAYBE" if d in bad else "HOLD", dates)
+        eq = _run(lambda d, w: "MAYBE" if d in bad else "HOLD", dates, market="US")
     assert eq.attrs["n_days"] == 20 and eq.attrs["n_decision_errors"] == n_errors
     assert eq.attrs["decision_errors_exceed_limit"] is exceeded
     assert ("exclusion rule E4" in caplog.text) is exceeded

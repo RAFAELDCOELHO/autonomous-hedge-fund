@@ -129,7 +129,7 @@ def test_runner_and_snapshot_agree_on_a_duplicate():
     with patch("tradingagents.backtest.runner.load_ohlcv", return_value=frame), pytest.raises(
         DataDefectError, match="duplicate vendor bars on 2024-02-07"
     ):
-        run_agent_strategy(lambda d, w: "HOLD", "AAPL", PREREG_WINDOW_START, PREREG_WINDOW_END, 1_000.0)
+        run_agent_strategy(lambda d, w: "HOLD", "AAPL", PREREG_WINDOW_START, PREREG_WINDOW_END, 1_000.0, no_rf=True)
     with pytest.raises(SnapshotIncomplete) as exc:
         _check({"AAPL": frame}, ["AAPL"])
     assert exc.value.missing == [("AAPL", "2024-02-07", "duplicate")]

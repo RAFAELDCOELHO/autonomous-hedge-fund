@@ -21,7 +21,8 @@ import pandas as pd
 from tradingagents.dataflows.stockstats_utils import load_ohlcv
 
 from .calendar import exchange_for, next_session, previous_session, sessions
-from .risk_free import daily_rf
+from .cash_rate import _REQUIRED, _cash_rate
+from .risk_free import RF_SOURCE, daily_rf
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,12 @@ def _simulate_open(ticker, days, opens, decide, initial_capital, market=None) ->
     initial_day = previous_session(ticker, days[0])
     cutoffs = [initial_day, *days[:-1]]  # every session has a bar: checked
     index = pd.DatetimeIndex([initial_day, *days])
-    rf = daily_rf(market, index) if market else None
+    rf = None
+    if market:
+        try:
+            rf = daily_rf(market, index)
+        except ValueError as exc:  # rf needed but not available: fail closed, never 0% cash
+            raise DataDefectError(f"{ticker}: no daily rf for this run ({exc})") from exc
     cash = float(initial_capital)
     shares = 0.0
     equity = [float(initial_capital)]
@@ -145,6 +151,8 @@ def _simulate_open(ticker, days, opens, decide, initial_capital, market=None) ->
         information_cutoff="previous session close",
         decision_log=decision_log,
         data_cutoff=decision_log[0]["data_cutoff"],
+        rf_market=market,  # cash earned daily_rf(market) on every interval; None = 0%
+        rf_source=RF_SOURCE[market] if market else "none",
     )
     return out
 
@@ -155,6 +163,9 @@ def run_strategy(
     start: str,
     end: str,
     initial_capital: float = 100_000.0,
+    market: Optional[str] = _REQUIRED,
+    *,
+    no_rf: bool = False,
 ) -> pd.Series:
     """A baseline under the decision-before-the-open convention (_simulate_open).
 
@@ -162,19 +173,37 @@ def run_strategy(
     the last session (indicator warm-up included, nothing dated D_n or later)
     and the signal at D-1 sets the position taken at Open[D]: True buys,
     False sells. Buy & Hold therefore buys at Open[first session].
+
+    Cash rate, REQUIRED (exactly one of):
+    - market ("BR"/"US"): cash earns the same lagged daily_rf as the agent arm
+      (_simulate_open), so baseline and agent are compared on equal terms;
+      outside the data/rf snapshot this raises DataDefectError (fail closed);
+    - no_rf=True: the explicit 0%-cash opt-out (attrs["rf_source"] = "none"),
+      which run_backtest.py uses only under --no-rf, for every strategy of the run.
+    Neither raises TypeError and both raise ValueError, before any data is loaded.
     """
+    market = _cash_rate(market, no_rf)
     frame, days, opens = _execution_plan(ticker, start, end)
     sig = strategy.signals(frame.loc[: previous_session(ticker, days[-1])]).astype(bool)
 
     def decide(_day, cutoff):
         return ("BUY" if sig.loc[cutoff] else "SELL"), False
 
-    return _simulate_open(ticker, days, opens, decide, initial_capital)
+    return _simulate_open(ticker, days, opens, decide, initial_capital, market)
 
 
-def run_buy_and_hold(ticker: str, start: str, end: str, initial_capital: float = 100_000.0) -> pd.Series:
+def run_buy_and_hold(
+    ticker: str,
+    start: str,
+    end: str,
+    initial_capital: float = 100_000.0,
+    market: Optional[str] = _REQUIRED,
+    *,
+    no_rf: bool = False,
+) -> pd.Series:
+    """Buy & Hold via run_strategy; the cash rate is required as there (market or no_rf=True)."""
     from .baselines import BuyAndHold
-    return run_strategy(BuyAndHold(), ticker, start, end, initial_capital)
+    return run_strategy(BuyAndHold(), ticker, start, end, initial_capital, market=market, no_rf=no_rf)
 
 
 def run_agent_strategy(
@@ -183,7 +212,9 @@ def run_agent_strategy(
     start: str,
     end: str,
     initial_capital: float = 100_000.0,
-    market: Optional[str] = None,
+    market: Optional[str] = _REQUIRED,
+    *,
+    no_rf: bool = False,
 ) -> pd.Series:
     """Run a day-by-day agent loop with full-position sizing (P4.11).
 
@@ -203,7 +234,12 @@ def run_agent_strategy(
     "previous session close", decision_log (one {"decision_date": D,
     "data_cutoff": D-1, "action", "error"} per session, ISO dates) and
     data_cutoff (D-1 of the first session, the cells.csv data_cutoff).
+
+    Cash rate, REQUIRED as for the baselines (run_strategy): market="BR"/"US"
+    (daily rf, fails closed outside data/rf) or the explicit no_rf=True (0%).
+    Neither (or market=None) raises TypeError, both ValueError, before any load.
     """
+    market = _cash_rate(market, no_rf)
     frame, days, opens = _execution_plan(ticker, start, end)
 
     def decide(day, cutoff):
