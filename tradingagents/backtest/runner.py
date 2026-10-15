@@ -93,7 +93,7 @@ def _execution_plan(ticker: str, start: str, end: str):
     return frame, exec_days[:-1], opens
 
 
-def _simulate_open(ticker, days, opens, decide, initial_capital, market=None) -> pd.Series:
+def _simulate_open(ticker, days, opens, decide, initial_capital, market=_REQUIRED, *, no_rf=False) -> pd.Series:
     """Full-position open-to-open simulation over the decision sessions `days`.
 
     decide(day, cutoff) -> (action, error) with cutoff = D-1. The order fills
@@ -112,8 +112,11 @@ def _simulate_open(ticker, days, opens, decide, initial_capital, market=None) ->
     interval included. That is the per-label rf h1_cell_metrics subtracts from
     the return equity[prev] -> equity[D_i], so an all-cash run has exactly zero
     excess Sharpe. The rate is lagged one session (the CDI/DTB3 rate of
-    prev -> D_i, applied over Open[D_i] -> Open[D_{i+1}]). None keeps cash at 0%.
+    prev -> D_i, applied over Open[D_i] -> Open[D_{i+1}]). The cash rate is
+    REQUIRED here too (_cash_rate): market=None without no_rf=True raises
+    TypeError, so an internal caller can never fall back to 0% cash silently.
     """
+    market = _cash_rate(market, no_rf)
     initial_day = previous_session(ticker, days[0])
     cutoffs = [initial_day, *days[:-1]]  # every session has a bar: checked
     index = pd.DatetimeIndex([initial_day, *days])
@@ -189,7 +192,7 @@ def run_strategy(
     def decide(_day, cutoff):
         return ("BUY" if sig.loc[cutoff] else "SELL"), False
 
-    return _simulate_open(ticker, days, opens, decide, initial_capital, market)
+    return _simulate_open(ticker, days, opens, decide, initial_capital, market, no_rf=no_rf)
 
 
 def run_buy_and_hold(
@@ -257,7 +260,7 @@ def run_agent_strategy(
             logger.warning("agent decide_fn failed on %s: %s", day, e)
             return "HOLD", True
 
-    out = _simulate_open(ticker, days, opens, decide, initial_capital, market)
+    out = _simulate_open(ticker, days, opens, decide, initial_capital, market, no_rf=no_rf)
     n_days = len(out.attrs["decision_log"])
     n_decision_errors = sum(e["error"] for e in out.attrs["decision_log"])
     exceeded = n_days == 0 or n_decision_errors / n_days > MAX_DECISION_ERROR_RATE
