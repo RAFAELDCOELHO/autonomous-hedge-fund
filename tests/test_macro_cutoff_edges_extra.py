@@ -61,7 +61,7 @@ def test_daily_series_strict_cutoff_at_first_observation(tool):
     assert rows == ["2024-01-02 00:00:00"]
 
 
-def test_ipca_release_visible_when_published_exactly_on_d_minus_2():
+def test_ipca_release_visible_when_on_d_minus_2():
     # Apr/2024 IPCA is treated as published on 2024-05-15.
     # With trade_date 2024-05-16 (runner D-1), this publication date is D-2.
     rows = _rows(get_inflation.invoke({"trade_date": "2024-05-16", "last_months": 2}))
@@ -70,7 +70,7 @@ def test_ipca_release_visible_when_published_exactly_on_d_minus_2():
     assert "2024-05-01 00:00:00" not in rows
 
 
-def test_gdp_release_visible_when_published_exactly_on_d_minus_2():
+def test_gdp_release_visible_when_on_d_minus_2():
     # 2023Q4 (dated 2023-04-01 in this fixture) is known from 2024-03-30.
     # On trade_date 2024-03-31 (runner D-1), publication date 2024-03-30 is D-2.
     rows = _rows(get_gdp.invoke({"trade_date": "2024-03-31", "last_quarters": 2}))
