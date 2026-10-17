@@ -1,5 +1,5 @@
 {
-  "_provenance": "Synthetic Alpha Vantage-style OVERVIEW payload, hand-written for offline characterization tests; not a recording. Created 2026-10-17.",
+  "_provenance": "Synthetic Alpha Vantage-style OVERVIEW payload, synthetic, based on public AAPL figures, for offline characterization tests; not a recording. Created 2026-10-17.",
   "Symbol": "AAPL",
   "AssetType": "Common Stock",
   "Name": "Apple Inc",

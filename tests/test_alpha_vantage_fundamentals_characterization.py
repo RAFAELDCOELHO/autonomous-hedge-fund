@@ -76,9 +76,20 @@ def test_characterization_tool_forwards_earlier_model_date_to_vendor(monkeypatch
     assert out == "AAPL:2026-10-14"
 
 
-@pytest.mark.xfail(strict=True, reason="AV OVERVIEW is not point-in-time; leak tracked in #63")
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="AV OVERVIEW is not point-in-time; leak tracked in #63",
+)
 def test_characterization_expected_date_aware_vendor_would_change_output(monkeypatch):
+    """Secondary alarm: snapshot is primary; this xfail tracks date-awareness regressions."""
+    forwarded_non_symbol_params = []
+
     def _date_aware_vendor(function_name: str, params: dict) -> str:
+        # Record every forwarded request param except the required symbol key.
+        forwarded_non_symbol_params.append(
+            {key: value for key, value in params.items() if key != "symbol"}
+        )
         # A point-in-time OVERVIEW path would need a date/as-of input and vary by it.
         return json.dumps(
             {"function": function_name, "symbol": params.get("symbol"), "as_of": params.get("curr_date")},
@@ -90,4 +101,8 @@ def test_characterization_expected_date_aware_vendor_would_change_output(monkeyp
     out_early = alpha_vantage_fundamentals.get_fundamentals("AAPL", "2026-10-14")
     out_late = alpha_vantage_fundamentals.get_fundamentals("AAPL", "2026-10-17")
 
-    assert out_early != out_late
+    forwarded_keys = {key for payload in forwarded_non_symbol_params for key in payload}
+    assert out_early != out_late or bool(forwarded_keys), (
+        "Expected date-aware behavior (different output by curr_date) or forwarded non-symbol params; "
+        f"forwarded keys were: {sorted(forwarded_keys)}"
+    )
