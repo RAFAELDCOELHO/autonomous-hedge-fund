@@ -63,7 +63,7 @@ def test_daily_series_strict_cutoff_at_first_observation(tool):
 
 def test_ipca_release_visible_when_published_exactly_on_d_minus_1():
     # Apr/2024 IPCA is treated as published on 2024-05-15.
-    # With trade_date 2024-05-16 (D-1 in runner terms), that release is exactly D-1.
+    # With trade_date 2024-05-16 (runner D-1), this publication date is D-2.
     rows = _rows(get_inflation.invoke({"trade_date": "2024-05-16", "last_months": 2}))
     assert "2024-04-01 00:00:00" in rows
     # The next month must not be visible at this boundary.
@@ -72,7 +72,7 @@ def test_ipca_release_visible_when_published_exactly_on_d_minus_1():
 
 def test_gdp_release_visible_when_published_exactly_on_d_minus_1():
     # 2023Q4 (dated 2023-04-01 in this fixture) is known from 2024-03-30.
-    # On trade_date 2024-03-31 (D-1 in runner terms), publication is exactly D-1.
+    # On trade_date 2024-03-31 (runner D-1), publication date 2024-03-30 is D-2.
     rows = _rows(get_gdp.invoke({"trade_date": "2024-03-31", "last_quarters": 2}))
     assert "2023Q4" in rows
     # The next quarter must not be visible at this boundary.
@@ -105,9 +105,9 @@ def test_empty_upstream_series_returns_clear_message(monkeypatch):
 
     class _EmptyIBGE:
         def pib(self, last=8):
-            # Keep one old quarter so this test focuses on "empty from cutoff"
-            # behavior in Bacen-backed tools, not on GDP's separate empty-index path.
-            idx = pd.DatetimeIndex(["2020-01-01"])
+            # Keep the frame non-empty while ensuring all quarters are unpublished
+            # by the cutoff, so the GDP path returns the standard no-data message.
+            idx = pd.DatetimeIndex(["2024-04-01"])
             return _Series(pd.DataFrame({"value": [1.0]}, index=idx))
 
     monkeypatch.setattr(macro_tools, "Bacen", _EmptyBacen)
@@ -120,5 +120,8 @@ def test_empty_upstream_series_returns_clear_message(monkeypatch):
         "No data available before trade_date=2024-06-12."
     )
     assert get_inflation.invoke({"trade_date": "2024-06-12", "last_months": 3}) == (
+        "No data available before trade_date=2024-06-12."
+    )
+    assert get_gdp.invoke({"trade_date": "2024-06-12", "last_quarters": 3}) == (
         "No data available before trade_date=2024-06-12."
     )
