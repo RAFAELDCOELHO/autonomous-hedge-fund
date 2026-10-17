@@ -2,26 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langchain_core.messages import AIMessage
-from langgraph.prebuilt import ToolNode
-
 from tradingagents.agents.utils import fundamental_data_tools
 from tradingagents.dataflows import alpha_vantage_fundamentals, interface
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "alpha_vantage_get_fundamentals_overview.json"
-
-
-def _invoke_get_fundamentals(curr_date: str, trade_date: str) -> str:
-    call = {
-        "name": "get_fundamentals",
-        "id": "av-fundamentals",
-        "type": "tool_call",
-        "args": {"ticker": "AAPL", "curr_date": curr_date},
-    }
-    state = {"messages": [AIMessage(content="", tool_calls=[call])], "trade_date": trade_date}
-    out = ToolNode([fundamental_data_tools.get_fundamentals], handle_tool_errors=False).invoke(state)
-    return out["messages"][-1].content
 
 
 def test_alpha_vantage_get_fundamentals_matches_recorded_snapshot(monkeypatch):
@@ -51,7 +36,7 @@ def test_alpha_vantage_get_fundamentals_uses_capped_trade_date(monkeypatch):
     monkeypatch.setitem(interface.VENDOR_METHODS["get_fundamentals"], "alpha_vantage", _fake_alpha_vantage_vendor)
     monkeypatch.setattr(interface, "get_vendor", lambda _category, _method=None: "alpha_vantage")
 
-    out = _invoke_get_fundamentals(curr_date="2026-10-17", trade_date="2026-10-15")
+    out = fundamental_data_tools.get_fundamentals.func("AAPL", "2026-10-17", "2026-10-15")
 
     assert seen == [("AAPL", "2026-10-15")]
     assert out == "AAPL:2026-10-15"
@@ -67,7 +52,7 @@ def test_alpha_vantage_get_fundamentals_keeps_earlier_model_date(monkeypatch):
     monkeypatch.setitem(interface.VENDOR_METHODS["get_fundamentals"], "alpha_vantage", _fake_alpha_vantage_vendor)
     monkeypatch.setattr(interface, "get_vendor", lambda _category, _method=None: "alpha_vantage")
 
-    out = _invoke_get_fundamentals(curr_date="2026-10-14", trade_date="2026-10-15")
+    out = fundamental_data_tools.get_fundamentals.func("AAPL", "2026-10-14", "2026-10-15")
 
     assert seen == [("AAPL", "2026-10-14")]
     assert out == "AAPL:2026-10-14"
