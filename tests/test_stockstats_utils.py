@@ -140,6 +140,18 @@ class FilterInsiderTransactionsByDateTests(unittest.TestCase):
         self.assertEqual(len(out_after_deadline), 1)
         self.assertEqual(out_after_deadline.iloc[0]["Shares"], 10)
 
+    def test_insider_filter_fails_closed_without_a_supported_date_column(self):
+        data = pd.DataFrame(
+            [
+                {"posted_on": "2024-07-03", "Shares": 10},
+                {"posted_on": "2024-07-05", "Shares": 20},
+            ]
+        )
+
+        out = filter_insider_transactions_by_date(data, "2024-07-20")
+        self.assertTrue(out.empty)
+        self.assertEqual(list(out.columns), list(data.columns))
+
 
 if __name__ == "__main__":
     unittest.main()
