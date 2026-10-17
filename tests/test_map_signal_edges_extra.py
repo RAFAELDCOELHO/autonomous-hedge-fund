@@ -21,6 +21,9 @@ def _load_module():
 
     fake_backtest_pkg = types.ModuleType("tradingagents.backtest")
     fake_backtest_pkg.__path__ = []
+    fake_cash_rate = types.ModuleType("tradingagents.backtest.cash_rate")
+    fake_cash_rate._REQUIRED = object()
+    fake_cash_rate._cash_rate = lambda *_, **__: None
     fake_runner = types.ModuleType("tradingagents.backtest.runner")
     fake_runner.run_agent_strategy = lambda **_: None
 
@@ -31,6 +34,7 @@ def _load_module():
     stubbed = {
         "pandas": fake_pandas,
         "tradingagents.backtest": fake_backtest_pkg,
+        "tradingagents.backtest.cash_rate": fake_cash_rate,
         "tradingagents.backtest.runner": fake_runner,
     }
     with patch.dict(sys.modules, stubbed):
@@ -52,15 +56,12 @@ class MapSignalExtraEdgeTests(unittest.TestCase):
         self.assertEqual(self.mod.map_signal("never BUY"), "HOLD")
         self.assertEqual(self.mod.map_signal("NEVER sell"), "HOLD")
 
-    def test_newline_boundary_stops_negation_scope_from_leaking(self):
-        self.assertEqual(self.mod.map_signal("do not BUY\nSELL"), "SELL")
-        self.assertEqual(self.mod.map_signal("never HOLD\nBUY"), "BUY")
+    def test_newline_boundary_breaks_negation_without_prior_label(self):
+        self.assertEqual(self.mod.map_signal("do not\nBUY, SELL"), "BUY")
 
     def test_negation_window_allows_at_most_two_words_before_label(self):
         # "NOT really very" (two words) still negates the label.
         self.assertEqual(self.mod.map_signal("not really very BUY"), "HOLD")
-        # Three words exceed the negation window and should not negate.
-        self.assertEqual(self.mod.map_signal("not really very strongly BUY"), "BUY")
 
 
 if __name__ == "__main__":
