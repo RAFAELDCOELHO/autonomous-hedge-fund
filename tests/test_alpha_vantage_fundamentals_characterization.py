@@ -3,7 +3,7 @@
 These tests intentionally lock today's behavior of
 `alpha_vantage_fundamentals.get_fundamentals`: it ignores `curr_date` and calls
 Alpha Vantage OVERVIEW with only `{symbol}`, which is not point-in-time and
-therefore a known lookahead leak (tracked in PR #63).
+therefore a known lookahead leak (known residual, see #63).
 """
 
 from __future__ import annotations
@@ -79,10 +79,14 @@ def test_characterization_tool_forwards_earlier_model_date_to_vendor(monkeypatch
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="AV OVERVIEW is not point-in-time; leak tracked in #63",
+    reason="AV OVERVIEW is not point-in-time; known residual, see #63",
 )
 def test_characterization_expected_date_aware_vendor_would_change_output(monkeypatch):
-    """Secondary alarm: snapshot is primary; this xfail tracks date-awareness regressions."""
+    """Secondary alarm: snapshot is primary; this xfail tracks AV date-awareness only.
+
+    It does not flip to XPASS just because #63 merges. It flips only when the
+    Alpha Vantage path itself becomes point-in-time.
+    """
     forwarded_non_symbol_params = []
 
     def _date_aware_vendor(function_name: str, params: dict) -> str:
