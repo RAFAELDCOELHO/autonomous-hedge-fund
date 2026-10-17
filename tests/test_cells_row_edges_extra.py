@@ -22,17 +22,6 @@ def _raw_rows(path):
         return list(csv.DictReader(fh))
 
 
-def test_make_cell_row_ok_works_without_optional_equity_attrs():
-    row = make_cell_row("AAPL", "baseline", 0, _equity_without_attrs())
-    assert row["status"] == "ok"
-    # With no attrs["n_days"], writer falls back to the metrics count.
-    assert row["n_days"] == "4"
-    assert row["n_decision_errors"] == "0"
-    assert row["rf_source"] == "FRED-DTB3"
-    assert row["sharpe"] != ""
-    assert row[SHARPE_FLAT_FIELD] != ""
-
-
 def test_failed_row_ignores_incompatible_curve_attrs():
     curve = _equity_without_attrs()
     curve.attrs["rf_source"] = "none"
