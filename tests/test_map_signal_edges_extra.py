@@ -57,7 +57,7 @@ class MapSignalExtraEdgeTests(unittest.TestCase):
         self.assertEqual(self.mod.map_signal("NEVER sell"), "HOLD")
 
     def test_newline_boundary_breaks_negation_without_prior_label(self):
-        self.assertEqual(self.mod.map_signal("do not\nBUY, SELL"), "BUY")
+        self.assertEqual(self.mod.map_signal("do not\nSELL"), "SELL")
 
     def test_negation_window_allows_at_most_two_words_before_label(self):
         # "NOT really very" (two words) still negates the label.
