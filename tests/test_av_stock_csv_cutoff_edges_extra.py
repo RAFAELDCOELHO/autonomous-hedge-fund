@@ -5,9 +5,10 @@ drops the next calendar day, including the Saturday after a Friday and the
 session after a holiday. History before ``start_date`` stays out. The date is
 the first column, whatever its name.
 
-An unreadable timestamp is dropped. A timestamp with a timezone is converted
-to UTC, the zone is removed, and the UTC calendar day is compared with the
-window. A failure that still escapes the filter returns only the CSV header.
+An unreadable timestamp is dropped. A timestamp with a timezone keeps the
+calendar day written in the cell: the offset is removed and the clock is not
+converted to UTC. A failure that still escapes the filter returns only the
+CSV header.
 """
 
 from __future__ import annotations
@@ -174,6 +175,22 @@ def test_date_only_and_offset_rows_share_one_window(monkeypatch):
     )
 
     assert _dates(out) == ["2024-01-12", "2024-01-12"]
+    assert SENTINEL not in out
+    assert "2024-01-13" not in out
+
+
+def test_positive_offset_uses_the_written_day(monkeypatch):
+    """``2024-01-13T00:30+09:00`` is 13 Jan as written. UTC would keep it on 12 Jan."""
+    out = _load(
+        monkeypatch,
+        "timestamp,open\n"
+        "2024-01-12T00:00-05:00,12\n"
+        "2024-01-13T00:30+09:00,987654\n",
+        "2024-01-12",
+        "2024-01-12",
+    )
+
+    assert _dates(out) == ["2024-01-12"]
     assert SENTINEL not in out
     assert "2024-01-13" not in out
 

@@ -92,19 +92,31 @@ def _header_only_csv(csv_data: str) -> str:
     return f"{lines[0]}\n"
 
 
+def _local_calendar_day(values: pd.Series) -> pd.Series:
+    """Calendar day as written. A trailing ``Z`` or ``±hh:mm`` is removed, not converted.
+
+    Converting to UTC first moves a positive offset onto the previous date:
+    ``2024-01-13T00:30+09:00`` is 15:30 UTC on 2024-01-12 and would pass an
+    ``end_date`` of 2024-01-12. The session date is the date in the cell.
+    """
+    wall = (
+        values.astype("string")
+        .str.strip()
+        .str.replace(r"(?i)(?:Z|[+-]\d{2}:?\d{2})$", "", regex=True)
+    )
+    # format="mixed": pandas 3 otherwise infers one format and nulls the rest.
+    return pd.to_datetime(wall, errors="coerce", format="mixed").dt.normalize()
+
+
 def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> str:
     """Filter CSV rows to the inclusive window ``start_date <= day <= end_date``.
 
     The first column is the timestamp. ``errors="coerce"`` makes an unreadable
-    cell missing instead of aborting the filter, and that row is dropped.
-    ``format="mixed"`` parses a date-only value and an offset timestamp in the
-    same column (pandas 3 otherwise infers one format and nulls the rest).
-    ``utc=True`` puts naive values and mixed offsets on one timeline; the
-    timezone is removed after that conversion, and the comparison uses the UTC
-    calendar day. ``2024-01-12T00:00:00-05:00`` is 05:00 UTC and stays on
-    2024-01-12, so it is inside ``end_date=2024-01-12``. A wall time whose UTC
-    date differs (for example ``2024-01-12T00:00:00+05:00``) is judged on the
-    UTC date.
+    cell missing instead of aborting the filter, and that row is dropped. The
+    day is the local calendar day written in the cell: the offset is stripped
+    and the clock is not shifted. ``2024-01-12T00:00-05:00`` stays on
+    2024-01-12. ``2024-01-13T00:30+09:00`` stays on 2024-01-13, so an
+    ``end_date`` of 2024-01-12 drops it.
 
     ``get_stock`` returns this string unchanged, and ``route_to_vendor`` only
     treats ``AlphaVantageRateLimitError`` as control flow. On any other
@@ -118,10 +130,7 @@ def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> 
     try:
         df = pd.read_csv(StringIO(csv_data))
         date_col = df.columns[0]
-        parsed = pd.to_datetime(
-            df[date_col], errors="coerce", utc=True, format="mixed"
-        )
-        df[date_col] = parsed.dt.tz_localize(None).dt.normalize()
+        df[date_col] = _local_calendar_day(df[date_col])
         df = df.dropna(subset=[date_col])
 
         start_dt = pd.to_datetime(start_date)
