@@ -7,8 +7,8 @@ the first column, whatever its name.
 
 An unreadable timestamp is dropped. A timestamp with a timezone keeps the
 calendar day written in the cell: the offset is removed and the clock is not
-converted to UTC. A failure that still escapes the filter returns only the
-CSV header.
+converted to UTC. Kept cells are the original text. A failure that still
+escapes the filter returns only the CSV header.
 """
 
 from __future__ import annotations
@@ -193,6 +193,29 @@ def test_positive_offset_uses_the_written_day(monkeypatch):
     assert _dates(out) == ["2024-01-12"]
     assert SENTINEL not in out
     assert "2024-01-13" not in out
+
+
+def test_jan_10_to_12_window_keeps_written_day_and_original_text(monkeypatch):
+    """Local day over 2024-01-10 .. 2024-01-12. The kept timestamp is not rewritten.
+
+    ``2024-01-13T00:30+09:00`` is 13 Jan and is dropped.
+    ``2024-01-13T03:00+05:00`` is 13 Jan and is dropped.
+    ``2024-01-12T20:00-05:00`` is 12 Jan and stays, offset included.
+    ``2024-01-09T22:00-05:00`` is 9 Jan and is dropped.
+    """
+    out = _load(
+        monkeypatch,
+        "timestamp,open\n"
+        "2024-01-09T22:00-05:00,987654\n"
+        "2024-01-12T20:00-05:00,12\n"
+        "2024-01-13T00:30+09:00,987654\n"
+        "2024-01-13T03:00+05:00,987654\n",
+        "2024-01-10",
+        "2024-01-12",
+    )
+
+    assert out.splitlines() == ["timestamp,open", "2024-01-12T20:00-05:00,12"]
+    assert SENTINEL not in out
 
 
 def test_generic_filter_exception_returns_header_only(monkeypatch):

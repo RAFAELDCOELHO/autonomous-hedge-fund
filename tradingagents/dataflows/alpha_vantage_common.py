@@ -93,11 +93,13 @@ def _header_only_csv(csv_data: str) -> str:
 
 
 def _local_calendar_day(values: pd.Series) -> pd.Series:
-    """Calendar day as written. A trailing ``Z`` or ``±hh:mm`` is removed, not converted.
+    """Calendar day written in the cell. A trailing ``Z`` or ``±hh:mm`` is removed, not converted.
 
-    Converting to UTC first moves a positive offset onto the previous date:
-    ``2024-01-13T00:30+09:00`` is 15:30 UTC on 2024-01-12 and would pass an
-    ``end_date`` of 2024-01-12. The session date is the date in the cell.
+    The clock stays put, so the day can differ from the UTC date:
+    ``2024-01-12T20:00-05:00`` is 2024-01-12, not 2024-01-13.
+    ``2024-01-09T22:00-05:00`` is 2024-01-09, not 2024-01-10.
+    ``2024-01-13T00:30+09:00`` and ``2024-01-13T03:00+05:00`` are 2024-01-13,
+    not 2024-01-12.
     """
     wall = (
         values.astype("string")
@@ -109,34 +111,29 @@ def _local_calendar_day(values: pd.Series) -> pd.Series:
 
 
 def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> str:
-    """Filter CSV rows to the inclusive window ``start_date <= day <= end_date``.
+    """Keep rows whose first-column local calendar day is inside the window.
 
-    The first column is the timestamp. ``errors="coerce"`` makes an unreadable
-    cell missing instead of aborting the filter, and that row is dropped. The
-    day is the local calendar day written in the cell: the offset is stripped
-    and the clock is not shifted. ``2024-01-12T00:00-05:00`` stays on
-    2024-01-12. ``2024-01-13T00:30+09:00`` stays on 2024-01-13, so an
-    ``end_date`` of 2024-01-12 drops it.
+    The day is the date written in the cell. ``_local_calendar_day`` strips a
+    trailing offset without shifting the clock, and an unreadable value is
+    missing. A row stays when ``start_date <= that day <= end_date``. The mask
+    is applied to the original frame, so the cells that come back are the
+    original text: ``2024-01-12T20:00-05:00`` is not rewritten as ``2024-01-12``.
 
-    ``get_stock`` returns this string unchanged, and ``route_to_vendor`` only
-    treats ``AlphaVantageRateLimitError`` as control flow. On any other
-    failure the original body is not returned: that was publishing rows after
-    ``end_date``. The result is a header-only CSV, the same shape as a window
-    with no rows.
+    On any other failure the result is a header-only CSV. ``get_stock`` returns
+    this string unchanged, and returning the original body would publish rows
+    after ``end_date``.
     """
     if not csv_data or csv_data.strip() == "":
         return csv_data
 
     try:
-        df = pd.read_csv(StringIO(csv_data))
+        df = pd.read_csv(StringIO(csv_data), dtype=str)
         date_col = df.columns[0]
-        df[date_col] = _local_calendar_day(df[date_col])
-        df = df.dropna(subset=[date_col])
-
+        day = _local_calendar_day(df[date_col])
         start_dt = pd.to_datetime(start_date)
         end_dt = pd.to_datetime(end_date)
-        filtered_df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
-        return filtered_df.to_csv(index=False)
+        keep = day.notna() & (day >= start_dt) & (day <= end_dt)
+        return df.loc[keep].to_csv(index=False)
     except Exception as exc:
         print(f"Warning: Failed to filter CSV data by date range: {exc}")
         return _header_only_csv(csv_data)
