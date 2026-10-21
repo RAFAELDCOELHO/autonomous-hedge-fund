@@ -114,10 +114,13 @@ def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> 
     """Keep rows whose first-column local calendar day is inside the window.
 
     The day is the date written in the cell. ``_local_calendar_day`` strips a
-    trailing offset without shifting the clock, and an unreadable value is
-    missing. A row stays when ``start_date <= that day <= end_date``. The mask
-    is applied to the original frame, so the cells that come back are the
-    original text: ``2024-01-12T20:00-05:00`` is not rewritten as ``2024-01-12``.
+    trailing offset without shifting the clock, then floors to that calendar
+    day, so ``2024-01-12 15:00`` is still 2024-01-12. An unreadable value is
+    missing. A row stays when ``start_date <= that day <= end_date``. Cells are
+    read as text (``dtype=str``, ``keep_default_na=False``) and the mask is
+    applied to that frame, so the returned text is the original:
+    ``2024-01-12T23:00-05:00,1`` is not rewritten, and a token such as ``NA``
+    is not blanked.
 
     On any other failure the result is a header-only CSV. ``get_stock`` returns
     this string unchanged, and returning the original body would publish rows
@@ -127,7 +130,7 @@ def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> 
         return csv_data
 
     try:
-        df = pd.read_csv(StringIO(csv_data), dtype=str)
+        df = pd.read_csv(StringIO(csv_data), dtype=str, keep_default_na=False)
         date_col = df.columns[0]
         day = _local_calendar_day(df[date_col])
         start_dt = pd.to_datetime(start_date)

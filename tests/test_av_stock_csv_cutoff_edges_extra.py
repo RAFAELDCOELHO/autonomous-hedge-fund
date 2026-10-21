@@ -218,6 +218,34 @@ def test_jan_10_to_12_window_keeps_written_day_and_original_text(monkeypatch):
     assert SENTINEL not in out
 
 
+def test_offset_row_roundtrips_identical_text(monkeypatch):
+    """``2024-01-12T23:00-05:00,1`` comes back unchanged."""
+    line = "2024-01-12T23:00-05:00,1"
+    out = _load(
+        monkeypatch,
+        "timestamp,open\n" + line + "\n",
+        "2024-01-12",
+        "2024-01-12",
+    )
+
+    assert out == "timestamp,open\n" + line + "\n"
+
+
+def test_naive_intraday_stays_on_the_written_day(monkeypatch):
+    """``2024-01-12 15:00`` is 12 Jan. Without normalize, 15:00 is after midnight."""
+    out = _load(
+        monkeypatch,
+        "timestamp,open\n"
+        "2024-01-12 15:00,1\n"
+        "2024-01-13 00:00,987654\n",
+        "2024-01-12",
+        "2024-01-12",
+    )
+
+    assert out.splitlines() == ["timestamp,open", "2024-01-12 15:00,1"]
+    assert SENTINEL not in out
+
+
 def test_generic_filter_exception_returns_header_only(monkeypatch):
     """A crash in the filter must not publish the original prices."""
 
