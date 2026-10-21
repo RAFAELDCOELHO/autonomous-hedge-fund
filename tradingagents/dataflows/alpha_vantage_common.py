@@ -84,39 +84,50 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
 
 
 
+def _header_only_csv(csv_data: str) -> str:
+    """CSV header and no body. A failed filter must not echo price rows."""
+    lines = csv_data.splitlines()
+    if not lines or not lines[0].strip():
+        return ""
+    return f"{lines[0]}\n"
+
+
 def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> str:
-    """
-    Filter CSV data to include only rows within the specified date range.
+    """Filter CSV rows to the inclusive window ``start_date <= day <= end_date``.
 
-    Args:
-        csv_data: CSV string from Alpha Vantage API
-        start_date: Start date in yyyy-mm-dd format
-        end_date: End date in yyyy-mm-dd format
+    The first column is the timestamp. ``errors="coerce"`` makes an unreadable
+    cell missing instead of aborting the filter, and that row is dropped.
+    ``format="mixed"`` parses a date-only value and an offset timestamp in the
+    same column (pandas 3 otherwise infers one format and nulls the rest).
+    ``utc=True`` puts naive values and mixed offsets on one timeline; the
+    timezone is removed after that conversion, and the comparison uses the UTC
+    calendar day. ``2024-01-12T00:00:00-05:00`` is 05:00 UTC and stays on
+    2024-01-12, so it is inside ``end_date=2024-01-12``. A wall time whose UTC
+    date differs (for example ``2024-01-12T00:00:00+05:00``) is judged on the
+    UTC date.
 
-    Returns:
-        Filtered CSV string
+    ``get_stock`` returns this string unchanged, and ``route_to_vendor`` only
+    treats ``AlphaVantageRateLimitError`` as control flow. On any other
+    failure the original body is not returned: that was publishing rows after
+    ``end_date``. The result is a header-only CSV, the same shape as a window
+    with no rows.
     """
     if not csv_data or csv_data.strip() == "":
         return csv_data
 
     try:
-        # Parse CSV data
         df = pd.read_csv(StringIO(csv_data))
-
-        # Assume the first column is the date column (timestamp)
         date_col = df.columns[0]
-        df[date_col] = pd.to_datetime(df[date_col])
+        parsed = pd.to_datetime(
+            df[date_col], errors="coerce", utc=True, format="mixed"
+        )
+        df[date_col] = parsed.dt.tz_localize(None).dt.normalize()
+        df = df.dropna(subset=[date_col])
 
-        # Filter by date range
         start_dt = pd.to_datetime(start_date)
         end_dt = pd.to_datetime(end_date)
-
         filtered_df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
-
-        # Convert back to CSV string
         return filtered_df.to_csv(index=False)
-
-    except Exception as e:
-        # If filtering fails, return original data with a warning
-        print(f"Warning: Failed to filter CSV data by date range: {e}")
-        return csv_data
+    except Exception as exc:
+        print(f"Warning: Failed to filter CSV data by date range: {exc}")
+        return _header_only_csv(csv_data)

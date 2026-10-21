@@ -5,14 +5,12 @@ drops the next calendar day, including the Saturday after a Friday and the
 session after a holiday. History before ``start_date`` stays out. The date is
 the first column, whatever its name.
 
-If any timestamp fails to parse, ``_filter_csv_by_date_range`` returns the
-original CSV, so rows after ``end_date`` leak. That case is xfailed; it is
-not fixed here.
+An unreadable timestamp is dropped. A timestamp with a timezone is converted
+to UTC, the zone is removed, and the UTC calendar day is compared with the
+window. A failure that still escapes the filter returns only the CSV header.
 """
 
 from __future__ import annotations
-
-import pytest
 
 from tradingagents.dataflows import alpha_vantage_stock as avs
 
@@ -128,15 +126,6 @@ def test_first_column_is_the_date_even_when_not_named_timestamp(monkeypatch):
     assert "2024-01-13" not in out
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "fail-open: one unparseable timestamp makes _filter_csv_by_date_range "
-        "return the original CSV, so rows after end_date leak "
-        "(tradingagents/dataflows/alpha_vantage_common.py)"
-    ),
-)
 def test_unparseable_timestamp_does_not_echo_later_prices(monkeypatch):
     """A bad timestamp must not publish prices from after end_date."""
     out = _load(
@@ -150,5 +139,65 @@ def test_unparseable_timestamp_does_not_echo_later_prices(monkeypatch):
     )
 
     assert _dates(out) == ["2024-01-12"]
+    assert SENTINEL not in out
+    assert "2024-01-13" not in out
+    assert "not-a-date" not in out
+
+
+def test_offset_timestamp_keeps_end_date_and_hides_the_next_day(monkeypatch):
+    """``2024-01-12T00:00:00-05:00`` is the end date. The next session stays out."""
+    out = _load(
+        monkeypatch,
+        "timestamp,open\n"
+        "2024-01-11T00:00:00-05:00,987654\n"
+        "2024-01-12T00:00:00-05:00,12\n"
+        "2024-01-13T00:00:00-05:00,987654\n",
+        "2024-01-12",
+        "2024-01-12",
+    )
+
+    assert _dates(out) == ["2024-01-12"]
+    assert SENTINEL not in out
+    assert "2024-01-13" not in out
+
+
+def test_date_only_and_offset_rows_share_one_window(monkeypatch):
+    """A date-only row must not cause the offset row on that day to be dropped."""
+    out = _load(
+        monkeypatch,
+        "timestamp,open\n"
+        "2024-01-12,12\n"
+        "2024-01-12T00:00:00-05:00,13\n"
+        "2024-01-13T00:00:00-05:00,987654\n",
+        "2024-01-12",
+        "2024-01-12",
+    )
+
+    assert _dates(out) == ["2024-01-12", "2024-01-12"]
+    assert SENTINEL not in out
+    assert "2024-01-13" not in out
+
+
+def test_generic_filter_exception_returns_header_only(monkeypatch):
+    """A crash in the filter must not publish the original prices."""
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("synthetic parser failure")
+
+    monkeypatch.setattr(
+        "tradingagents.dataflows.alpha_vantage_common.pd.read_csv",
+        _boom,
+    )
+    out = _load(
+        monkeypatch,
+        "timestamp,open\n"
+        "2024-01-12,12\n"
+        "2024-01-13,987654\n",
+        "2024-01-12",
+        "2024-01-12",
+    )
+
+    assert out.splitlines() == ["timestamp,open"]
+    assert _dates(out) == []
     assert SENTINEL not in out
     assert "2024-01-13" not in out

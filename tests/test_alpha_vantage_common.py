@@ -28,16 +28,18 @@ class AlphaVantageCommonTests(unittest.TestCase):
             ["timestamp,open,close", "2026-01-02,11,12", "2026-01-03,12,13"],
         )
 
-    def test_filter_csv_by_date_range_returns_original_when_parsing_fails(self):
+    def test_filter_csv_by_date_range_fails_closed_when_parsing_fails(self):
         csv_data = "timestamp,open\n2026-01-01,10\n"
         with patch(
             "tradingagents.dataflows.alpha_vantage_common.pd.read_csv",
             side_effect=Exception("synthetic parser failure"),
         ):
-            self.assertEqual(
-                _filter_csv_by_date_range(csv_data, "2026-01-01", "2026-01-31"),
-                csv_data,
+            filtered = _filter_csv_by_date_range(
+                csv_data, "2026-01-01", "2026-01-31"
             )
+
+        self.assertEqual(filtered, "timestamp,open\n")
+        self.assertNotIn("2026-01-01,10", filtered)
 
 
 if __name__ == "__main__":
