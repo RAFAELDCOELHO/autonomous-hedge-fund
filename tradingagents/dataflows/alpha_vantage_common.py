@@ -84,39 +84,59 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
 
 
 
-def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> str:
+def _header_only_csv(csv_data: str) -> str:
+    """CSV header and no body. A failed filter must not echo price rows."""
+    lines = csv_data.splitlines()
+    if not lines or not lines[0].strip():
+        return ""
+    return f"{lines[0]}\n"
+
+
+def _local_calendar_day(values: pd.Series) -> pd.Series:
+    """Calendar day written in the cell. A trailing ``Z`` or ``±hh:mm`` is removed, not converted.
+
+    The clock stays put, so the day can differ from the UTC date:
+    ``2024-01-12T20:00-05:00`` is 2024-01-12, not 2024-01-13.
+    ``2024-01-09T22:00-05:00`` is 2024-01-09, not 2024-01-10.
+    ``2024-01-13T00:30+09:00`` and ``2024-01-13T03:00+05:00`` are 2024-01-13,
+    not 2024-01-12.
     """
-    Filter CSV data to include only rows within the specified date range.
+    wall = (
+        values.astype("string")
+        .str.strip()
+        .str.replace(r"(?i)(?:Z|[+-]\d{2}:?\d{2})$", "", regex=True)
+    )
+    # format="mixed": pandas 3 otherwise infers one format and nulls the rest.
+    return pd.to_datetime(wall, errors="coerce", format="mixed").dt.normalize()
 
-    Args:
-        csv_data: CSV string from Alpha Vantage API
-        start_date: Start date in yyyy-mm-dd format
-        end_date: End date in yyyy-mm-dd format
 
-    Returns:
-        Filtered CSV string
+def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> str:
+    """Keep rows whose first-column local calendar day is inside the window.
+
+    The day is the date written in the cell. ``_local_calendar_day`` strips a
+    trailing offset without shifting the clock, then floors to that calendar
+    day, so ``2024-01-12 15:00`` is still 2024-01-12. An unreadable value is
+    missing. A row stays when ``start_date <= that day <= end_date``. Cells are
+    read as text (``dtype=str``, ``keep_default_na=False``) and the mask is
+    applied to that frame, so the returned text is the original:
+    ``2024-01-12T23:00-05:00,1`` is not rewritten, and a token such as ``NA``
+    is not blanked.
+
+    On any other failure the result is a header-only CSV. ``get_stock`` returns
+    this string unchanged, and returning the original body would publish rows
+    after ``end_date``.
     """
     if not csv_data or csv_data.strip() == "":
         return csv_data
 
     try:
-        # Parse CSV data
-        df = pd.read_csv(StringIO(csv_data))
-
-        # Assume the first column is the date column (timestamp)
+        df = pd.read_csv(StringIO(csv_data), dtype=str, keep_default_na=False)
         date_col = df.columns[0]
-        df[date_col] = pd.to_datetime(df[date_col])
-
-        # Filter by date range
+        day = _local_calendar_day(df[date_col])
         start_dt = pd.to_datetime(start_date)
         end_dt = pd.to_datetime(end_date)
-
-        filtered_df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
-
-        # Convert back to CSV string
-        return filtered_df.to_csv(index=False)
-
-    except Exception as e:
-        # If filtering fails, return original data with a warning
-        print(f"Warning: Failed to filter CSV data by date range: {e}")
-        return csv_data
+        keep = day.notna() & (day >= start_dt) & (day <= end_dt)
+        return df.loc[keep].to_csv(index=False)
+    except Exception as exc:
+        print(f"Warning: Failed to filter CSV data by date range: {exc}")
+        return _header_only_csv(csv_data)
