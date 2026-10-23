@@ -122,6 +122,8 @@ def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> 
     ``2024-01-12T23:00-05:00,1`` is not rewritten, and a token such as ``NA``
     is not blanked.
 
+    A CRLF body is returned with LF line endings.
+
     On any other failure the result is a header-only CSV. ``get_stock`` returns
     this string unchanged, and returning the original body would publish rows
     after ``end_date``.
