@@ -41,6 +41,34 @@ class AlphaVantageCommonTests(unittest.TestCase):
         self.assertEqual(filtered, "timestamp,open\n")
         self.assertNotIn("2026-01-01,10", filtered)
 
+    def test_filter_csv_by_date_range_preserves_cell_text(self):
+        """Kept cells are the original bytes.
+
+        ``1.50`` is not shortened to ``1.5``. ``NA`` is not blanked.
+        """
+        csv_data = (
+            "timestamp,open,volume\n"
+            "2026-01-02,1.50,NA\n"
+            "2026-01-03,2.00,4\n"
+        )
+
+        filtered = _filter_csv_by_date_range(csv_data, "2026-01-02", "2026-01-02")
+
+        self.assertEqual(filtered, "timestamp,open,volume\n2026-01-02,1.50,NA\n")
+
+    def test_filter_csv_by_date_range_returns_crlf_input_as_lf(self):
+        """A CRLF body comes back with LF separators. Cell text is not rewritten."""
+        csv_data = (
+            "timestamp,open,volume\r\n"
+            "2026-01-02,1.50,NA\r\n"
+            "2026-01-03,2.00,4\r\n"
+        )
+
+        filtered = _filter_csv_by_date_range(csv_data, "2026-01-02", "2026-01-02")
+
+        self.assertEqual(filtered, "timestamp,open,volume\n2026-01-02,1.50,NA\n")
+        self.assertNotIn("\r", filtered)
+
 
 if __name__ == "__main__":
     unittest.main()
