@@ -69,6 +69,96 @@ class AlphaVantageCommonTests(unittest.TestCase):
         self.assertEqual(filtered, "timestamp,open,volume\n2026-01-02,1.50,NA\n")
         self.assertNotIn("\r", filtered)
 
+    def test_filter_csv_by_date_range_ends_with_trailing_newline(self):
+        """A parsed body ends with ``\\n`` with or without a final input newline.
+
+        LF input that ends with a newline, LF input that does not, and CRLF
+        input that does not all return the same LF text, including the final
+        newline.
+        """
+        expected = "timestamp,open,volume\n2026-01-02,1.50,NA\n"
+        lf_with_final = (
+            "timestamp,open,volume\n"
+            "2026-01-02,1.50,NA\n"
+            "2026-01-03,2.00,4\n"
+        )
+        lf_without_final = (
+            "timestamp,open,volume\n"
+            "2026-01-02,1.50,NA\n"
+            "2026-01-03,2.00,4"
+        )
+        crlf_without_final = (
+            "timestamp,open,volume\r\n"
+            "2026-01-02,1.50,NA\r\n"
+            "2026-01-03,2.00,4"
+        )
+
+        cases = (
+            ("lf_with_final", lf_with_final),
+            ("lf_without_final", lf_without_final),
+            ("crlf_without_final", crlf_without_final),
+        )
+        for label, csv_data in cases:
+            with self.subTest(input=label):
+                filtered = _filter_csv_by_date_range(
+                    csv_data, "2026-01-02", "2026-01-02"
+                )
+                self.assertEqual(filtered, expected)
+                self.assertTrue(filtered.endswith("\n"))
+                self.assertFalse(filtered.endswith("\r\n"))
+
+    def test_filter_csv_by_date_range_preserves_break_inside_quoted_cell(self):
+        """Record separators become LF. A break inside a quoted cell stays.
+
+        CRLF between records is rewritten to LF. A CRLF or LF inside quotes
+        is copied through, and the result still ends with a newline.
+        """
+        embedded_crlf = (
+            "timestamp,note\r\n"
+            '2026-01-02,"hello\r\nworld"\r\n'
+            "2026-01-03,plain\r\n"
+        )
+        embedded_lf = (
+            "timestamp,note\n"
+            '2026-01-02,"hello\nworld"\n'
+            "2026-01-03,plain\n"
+        )
+        embedded_crlf_no_final = (
+            "timestamp,note\n"
+            '2026-01-02,"hello\r\nworld"\n'
+            "2026-01-03,plain"
+        )
+
+        filtered_crlf = _filter_csv_by_date_range(
+            embedded_crlf, "2026-01-02", "2026-01-02"
+        )
+        filtered_lf = _filter_csv_by_date_range(
+            embedded_lf, "2026-01-02", "2026-01-02"
+        )
+        filtered_crlf_no_final = _filter_csv_by_date_range(
+            embedded_crlf_no_final, "2026-01-02", "2026-01-02"
+        )
+
+        self.assertEqual(
+            filtered_crlf,
+            'timestamp,note\n2026-01-02,"hello\r\nworld"\n',
+        )
+        self.assertEqual(
+            filtered_lf,
+            'timestamp,note\n2026-01-02,"hello\nworld"\n',
+        )
+        self.assertEqual(
+            filtered_crlf_no_final,
+            'timestamp,note\n2026-01-02,"hello\r\nworld"\n',
+        )
+        self.assertTrue(filtered_crlf.endswith("\n"))
+        self.assertFalse(filtered_crlf.endswith("\r\n"))
+        self.assertEqual(filtered_crlf.count("\r"), 1)
+        self.assertTrue(filtered_lf.endswith("\n"))
+        self.assertNotIn("\r", filtered_lf)
+        self.assertTrue(filtered_crlf_no_final.endswith("\n"))
+        self.assertFalse(filtered_crlf_no_final.endswith("\r\n"))
+
 
 if __name__ == "__main__":
     unittest.main()
