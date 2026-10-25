@@ -104,14 +104,13 @@ class AlphaVantageCommonTests(unittest.TestCase):
                     csv_data, "2026-01-02", "2026-01-02"
                 )
                 self.assertEqual(filtered, expected)
-                self.assertTrue(filtered.endswith("\n"))
-                self.assertFalse(filtered.endswith("\r\n"))
 
     def test_filter_csv_by_date_range_preserves_break_inside_quoted_cell(self):
         """Record separators become LF. A break inside a quoted cell stays.
 
         CRLF between records is rewritten to LF. A CRLF or LF inside quotes
-        is copied through, and the result still ends with a newline.
+        is copied through. LF-separated records that hold a CRLF inside
+        quotes and have no final newline still end with a trailing LF.
         """
         embedded_crlf = (
             "timestamp,note\r\n"
@@ -123,7 +122,7 @@ class AlphaVantageCommonTests(unittest.TestCase):
             '2026-01-02,"hello\nworld"\n'
             "2026-01-03,plain\n"
         )
-        embedded_crlf_no_final = (
+        lf_records_embedded_crlf_no_final = (
             "timestamp,note\n"
             '2026-01-02,"hello\r\nworld"\n'
             "2026-01-03,plain"
@@ -135,8 +134,8 @@ class AlphaVantageCommonTests(unittest.TestCase):
         filtered_lf = _filter_csv_by_date_range(
             embedded_lf, "2026-01-02", "2026-01-02"
         )
-        filtered_crlf_no_final = _filter_csv_by_date_range(
-            embedded_crlf_no_final, "2026-01-02", "2026-01-02"
+        filtered_lf_records_embedded_crlf_no_final = _filter_csv_by_date_range(
+            lf_records_embedded_crlf_no_final, "2026-01-02", "2026-01-02"
         )
 
         self.assertEqual(
@@ -148,16 +147,9 @@ class AlphaVantageCommonTests(unittest.TestCase):
             'timestamp,note\n2026-01-02,"hello\nworld"\n',
         )
         self.assertEqual(
-            filtered_crlf_no_final,
+            filtered_lf_records_embedded_crlf_no_final,
             'timestamp,note\n2026-01-02,"hello\r\nworld"\n',
         )
-        self.assertTrue(filtered_crlf.endswith("\n"))
-        self.assertFalse(filtered_crlf.endswith("\r\n"))
-        self.assertEqual(filtered_crlf.count("\r"), 1)
-        self.assertTrue(filtered_lf.endswith("\n"))
-        self.assertNotIn("\r", filtered_lf)
-        self.assertTrue(filtered_crlf_no_final.endswith("\n"))
-        self.assertFalse(filtered_crlf_no_final.endswith("\r\n"))
 
 
 if __name__ == "__main__":
