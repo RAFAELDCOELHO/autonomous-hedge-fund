@@ -48,7 +48,10 @@ def load_snapshot(path: Path) -> dict[str, pd.DataFrame]:
         csv_path = path / f"{ticker}.csv"
         if not csv_path.is_file():
             continue
-        prices[ticker] = pd.read_csv(csv_path, encoding="utf-8")
+        frame = pd.read_csv(csv_path, encoding="utf-8")
+        if "Date" not in frame.columns:
+            raise ValueError(f"missing Date column in {csv_path}")
+        prices[ticker] = frame
     return prices
 
 

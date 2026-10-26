@@ -7,7 +7,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
+from tradingagents.backtest import snapshot
 from tradingagents.backtest.snapshot import FIELD_BAR, FIELD_CLOSE, prereg_tickers
 
 REPO = Path(__file__).resolve().parents[1]
@@ -70,3 +72,69 @@ def test_missing_path_exits_2(tmp_path, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "missing-snapshot" in captured.err
+
+
+def test_file_not_directory_exits_2(tmp_path, capsys):
+    path = tmp_path / "snapshot.csv"
+    path.write_text("Date,Open,Close\n", encoding="utf-8")
+    assert check_snapshot.main([str(path)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "snapshot.csv" in captured.err
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param(b"", id="empty"),
+        pytest.param(b"\xff\xfe\x00\x81Date,Open\n\x80\x81\n", id="non-utf8"),
+        pytest.param(b"Date,Open,Close\nnot-a-date,1.0,1.0\n", id="bad-date"),
+    ],
+)
+def test_corrupt_csv_exits_2(tmp_path, capsys, content):
+    path = _write(tmp_path / "snap", _snapshot())
+    (path / "AAPL.csv").write_bytes(content)
+    assert check_snapshot.main([str(path)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("error:")
+
+
+@pytest.mark.parametrize("argv", [[], ["--bogus"]], ids=["no-args", "unknown-flag"])
+def test_usage_error_exits_2(argv, capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        check_snapshot.main(argv)
+    assert excinfo.value.code == 2
+
+
+def test_empty_directory_lists_bar_for_every_ticker(tmp_path, capsys, monkeypatch):
+    def no_loader(*args, **kwargs):
+        raise AssertionError("empty snapshot must not fall back to the vendor loader")
+
+    monkeypatch.setattr(snapshot, "load_ohlcv", no_loader)
+    path = tmp_path / "snap"
+    path.mkdir()
+    assert check_snapshot.main([str(path)]) == 1
+    lines = capsys.readouterr().out.splitlines()
+    bar_tickers = {line.split()[1] for line in lines if line.split()[0] == FIELD_BAR}
+    assert bar_tickers == set(prereg_tickers())
+
+
+def test_missing_date_column_exits_2(tmp_path, capsys):
+    path = _write(tmp_path / "snap", _snapshot())
+    (path / "AAPL.csv").write_text("Open,Close\n100.0,101.0\n", encoding="utf-8")
+    assert check_snapshot.main([str(path)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "missing Date column" in captured.err
+    assert "AAPL.csv" in captured.err
+
+
+def test_unexpected_error_is_not_masked(tmp_path, monkeypatch):
+    def boom(path):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(check_snapshot, "load_snapshot", boom)
+    path = _write(tmp_path / "snap", _snapshot())
+    with pytest.raises(RuntimeError, match="unexpected"):
+        check_snapshot.main([str(path)])
