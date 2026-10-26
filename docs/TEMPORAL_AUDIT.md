@@ -73,20 +73,20 @@ Minor caveats on those standalone scripts (not the core four agent-tool leaks): 
 
 ## 8) Planning map to follow-up fixes (no implementation in this PR)
 
-| Planned item | Intended remediation scope |
-|---|---|
-| P4.2 | Point-in-time fundamentals snapshots |
-| P4.3 | Financials filtered by publication date (not fiscal end only) |
-| P4.4 | Insider transactions filtered by decision-date availability |
-| P4.5 | News temporal filtering hardening |
-| P4.6 | Cross-tool temporal guardrail injection |
-| P4.7 | Amendment / prereg alignment updates |
-| P4.8 | Remove retrieval wall-clock stamp from tool outputs |
-| P4.9 | Cap `get_stock_data` at simulation date |
-| P4.10 | As-of pricing policy clarification and enforcement |
-| P4.11 | Execution-timing update (t+1 policy discussion) |
-| P4.12 | GDP vintage-safe macro data path |
-| P4.13 | FinGPT argument contract fix |
+| Planned item | Intended remediation scope | Status |
+|---|---|---|
+| P4.2 | Point-in-time fundamentals snapshots | aberto, #63 pausado |
+| P4.3 | Financials filtered by publication date (not fiscal end only) | merged #62 `e5ea062f40e9a1f31af44e0c81a45059449bdd0b`; tests #65 `9621c2e3df03e5322f3c0cef1de7bfd444089ad7`, #73 `d696c34be9e0744a28891a642ede0156f54407b8` |
+| P4.4 | Insider transactions filtered by decision-date availability | merged #62 `e5ea062f40e9a1f31af44e0c81a45059449bdd0b`; tests #65 `9621c2e3df03e5322f3c0cef1de7bfd444089ad7`, #72 `6fb49a7acbaafd861eaf50a940b7fd340ae72858` |
+| P4.5 | News temporal filtering hardening | aguardando decisão |
+| P4.6 | Cross-tool temporal guardrail injection | no mapped PR in #64-#85 |
+| P4.7 | Amendment / prereg alignment updates | no mapped PR in #64-#85 |
+| P4.8 | Remove retrieval wall-clock stamp from tool outputs | merged #61 `96868ce4fe33a47b89ee36af43bb9f735fb7350e`; tests #65 `9621c2e3df03e5322f3c0cef1de7bfd444089ad7` |
+| P4.9 | Cap `get_stock_data` at simulation date | merged #61 `96868ce4fe33a47b89ee36af43bb9f735fb7350e`; no mapped PR in #64-#85 |
+| P4.10 | As-of pricing policy clarification and enforcement | aguardando decisão |
+| P4.11 | Execution-timing update (t+1 policy discussion) | merged #64 `c6d990d05ac7cb6284138f715eab4ecf61c9919c`; #65 `9621c2e3df03e5322f3c0cef1de7bfd444089ad7`; #66 `9e1b7148df6eb0864668bc4e6b237559a0ab46ef`; #67 `cc439d22cfe30d72889857f5a8cfdd0fb2bbc716`; #68 `ea9ce7767f242fffd924ce37423135dcc01f3ff1`; #69 `bb172cdafd889d33bebda0ae531901132cd46d31`; #70 `c0f6dfcb9264af1744738291a776783241cc9506`; #75 `def5b340e79121366747c2ef97c300550016f2e4` |
+| P4.12 | GDP vintage-safe macro data path | aguardando decisão |
+| P4.13 | FinGPT argument contract fix | merged #61 `96868ce4fe33a47b89ee36af43bb9f735fb7350e`; no mapped PR in #64-#85 |
 
 Note: P4.5, P4.11, and any design-level workflow changes require explicit approval before implementation.
 
