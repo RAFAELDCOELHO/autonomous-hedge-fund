@@ -5,8 +5,10 @@ and listing every gap instead of stopping at the first. Per the ticker's fixed
 exchange calendar (calendar.py):
 
 - each session D in [start, end] needs a bar with a finite positive Open;
-- the D-1 of the first session needs a bar (the agent's first cutoff) with a
-  finite positive Close (the first decision uses data up to that close);
+- the D-1 of the first session needs a bar (the agent's first cutoff);
+- the D-1 of every session D needs a finite positive Close (the decision for
+  D uses data up to that close); the last session's Close is not required,
+  since it is only the D-1 of the exit, where no decision is taken;
 - the session after ``end`` (the exit) needs a bar with a finite positive Open;
 - no vendor date up to the exit session may appear twice (the runner raises on
   a duplicate anywhere in the frame it loads, look-back included).
@@ -118,15 +120,17 @@ def validate_snapshot(
             upto = frame.index[frame.index <= exit_day]
             for day in upto[upto.duplicated()].unique().sort_values():
                 missing.append((ticker, day.strftime("%Y-%m-%d"), FIELD_DUPLICATE))
+        close_days = {first_prev, *window[:-1]}
         checks = [(first_prev, False)] + [(d, True) for d in window] + [(exit_day, True)]
         for day, needs_open in checks:
             key = day.strftime("%Y-%m-%d")
             if frame is None or day not in frame.index:
                 missing.append((ticker, key, FIELD_BAR))
-            elif needs_open and not _open_ok(frame, day):
-                missing.append((ticker, key, FIELD_OPEN))
-            elif day == first_prev and not _close_ok(frame, day):
-                missing.append((ticker, key, FIELD_CLOSE))
+            else:
+                if needs_open and not _open_ok(frame, day):
+                    missing.append((ticker, key, FIELD_OPEN))
+                if day in close_days and not _close_ok(frame, day):
+                    missing.append((ticker, key, FIELD_CLOSE))
         report[ticker] = {
             "exchange": exchange_for(ticker),
             "n_sessions": len(window),
