@@ -6,6 +6,9 @@ exchange calendar (calendar.py):
 
 - each session D in [start, end] needs a bar with a finite positive Open;
 - the D-1 of the first session needs a bar (the agent's first cutoff);
+- the D-1 of every session D needs a finite positive Close (the decision for
+  D uses data up to that close); the last session's Close is not required,
+  since it is only the D-1 of the exit, where no decision is taken;
 - the session after ``end`` (the exit) needs a bar with a finite positive Open;
 - no vendor date up to the exit session may appear twice (the runner raises on
   a duplicate anywhere in the frame it loads, look-back included).
@@ -32,14 +35,20 @@ from .runner import DataDefectError
 
 FIELD_BAR = "bar"
 FIELD_OPEN = "Open"
+FIELD_CLOSE = "Close"
 FIELD_DUPLICATE = "duplicate"
-_DESCRIBE = {FIELD_BAR: "no bar", FIELD_OPEN: "Open missing/NaN/<=0", FIELD_DUPLICATE: "duplicate vendor bars"}
+_DESCRIBE = {
+    FIELD_BAR: "no bar",
+    FIELD_OPEN: "Open missing/NaN/<=0",
+    FIELD_CLOSE: "Close missing/NaN/<=0",
+    FIELD_DUPLICATE: "duplicate vendor bars",
+}
 
 
 class SnapshotIncomplete(DataDefectError):
     """Raised by validate_snapshot.
 
-    ``missing`` lists every defect as ``(ticker, "YYYY-MM-DD", "bar" | "Open" | "duplicate")``,
+    ``missing`` lists every defect as ``(ticker, "YYYY-MM-DD", "bar" | "Open" | "Close" | "duplicate")``,
     duplicates first for each ticker (one entry per duplicated date).
     """
 
@@ -63,6 +72,18 @@ def _frame(ticker: str, exit_day: pd.Timestamp, given: Mapping[str, pd.DataFrame
         return None
     frame = frame.set_index("Date") if "Date" in frame.columns else frame
     return frame.set_axis(pd.to_datetime(frame.index))
+
+
+def _close_ok(frame: pd.DataFrame, day: pd.Timestamp) -> bool:
+    if "Close" not in frame.columns:
+        return False
+    value = frame.loc[day, "Close"]
+    value = value.iloc[-1] if isinstance(value, pd.Series) else value
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(value) and value > 0
 
 
 def _open_ok(frame: pd.DataFrame, day: pd.Timestamp) -> bool:
@@ -99,13 +120,17 @@ def validate_snapshot(
             upto = frame.index[frame.index <= exit_day]
             for day in upto[upto.duplicated()].unique().sort_values():
                 missing.append((ticker, day.strftime("%Y-%m-%d"), FIELD_DUPLICATE))
+        close_days = {first_prev, *window[:-1]}
         checks = [(first_prev, False)] + [(d, True) for d in window] + [(exit_day, True)]
         for day, needs_open in checks:
             key = day.strftime("%Y-%m-%d")
             if frame is None or day not in frame.index:
                 missing.append((ticker, key, FIELD_BAR))
-            elif needs_open and not _open_ok(frame, day):
-                missing.append((ticker, key, FIELD_OPEN))
+            else:
+                if needs_open and not _open_ok(frame, day):
+                    missing.append((ticker, key, FIELD_OPEN))
+                if day in close_days and not _close_ok(frame, day):
+                    missing.append((ticker, key, FIELD_CLOSE))
         report[ticker] = {
             "exchange": exchange_for(ticker),
             "n_sessions": len(window),
