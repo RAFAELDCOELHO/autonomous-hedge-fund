@@ -24,7 +24,7 @@ def get_news(ticker, start_date, end_date) -> dict[str, str] | str:
         "time_to": format_datetime_for_api(end_date),
     }
 
-    return _make_api_request("NEWS_SENTIMENT", params)
+    return _filter_news_response(_make_api_request("NEWS_SENTIMENT", params), params["time_to"])
 
 def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict[str, str] | str:
     """Returns global market news & sentiment data without ticker-specific filtering.
@@ -53,7 +53,55 @@ def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict
         "limit": str(limit),
     }
 
-    return _make_api_request("NEWS_SENTIMENT", params)
+    return _filter_news_response(_make_api_request("NEWS_SENTIMENT", params), params["time_to"])
+
+
+def _published_before(item, cutoff) -> bool:
+    """True only when item's time_published (YYYYMMDDTHHMM[SS]) parses and is < cutoff."""
+    from datetime import datetime
+
+    raw = item.get("time_published") if isinstance(item, dict) else None
+    if not isinstance(raw, str):
+        return False
+    for fmt in ("%Y%m%dT%H%M%S", "%Y%m%dT%H%M"):
+        try:
+            return datetime.strptime(raw, fmt) < cutoff
+        except ValueError:
+            continue
+    return False
+
+
+def _filter_news_payload(payload, cutoff):
+    if not isinstance(payload, dict):
+        return {"feed": []}  # unknown shape: never echo raw items
+    if "feed" not in payload:
+        return payload  # AV error/info message: carries no items
+    feed = payload["feed"]
+    kept = [item for item in feed if _published_before(item, cutoff)] if isinstance(feed, list) else []
+    payload["feed"] = kept
+    if "items" in payload:
+        payload["items"] = str(len(kept))
+    return payload
+
+
+def _filter_news_response(result, time_to: str):
+    """Drop news items published at/after time_to, client-side (AV may ignore time_to).
+
+    Fail closed: items with a missing or unparseable time_published are dropped.
+    Non-JSON text (no items) is returned as-is; JSON text comes back as JSON text.
+    """
+    from datetime import datetime
+
+    cutoff = datetime.strptime(time_to, "%Y%m%dT%H%M")
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except json.JSONDecodeError:
+            return result
+        if isinstance(parsed, dict) and "feed" not in parsed:
+            return result
+        return json.dumps(_filter_news_payload(parsed, cutoff), indent=2)
+    return _filter_news_payload(result, cutoff)
 
 
 def get_insider_transactions(symbol: str, curr_date: str = None) -> dict[str, str] | str:
