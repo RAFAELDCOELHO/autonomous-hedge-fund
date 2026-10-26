@@ -57,7 +57,13 @@ def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict
 
 
 def _published_before(item, cutoff) -> bool:
-    """True only when item's time_published (YYYYMMDDTHHMM[SS]) parses and is < cutoff."""
+    """True only when item's time_published (YYYYMMDDTHHMM[SS]) parses and is < cutoff.
+
+    Alpha Vantage does not document the timezone of time_published (its docs
+    only give time_from/time_to as YYYYMMDDTHHMM). This compares naive
+    timestamps: time_published as written against the time_to sent in the
+    request (00:00 of the end date), with no timezone conversion.
+    """
     from datetime import datetime
 
     raw = item.get("time_published") if isinstance(item, dict) else None

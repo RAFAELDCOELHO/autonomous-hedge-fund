@@ -195,3 +195,16 @@ def test_no_feed_items_nested_under_unstamped_list_are_filtered(monkeypatch):
     _patch(monkeypatch, lambda: payload)
     out = alpha_vantage_news.get_news("AAPL", "2024-01-05", "2024-01-12")
     assert out == {"groups": [{"name": "g", "items": [_item("old", "20240102T0000")]}]}
+
+
+# --- the time_to sent to AV (the client filter compares against it) --------
+
+
+def test_time_to_sent_to_av_is_midnight_of_end_date_without_tz_shift(monkeypatch):
+    seen = _patch(monkeypatch, _payload)
+    alpha_vantage_news.get_news("AAPL", "2023-12-29", "2024-03-10")  # US DST starts 2024-03-10
+    alpha_vantage_news.get_global_news("2024-07-04", look_back_days=1)
+    assert seen[0]["time_to"] == "20240310T0000"
+    assert seen[1]["time_to"] == "20240704T0000"
+    for params in seen:
+        assert len(params["time_to"]) == 13 and params["time_to"][8] == "T"
