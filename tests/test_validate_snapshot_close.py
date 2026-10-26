@@ -122,3 +122,21 @@ def test_older_bad_close_before_d_minus_1_is_ignored():
     frame = _frame()
     frame.loc["2023-12-28", "Close"] = np.nan
     assert "AAPL" in _check({"AAPL": frame})
+
+
+@pytest.mark.parametrize("ticker,day", [("AAPL", "2024-01-10"), ("PETR4.SA", "2024-01-17")])
+def test_missing_bar_on_middle_session_is_bar_not_close(ticker, day):
+    """A middle session is a D-1 too, but with no bar it is reported once, as a bar."""
+    frame = _frame().drop(pd.Timestamp(day))
+    with pytest.raises(SnapshotIncomplete) as exc:
+        _check({ticker: frame})
+    assert exc.value.missing == [(ticker, day, FIELD_BAR)]
+
+
+@pytest.mark.parametrize("ticker,day", [("AAPL", "2024-01-10"), ("PETR4.SA", "2024-01-17")])
+def test_string_close_on_middle_d_minus_1_is_a_defect(ticker, day):
+    frame = _frame().astype({"Close": object})
+    frame.loc[day, "Close"] = "n/a"
+    with pytest.raises(SnapshotIncomplete) as exc:
+        _check({ticker: frame})
+    assert exc.value.missing == [(ticker, day, FIELD_CLOSE)]
