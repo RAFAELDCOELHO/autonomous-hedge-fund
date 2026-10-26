@@ -39,23 +39,48 @@ _TEXT_SIGNAL_PATTERN = re.compile(
 )
 _LABEL_BOUNDARY_PATTERN = re.compile(r"[.!?;:\n]|(?:\s-\s)")
 _NON_NEGATING_PHRASES_PATTERN = re.compile(
-    r"(?:\bNO\s+DOUBT\b|\bNOT\s+ONLY\b|\bNO\s+REASON\s+NOT\s+TO\b)\s*$"
+    r"(?:\bNO\s+DOUBT\b|\bNOT\s+ONLY\b|\bNO\s+REASON\s+NOT\s+TO\b)[\s,]*$"
 )
-_NEGATION_PATTERN = re.compile(
-    r"\b(?:DO\s+NOT|DON['’]?T|CANNOT|CAN['’]?T|NOT|NO|NEVER|AVOID)\b"
-    r"(?:\s+[A-Z'’]+){0,2}\s*$"
+_NEGATION_PATTERN = re.compile(r"\b(?:DO\s+NOT|DON['’]?T|CANNOT|CAN['’]?T|NOT|NO|NEVER|AVOID)\b")
+# Parentheticals that only repeat or intensify a bare negation ("never, ever").
+_INTENSIFIER = (
+    r"(?:I\s+)?(?:REPEAT|SAY)|EVER(?:\s+AGAIN)?|AGAIN"
+    r"|UNDER\s+(?:ANY|NO)\s+CIRCUMSTANCES?|AT\s+ALL|EVER\s+EVER"
 )
+_INTENSIFIER_PARENTHETICALS = re.compile(rf"(?:\s*,\s*(?:{_INTENSIFIER})\b)+\s*,?")
+_NEGATION_REACH = re.compile(r"(?:\s+[A-Z'’]+){0,5}\s*")
+
+
+def _negation_reaches(rest: str) -> bool:
+    """Does a negation followed by ``rest`` (text up to the label) govern the label?
+
+    Commas close the negation's clause: "No question, BUY" and "Don't
+    hesitate, BUY" are affirmative. The one exception is a bare negation
+    interrupted by intensifier/repeat parentheticals ("never, ever BUY",
+    "do not, repeat, BUY", "never, under any circumstances, SELL"), which are
+    skipped. What is left must hold no comma and at most five words.
+    """
+    parenthetical = _INTENSIFIER_PARENTHETICALS.match(rest)
+    if parenthetical:
+        rest = rest[parenthetical.end():]
+    return _NEGATION_REACH.fullmatch(rest) is not None
 
 
 def _is_negated_label(text: str, label_start: int, previous_label_end: int) -> bool:
-    """Return True when a short negation appears right before a label."""
+    """Return True when a negation governs the label (see _negation_reaches).
+
+    The window never crosses a sentence/clause boundary (. ! ? ; : newline,
+    " - ") or an earlier label.
+    """
     window_start = previous_label_end
     for boundary_match in _LABEL_BOUNDARY_PATTERN.finditer(text, previous_label_end, label_start):
         window_start = boundary_match.end()
     local_prefix = text[window_start:label_start]
     if _NON_NEGATING_PHRASES_PATTERN.search(local_prefix):
         return False
-    return _NEGATION_PATTERN.search(local_prefix) is not None
+    return any(
+        _negation_reaches(local_prefix[m.end():]) for m in _NEGATION_PATTERN.finditer(local_prefix)
+    )
 
 
 class UnparseableSignal(ValueError):
