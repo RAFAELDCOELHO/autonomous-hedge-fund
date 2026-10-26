@@ -39,16 +39,22 @@ _TEXT_SIGNAL_PATTERN = re.compile(
 )
 _LABEL_BOUNDARY_PATTERN = re.compile(r"[.!?;:\n]|(?:\s-\s)")
 _NON_NEGATING_PHRASES_PATTERN = re.compile(
-    r"(?:\bNO\s+DOUBT\b|\bNOT\s+ONLY\b|\bNO\s+REASON\s+NOT\s+TO\b)\s*$"
+    r"(?:\bNO\s+DOUBT\b|\bNOT\s+ONLY\b|\bNO\s+REASON\s+NOT\s+TO\b)[\s,]*$"
 )
 _NEGATION_PATTERN = re.compile(
     r"\b(?:DO\s+NOT|DON['’]?T|CANNOT|CAN['’]?T|NOT|NO|NEVER|AVOID)\b"
-    r"(?:\s+[A-Z'’]+){0,2}\s*$"
+    r"(?:[\s,]+[A-Z'’]+){0,5}[\s,]*$"
 )
 
 
 def _is_negated_label(text: str, label_start: int, previous_label_end: int) -> bool:
-    """Return True when a short negation appears right before a label."""
+    """Return True when a negation appears shortly before a label.
+
+    Up to five words and commas may sit between the negation and the label
+    ("never, ever BUY", "we do not recommend that you BUY"); the window never
+    crosses a sentence/clause boundary (. ! ? ; : newline, " - ") or an
+    earlier label.
+    """
     window_start = previous_label_end
     for boundary_match in _LABEL_BOUNDARY_PATTERN.finditer(text, previous_label_end, label_start):
         window_start = boundary_match.end()
