@@ -126,3 +126,72 @@ def test_non_string_time_published_dropped_not_crash(monkeypatch):
     _patch(monkeypatch, lambda: {"feed": [_item("int", 20240102), _item("ok", "20240102T000000")]})
     out = alpha_vantage_news.get_news("AAPL", "2024-01-05", "2024-01-12")
     assert _titles(out) == ["ok"]
+
+
+# --- dict payloads without a "feed" key -------------------------------------
+
+
+def _no_feed_payload():
+    return {
+        "Information": "renamed key",
+        "articles": [_item("old", "20240110T153000"), _item("future", "20240301T090000"), _item("missing", ...)],
+        "meta": {"nested": [_item("nested_future", "20240112T000000"), _item("nested_old", "20240102T000000")]},
+        "tags": ["a", "b"],
+    }
+
+
+@pytest.mark.parametrize("as_text", [False, True])
+@pytest.mark.parametrize("fn", ["news", "global"])
+def test_no_feed_dict_lists_with_time_published_are_filtered(monkeypatch, as_text, fn):
+    _patch(monkeypatch, (lambda: json.dumps(_no_feed_payload())) if as_text else _no_feed_payload)
+    if fn == "news":
+        out = alpha_vantage_news.get_news("AAPL", "2024-01-05", "2024-01-12")
+    else:
+        out = alpha_vantage_news.get_global_news("2024-01-12")
+    data = json.loads(out) if as_text else out
+    assert "20240301" not in json.dumps(data) and "20240112T" not in json.dumps(data)
+    assert [i["title"] for i in data["articles"]] == ["old"]
+    assert [i["title"] for i in data["meta"]["nested"]] == ["nested_old"]
+    assert data["tags"] == ["a", "b"] and data["Information"] == "renamed key"
+
+
+def test_no_feed_list_mixing_stamped_and_unstamped_items_drops_unstamped(monkeypatch):
+    _patch(monkeypatch, lambda: {"data": [{"title": "x"}, _item("future", "20240301T090000"), 5]})
+    out = alpha_vantage_news.get_news("AAPL", "2024-01-05", "2024-01-12")
+    assert out == {"data": []}
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        {"Information": "Invalid inputs"},
+        {"Error Message": "bad", "detail": ["x", {"k": 1}]},
+        {"Note": "rate", "nested": {"list": [1, 2]}},
+    ],
+)
+def test_pure_error_dicts_pass_through_unchanged(monkeypatch, note):
+    text = json.dumps(note)
+    _patch(monkeypatch, text)
+    assert alpha_vantage_news.get_news("AAPL", "2024-01-05", "2024-01-12") == text
+    _patch(monkeypatch, lambda: json.loads(text))
+    assert alpha_vantage_news.get_global_news("2024-01-12") == note
+
+
+def test_no_feed_single_stamped_dict_after_cutoff_is_removed(monkeypatch):
+    _patch(monkeypatch, lambda: {"top": _item("future", "20240301T090000"), "keep": _item("old", "20240102T0000")})
+    out = alpha_vantage_news.get_news("AAPL", "2024-01-05", "2024-01-12")
+    assert out == {"keep": _item("old", "20240102T0000")}
+
+
+@pytest.mark.parametrize("ts", ["20240301T090000", "bad", None])
+def test_no_feed_payload_that_is_itself_a_late_item_is_not_echoed(monkeypatch, ts):
+    _patch(monkeypatch, lambda: json.dumps(_item("future", ts)))
+    out = alpha_vantage_news.get_news("AAPL", "2024-01-05", "2024-01-12")
+    assert json.loads(out) == {"feed": []}
+
+
+def test_no_feed_items_nested_under_unstamped_list_are_filtered(monkeypatch):
+    payload = {"groups": [{"name": "g", "items": [_item("future", "20240301T090000"), _item("old", "20240102T0000")]}]}
+    _patch(monkeypatch, lambda: payload)
+    out = alpha_vantage_news.get_news("AAPL", "2024-01-05", "2024-01-12")
+    assert out == {"groups": [{"name": "g", "items": [_item("old", "20240102T0000")]}]}

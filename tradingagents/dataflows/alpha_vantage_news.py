@@ -72,16 +72,43 @@ def _published_before(item, cutoff) -> bool:
 
 
 def _filter_news_payload(payload, cutoff):
-    if not isinstance(payload, dict):
-        return {"feed": []}  # unknown shape: never echo raw items
+    if not isinstance(payload, dict) or (_is_stamped(payload) and not _published_before(payload, cutoff)):
+        return {"feed": []}  # unknown shape or a single late item: never echo it
     if "feed" not in payload:
-        return payload  # AV error/info message: carries no items
+        # AV error/info messages carry no items and pass unchanged; any
+        # time-stamped item found elsewhere is still held to the cutoff.
+        return _scrub_stamped(payload, cutoff)
     feed = payload["feed"]
     kept = [item for item in feed if _published_before(item, cutoff)] if isinstance(feed, list) else []
     payload["feed"] = kept
     if "items" in payload:
         payload["items"] = str(len(kept))
     return payload
+
+
+def _is_stamped(value) -> bool:
+    return isinstance(value, dict) and "time_published" in value
+
+
+def _scrub_stamped(node, cutoff):
+    """Recursively apply the cutoff to items carrying time_published.
+
+    A list holding any stamped dict keeps only stamped dicts published before
+    the cutoff (fail closed: unstamped/non-dict siblings go too); a stamped dict
+    under a key is removed unless published before the cutoff. Anything with no
+    stamped item is returned unchanged.
+    """
+    if isinstance(node, list):
+        if any(_is_stamped(v) for v in node):
+            return [_scrub_stamped(v, cutoff) for v in node if _is_stamped(v) and _published_before(v, cutoff)]
+        return [_scrub_stamped(v, cutoff) for v in node]
+    if isinstance(node, dict):
+        return {
+            k: _scrub_stamped(v, cutoff)
+            for k, v in node.items()
+            if not _is_stamped(v) or _published_before(v, cutoff)
+        }
+    return node
 
 
 def _filter_news_response(result, time_to: str):
@@ -98,9 +125,10 @@ def _filter_news_response(result, time_to: str):
             parsed = json.loads(result)
         except json.JSONDecodeError:
             return result
-        if isinstance(parsed, dict) and "feed" not in parsed:
-            return result
-        return json.dumps(_filter_news_payload(parsed, cutoff), indent=2)
+        filtered = _filter_news_payload(parsed, cutoff)
+        if isinstance(parsed, dict) and "feed" not in parsed and filtered == parsed:
+            return result  # nothing stamped: keep the vendor text byte-for-byte
+        return json.dumps(filtered, indent=2)
     return _filter_news_payload(result, cutoff)
 
 
