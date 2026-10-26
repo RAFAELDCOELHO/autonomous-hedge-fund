@@ -80,7 +80,7 @@ Minor caveats on those standalone scripts (not the core four agent-tool leaks): 
 | P4.4 | Insider transactions filtered by decision-date availability | merged #62 `e5ea062f40e9a1f31af44e0c81a45059449bdd0b`; tests #65 `9621c2e3df03e5322f3c0cef1de7bfd444089ad7`, #72 `6fb49a7acbaafd861eaf50a940b7fd340ae72858` |
 | P4.5 | News temporal filtering hardening | aguardando decisão |
 | P4.6 | Cross-tool temporal guardrail injection | no mapped PR in #64-#85 |
-| P4.7 | Amendment / prereg alignment updates | no mapped PR in #64-#85 |
+| P4.7 | Amendment / prereg alignment updates | aguardando decisão |
 | P4.8 | Remove retrieval wall-clock stamp from tool outputs | merged #61 `96868ce4fe33a47b89ee36af43bb9f735fb7350e`; tests #65 `9621c2e3df03e5322f3c0cef1de7bfd444089ad7` |
 | P4.9 | Cap `get_stock_data` at simulation date | merged #61 `96868ce4fe33a47b89ee36af43bb9f735fb7350e`; no mapped PR in #64-#85 |
 | P4.10 | As-of pricing policy clarification and enforcement | aguardando decisão |

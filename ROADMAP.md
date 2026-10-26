@@ -38,7 +38,7 @@ Execute the 2×2 factorial (Market: US vs. Brazil × Macro Agent: absent vs. pre
 - [x] P4.4 (PR #62): filter insider transactions by approximate public availability (2 US business days Form 4 lag with strict `<` boundary; B3 yfinance insider rows unavailable in spot-check so CVM month-end+10 rule deferred pending vendor data availability). Hardening tests: #65 (`9621c2e3df03e5322f3c0cef1de7bfd444089ad7`), #72 (`6fb49a7acbaafd861eaf50a940b7fd340ae72858`, GitHub title "tests: insider date-column fail-closed edge").
 - [ ] P4.5: News temporal filtering hardening. aguardando decisão.
 - [ ] P4.6: Cross-tool temporal guardrail injection. No PR in #64-#85 mapped to this item.
-- [ ] P4.7: Amendment / prereg alignment updates. No PR in #64-#85 mapped to this item.
+- [ ] P4.7: Amendment / prereg alignment updates. aguardando decisão.
 - [x] P4.8 (PR #61): remove wall-clock retrieval timestamp lines from yfinance tool outputs while preserving remaining output format. Hardening tests: #65 (`9621c2e3df03e5322f3c0cef1de7bfd444089ad7`).
 - [x] P4.9 (PR #61): cap `get_stock_data` end date at `curr_date` (inclusive of `curr_date`, excluding later rows).
 - [ ] P4.10: As-of pricing policy clarification and enforcement. aguardando decisão.
