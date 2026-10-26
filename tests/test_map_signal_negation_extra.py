@@ -84,3 +84,23 @@ def test_closed_negation_clause_does_not_reach_next_clause(raw):
 )
 def test_intensifier_parentheticals_keep_the_negation(raw):
     assert map_signal(raw) == "HOLD"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        # Lingxi review of PR #89
+        "not bad, BUY",
+        "Not bad, BUY now",
+        "No, BUY",
+        "No problem, BUY",
+        "Not sure, but BUY",
+        "Do not hesitate, BUY",
+    ],
+)
+def test_more_closed_negation_clauses_are_buy(raw):
+    assert map_signal(raw) == "BUY"
+
+
+def test_exactly_five_words_between_negation_and_label_still_negates():
+    assert map_signal("We do not think that you really should BUY") == "HOLD"
