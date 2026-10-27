@@ -140,3 +140,15 @@ def test_string_close_on_middle_d_minus_1_is_a_defect(ticker, day):
     with pytest.raises(SnapshotIncomplete) as exc:
         _check({ticker: frame})
     assert exc.value.missing == [(ticker, day, FIELD_CLOSE)]
+
+
+@pytest.mark.parametrize("bad", ["null", None])
+@pytest.mark.parametrize("day", ["2024-01-10", "2024-02-01"])  # a middle session, the exit session
+@pytest.mark.parametrize("ticker", ["AAPL", "PETR4.SA"])
+def test_non_numeric_open_is_a_defect_not_a_crash(ticker, day, bad):
+    """Open is parsed like Close: a value float() rejects is FIELD_OPEN, never ValueError/TypeError."""
+    frame = _frame().astype({"Open": object})
+    frame.loc[day, "Open"] = bad
+    with pytest.raises(SnapshotIncomplete) as exc:
+        _check({ticker: frame})
+    assert exc.value.missing == [(ticker, day, FIELD_OPEN)]

@@ -74,23 +74,16 @@ def _frame(ticker: str, exit_day: pd.Timestamp, given: Mapping[str, pd.DataFrame
     return frame.set_axis(pd.to_datetime(frame.index))
 
 
-def _close_ok(frame: pd.DataFrame, day: pd.Timestamp) -> bool:
-    if "Close" not in frame.columns:
+def _price_ok(frame: pd.DataFrame, day: pd.Timestamp, column: str) -> bool:
+    """A finite positive price; a missing column or a value float() rejects is a defect, not an error."""
+    if column not in frame.columns:
         return False
-    value = frame.loc[day, "Close"]
+    value = frame.loc[day, column]
     value = value.iloc[-1] if isinstance(value, pd.Series) else value
     try:
         value = float(value)
     except (TypeError, ValueError):
         return False
-    return math.isfinite(value) and value > 0
-
-
-def _open_ok(frame: pd.DataFrame, day: pd.Timestamp) -> bool:
-    if "Open" not in frame.columns:
-        return False
-    value = frame.loc[day, "Open"]
-    value = float(value.iloc[-1]) if isinstance(value, pd.Series) else float(value)
     return math.isfinite(value) and value > 0
 
 
@@ -127,9 +120,9 @@ def validate_snapshot(
             if frame is None or day not in frame.index:
                 missing.append((ticker, key, FIELD_BAR))
             else:
-                if needs_open and not _open_ok(frame, day):
+                if needs_open and not _price_ok(frame, day, "Open"):
                     missing.append((ticker, key, FIELD_OPEN))
-                if day in close_days and not _close_ok(frame, day):
+                if day in close_days and not _price_ok(frame, day, "Close"):
                     missing.append((ticker, key, FIELD_CLOSE))
         report[ticker] = {
             "exchange": exchange_for(ticker),
