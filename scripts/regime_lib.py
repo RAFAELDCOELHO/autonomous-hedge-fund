@@ -132,14 +132,15 @@ def _simulate_signal(closes: pd.Series, in_pos: pd.Series, capital: float) -> pd
     eq = np.empty(n, dtype=float)
     for i in range(n):
         st, p = bool(s[i]), c[i]
-        if st and not prev:
-            shares = cash / p if p > 0 else 0.0
+        if st and not prev and p > 0:
+            shares = cash / p
             cash = 0.0
+            prev = True
         elif prev and not st:
             cash = shares * p
             shares = 0.0
+            prev = False
         eq[i] = cash + shares * p
-        prev = st
     return pd.Series(eq, index=closes.index)
 
 
