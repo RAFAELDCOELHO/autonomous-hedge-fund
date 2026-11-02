@@ -5,15 +5,14 @@ calendar day, including the Saturday after a Friday and the session after a
 holiday. History before ``curr_date`` stays. ``fill_prices=False`` (the
 runner) does not fill a missing Open from a later bar.
 
-With the default ``fill_prices=True``, ``_clean_dataframe`` backfills before
-that ceiling, so a leading NaN Open is taken from a bar after ``curr_date``
-(audit L7). That case is xfailed; it is not fixed here.
+With the default ``fill_prices=True``, gaps are filled only after that
+ceiling. A leading NaN Open is filled from a later bar on or before
+``curr_date``, and never from a bar after it.
 """
 
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 SENTINEL = 987654.0
 
@@ -174,14 +173,6 @@ def test_fill_prices_false_does_not_take_open_from_after_cutoff(monkeypatch, tmp
     assert not _has(out, SENTINEL)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "L7: bfill runs before the curr_date cutoff, so a leading NaN Open is "
-        "filled from a bar after curr_date (docs/TEMPORAL_AUDIT.md)"
-    ),
-)
 def test_leading_nan_open_is_not_filled_from_after_cutoff(monkeypatch, tmp_path):
     """Default fill_prices=True must not borrow an Open from after curr_date."""
     out = _load(
@@ -197,4 +188,23 @@ def test_leading_nan_open_is_not_filled_from_after_cutoff(monkeypatch, tmp_path)
 
     assert _dates(out) == ["2024-01-12"]
     assert pd.isna(out["Open"].iloc[0])
+    assert not _has(out, SENTINEL)
+
+
+def test_leading_nan_open_is_filled_from_a_later_bar_on_or_before_cutoff(monkeypatch, tmp_path):
+    """A gap still borrows from the next kept bar. The bar after curr_date stays out."""
+    out = _load(
+        monkeypatch,
+        tmp_path,
+        [
+            _bar("2024-01-11", None),
+            _bar("2024-01-12", 12.0),
+            _bar("2024-01-13", SENTINEL),
+        ],
+        "2024-01-12",
+        fill_prices=True,
+    )
+
+    assert _dates(out) == ["2024-01-11", "2024-01-12"]
+    assert out.sort_values("Date")["Open"].tolist() == [12.0, 12.0]
     assert not _has(out, SENTINEL)
