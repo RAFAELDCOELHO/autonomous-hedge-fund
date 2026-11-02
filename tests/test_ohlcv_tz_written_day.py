@@ -168,11 +168,7 @@ def _cache_name(symbol: str = "AAPL") -> str:
 
 
 def test_aware_then_naive_dates_raise(monkeypatch, tmp_path):
-    """A leading offset must not drop the naive row.
-
-    ``pd.to_datetime`` keeps ``2024-01-03T00:30+09:00`` and turns ``2024-01-02``
-    into NaT. The naive bar would then disappear. Fail closed instead.
-    """
+    """An offset followed by a naive date fails closed and names both rows."""
     with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
@@ -192,7 +188,7 @@ def test_aware_then_naive_dates_raise(monkeypatch, tmp_path):
 
 
 def test_naive_then_aware_dates_raise(monkeypatch, tmp_path):
-    """The other order drops the timezone-aware row and keeps the naive one."""
+    """A naive date followed by an offset fails closed and names both rows."""
     with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
@@ -257,6 +253,34 @@ def test_us_eastern_dst_offsets_keep_the_written_day(monkeypatch, tmp_path):
         pd.Timestamp("2024-07-02"),
     ]
     assert out["Open"].tolist() == [1.0, 11.0, 22.0]
+    assert not bool(out.isin([SENTINEL]).to_numpy().any())
+
+
+def test_brazilian_dst_offsets_keep_the_written_day(monkeypatch, tmp_path):
+    """Brazil stores ``-03:00`` in winter and ``-02:00`` in summer.
+
+    ``2019-02-16T22:00:00-02:00`` is 16 Feb as written and 17 Feb in UTC, so a
+    16 Feb cutoff keeps it. ``2019-02-17T00:00:00-03:00`` is after that cutoff.
+    """
+    out = _load(
+        monkeypatch,
+        tmp_path,
+        [
+            _bar("2018-06-15T00:00:00-03:00", 6.0),
+            _bar("2018-11-04T00:00:00-02:00", 11.0),
+            _bar("2019-02-16T22:00:00-02:00", 22.0),
+            _bar("2019-02-17T00:00:00-03:00", SENTINEL),
+        ],
+        "2019-02-16",
+    )
+
+    assert out["Date"].dt.tz is None
+    assert out["Date"].tolist() == [
+        pd.Timestamp("2018-06-15"),
+        pd.Timestamp("2018-11-04"),
+        pd.Timestamp("2019-02-16"),
+    ]
+    assert out["Open"].tolist() == [6.0, 11.0, 22.0]
     assert not bool(out.isin([SENTINEL]).to_numpy().any())
 
 
@@ -438,10 +462,9 @@ def test_naive_date_beside_eastern_offsets_raises(monkeypatch, tmp_path):
 
 
 def test_unparseable_date_beside_dst_offsets_is_not_dropped(monkeypatch, tmp_path):
-    """A value that is not a timestamp is not rewritten into a calendar day.
+    """``not-a-date`` beside a DST pair fails closed as not ISO8601.
 
-    The original column reaches the ISO8601 parser, which raises
-    DataDefectError. The sentinel price is not returned.
+    The sentinel price is not returned.
     """
     with pytest.raises(DataDefectError, match="not-a-date") as caught:
         _load(
@@ -456,6 +479,11 @@ def test_unparseable_date_beside_dst_offsets_is_not_dropped(monkeypatch, tmp_pat
         )
 
     message = str(caught.value)
+    assert "Date is not ISO8601" in message
+    assert "mixed timezones" not in message
+    assert "row 0 raw='not-a-date'" in message
+    assert "row 1 raw=" not in message
+    assert "row 2 raw=" not in message
     assert "Date mixes UTC offsets" not in message
     assert "mixes timezone-aware and naive" not in message
     assert "duplicate calendar days" not in message
@@ -483,6 +511,124 @@ def test_us_date_with_offset_beside_dst_offsets_is_not_rewritten(monkeypatch, tm
     assert "AAPL" in message
     assert _cache_name() in message
     assert "Date is not ISO8601" in message
+    assert "987654" not in message
+
+
+_DST_WINTER = "2024-01-02T00:00:00-05:00"
+_DST_SUMMER = "2024-07-02T00:00:00-04:00"
+
+
+def _expect_not_iso_beside_dst(monkeypatch, tmp_path, raw: str, *, row: int = 2) -> None:
+    with pytest.raises(DataDefectError) as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar(_DST_WINTER, 1.0),
+                _bar(_DST_SUMMER, 2.0),
+                _bar(raw, SENTINEL),
+            ],
+            "2024-07-02",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "Date is not ISO8601" in message
+    assert "mixed timezones" not in message
+    assert f"row {row} raw={raw!r}" in message
+    assert "row 0 raw=" not in message
+    assert "row 1 raw=" not in message
+    assert "987654" not in message
+
+
+def test_day_month_year_beside_dst_offsets_is_not_iso8601(monkeypatch, tmp_path):
+    """``02-01-2024T00:00:00-05:00`` beside ``-05:00`` and ``-04:00`` is not ISO8601."""
+    _expect_not_iso_beside_dst(monkeypatch, tmp_path, "02-01-2024T00:00:00-05:00")
+
+
+def test_ambiguous_slash_date_beside_dst_offsets_is_not_iso8601(monkeypatch, tmp_path):
+    """``05/04/2024T00:00:00-04:00`` is 4 May or 5 April, and not ISO8601."""
+    _expect_not_iso_beside_dst(monkeypatch, tmp_path, "05/04/2024T00:00:00-04:00")
+
+
+def test_european_slash_date_beside_dst_offsets_is_not_iso8601(monkeypatch, tmp_path):
+    """``13/04/2024T00:00:00-04:00`` is 13 April and not ISO8601."""
+    _expect_not_iso_beside_dst(monkeypatch, tmp_path, "13/04/2024T00:00:00-04:00")
+
+
+def test_slash_only_dst_span_is_not_iso8601(monkeypatch, tmp_path):
+    """``01/02/2024T00:00:00-05:00`` and ``07/02/2024T00:00:00-04:00`` are a
+    slash-only DST span with no ISO8601 neighbour.
+    """
+    winter = "01/02/2024T00:00:00-05:00"
+    summer = "07/02/2024T00:00:00-04:00"
+    with pytest.raises(DataDefectError) as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar(winter, SENTINEL),
+                _bar(summer, 2.0),
+            ],
+            "2024-07-02",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "Date is not ISO8601" in message
+    assert "mixed timezones" not in message
+    assert f"row 0 raw={winter!r}" in message
+    assert f"row 1 raw={summer!r}" in message
+    assert "987654" not in message
+
+
+def test_month_name_beside_dst_offsets_is_not_iso8601(monkeypatch, tmp_path):
+    """``January 2, 2024 00:00:00-05:00`` beside a DST pair is not ISO8601."""
+    _expect_not_iso_beside_dst(monkeypatch, tmp_path, "January 2, 2024 00:00:00-05:00")
+
+
+def test_gmt_suffix_beside_dst_offsets_is_not_iso8601(monkeypatch, tmp_path):
+    """``2024-03-11T00:00:00 GMT`` beside a DST pair is not an ISO8601 offset."""
+    _expect_not_iso_beside_dst(monkeypatch, tmp_path, "2024-03-11T00:00:00 GMT")
+
+
+def test_lowercase_t_beside_dst_offsets_is_not_iso8601(monkeypatch, tmp_path):
+    """``2024-03-11t00:00:00-04:00`` beside a DST pair is not ISO8601."""
+    _expect_not_iso_beside_dst(monkeypatch, tmp_path, "2024-03-11t00:00:00-04:00")
+
+
+def test_non_iso_cell_is_not_skipped_when_dst_days_collide(monkeypatch, tmp_path):
+    """``2024-01-02T22:00:00-05:00`` and ``2024-01-02T01:00:00-04:00`` share a written day.
+
+    ``02-01-2024T00:00:00-05:00`` is not ISO8601. Rewriting the other cells
+    would report duplicate calendar days.
+    """
+    raw = "02-01-2024T00:00:00-05:00"
+    with pytest.raises(DataDefectError) as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-02T22:00:00-05:00", 22.0),
+                _bar("2024-07-02T00:00:00-04:00", 7.0),
+                _bar("2024-01-02T01:00:00-04:00", 1.0),
+                _bar(raw, SENTINEL),
+            ],
+            "2024-07-02",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "Date is not ISO8601" in message
+    assert f"row 3 raw={raw!r}" in message
+    assert "row 0 raw=" not in message
+    assert "row 1 raw=" not in message
+    assert "row 2 raw=" not in message
+    assert "mixed timezones" not in message
+    assert "duplicate calendar days" not in message
     assert "987654" not in message
 
 
