@@ -1,7 +1,8 @@
-"""Date text with more than one UTC offset, passed in and never loaded.
+"""Date text with a UTC offset, passed in and never loaded.
 
 ``validate_snapshot`` on a single offset drops the offset and keeps the
-calendar day written in the cell. A column of text that mixes offsets, such
+calendar day written in the cell, whether the time is separated by ``T``
+or by a space. A column of text that mixes offsets, such
 as ``-05:00`` and ``-04:00`` across DST, never reaches that step:
 ``pd.to_datetime`` raises ``Mixed timezones detected``.
 
@@ -51,6 +52,40 @@ def _dst_dates() -> list[str]:
         "2024-01-02 00:00:00-05:00",
         "2024-01-03 00:00:00-05:00",
     ]
+
+
+def test_single_offset_mixed_separators_keep_the_written_day():
+    """One UTC offset with both ``T`` and a space is still the written day.
+
+    ``2024-01-02T00:00:00-05:00`` and ``2024-01-03 00:00:00-05:00`` are the
+    same offset. The column parser infers one strftime and raises on the
+    other. ``2024-01-04T22:00:00-05:00`` is 5 Jan in UTC and 4 Jan as written.
+    """
+    dates = [
+        "2024-01-02T00:00:00-05:00",
+        "2024-01-03 00:00:00-05:00",
+        "2023-12-29 00:00:00-05:00",
+        "2024-01-04T22:00:00-05:00",
+    ]
+
+    report = _validate(_prices(dates))
+
+    assert report["AAPL"]["exit_session"] == "2024-01-04"
+    assert report["AAPL"]["first_d_minus_1"] == "2023-12-29"
+    assert report["AAPL"]["n_sessions"] == 2
+
+
+def test_single_offset_mixed_separators_on_the_index_keep_the_written_day():
+    dates = [
+        "2024-01-02T00:00:00-05:00",
+        "2024-01-03 00:00:00-05:00",
+        "2023-12-29 00:00:00-05:00",
+        "2024-01-04T22:00:00-05:00",
+    ]
+
+    report = _validate(_prices(dates).set_index("Date"))
+
+    assert report["AAPL"]["exit_session"] == "2024-01-04"
 
 
 def test_dst_offset_text_keeps_the_written_day():
