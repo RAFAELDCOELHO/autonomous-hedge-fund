@@ -137,12 +137,14 @@ _MAX_DST_OFFSET_SPAN_MINUTES = 60
 def _rewrite_dst_offset_span(dates: pd.Series, source: str | None) -> pd.Series | None:
     """Rewrite text offsets spanning at most 60 minutes to each written day.
 
-    ``None`` leaves the column untouched. That is a datetime64 column, a
-    column with no offset marker, a single offset, a naive value beside an
-    offset, a span wider than 60 minutes, or any non-empty cell that
-    ``format="ISO8601"`` cannot parse. Two cells that are rewritten onto one
-    calendar day raise DataDefectError naming ``source``, each colliding
-    row, and the raw value.
+    ``None`` leaves the column untouched: a datetime64 column, no offset
+    marker, a single offset, a naive value beside an offset, a span wider
+    than 60 minutes, or a non-ISO8601 cell whose neighbours are not a DST
+    pair. A non-ISO8601 cell beside a DST pair raises DataDefectError
+    (``Date is not ISO8601``). Two cells that are rewritten onto one
+    calendar day raise DataDefectError (``Date normalizes to duplicate
+    calendar days``).
+    Both errors name ``source``, each offending row, and the raw value.
     """
     if pd.api.types.is_datetime64_any_dtype(dates):
         return None
@@ -153,6 +155,7 @@ def _rewrite_dst_offset_span(dates: pd.Series, source: str | None) -> pd.Series 
     saw_naive = False
     offsets: set[int] = set()
     parsed_at: list[tuple[object, pd.Timestamp]] = []
+    unparsed: list[object] = []
     for idx, value in dates.items():
         if bool(empty.loc[idx]):
             continue
@@ -161,7 +164,8 @@ def _rewrite_dst_offset_span(dates: pd.Series, source: str | None) -> pd.Series 
         except (TypeError, ValueError):
             return None
         if pd.isna(parsed):
-            return None
+            unparsed.append(idx)
+            continue
         if getattr(parsed, "tzinfo", None) is None:
             saw_naive = True
         else:
@@ -176,6 +180,8 @@ def _rewrite_dst_offset_span(dates: pd.Series, source: str | None) -> pd.Series 
         return None
     if max(offsets) - min(offsets) > _MAX_DST_OFFSET_SPAN_MINUTES:
         return None
+    if unparsed:
+        _raise_date_defect(source, "Date is not ISO8601", dates.loc[unparsed])
 
     seen: dict[pd.Timestamp, list[object]] = {}
     for idx, parsed in parsed_at:
