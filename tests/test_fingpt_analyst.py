@@ -7,6 +7,8 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
+from tradingagents.agents.utils.fingpt_tool import _extract_headlines
+
 
 def _fake_response(text: str):
     block = MagicMock()
@@ -127,6 +129,21 @@ class FingptSentimentTests(unittest.TestCase):
         with patch.object(self.mod, "_get_anthropic_client", return_value=client):
             out = self.mod.get_fingpt_sentiment(["a", "b"], "AAPL", "2024-05-10")
         self.assertIsNone(out)
+
+
+class FingptHeadlineExtractionTests(unittest.TestCase):
+    def test_yfinance_title_is_kept_and_link_line_is_not(self):
+        blob = (
+            "## AAPL News, from 2024-01-08 to 2024-01-10:\n\n"
+            "### Apple beats earnings estimates (source: Reuters)\n"
+            "Revenue grew faster than analysts expected.\n\n"
+            "Link: https://example.com/apple-earnings-story\n\n"
+            "### Q4 beat (source: Wire)\n"
+        )
+        self.assertEqual(
+            _extract_headlines(blob),
+            ["Apple beats earnings estimates", "Revenue grew faster than analysts expected.", "Q4 beat"],
+        )
 
 
 if __name__ == "__main__":
