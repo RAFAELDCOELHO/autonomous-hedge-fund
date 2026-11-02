@@ -4,8 +4,12 @@
 raises ``TypeError``. The offset is dropped without shifting the clock to UTC,
 then the day is floored to midnight. ``2024-01-05T00:30+09:00`` is 5 Jan as
 written and 4 Jan in UTC. Naive timestamps, including a time that is not
-midnight, stay as parsed. A column that mixes naive timestamps with
-timezone-aware ones, or that mixes UTC offsets, raises ``DataDefectError``.
+midnight, stay as parsed. A US/Eastern file whose text offsets are ``-05:00``
+and ``-04:00`` keeps each written day. A column that mixes naive timestamps
+with timezone-aware ones raises ``DataDefectError``. Offsets that span more
+than 60 minutes do too, and so do written days that collide after that
+reading. The error names the ticker, the cache file, the row, and the raw
+value.
 """
 
 from __future__ import annotations
@@ -225,6 +229,261 @@ def test_mixed_offsets_raise(monkeypatch, tmp_path):
     assert _cache_name() in message
     assert "row 0 raw='2024-01-02T00:30:00+09:00'" in message
     assert "row 1 raw='2024-01-03T00:30:00-05:00'" in message
+
+
+def test_us_eastern_dst_offsets_keep_the_written_day(monkeypatch, tmp_path):
+    """A US/Eastern CSV stores ``-05:00`` in winter and ``-04:00`` in summer.
+
+    ``2024-07-02T22:00:00-04:00`` is 2 Jul as written and 3 Jul in UTC, so a
+    2 Jul cutoff keeps it. ``2024-11-04 00:00:00-05:00`` is the winter offset
+    again and is after that cutoff, so it stays out.
+    """
+    out = _load(
+        monkeypatch,
+        tmp_path,
+        [
+            _bar("2024-01-02 00:00:00-05:00", 1.0),
+            _bar("2024-03-11 00:00:00-04:00", 11.0),
+            _bar("2024-07-02T22:00:00-04:00", 22.0),
+            _bar("2024-11-04 00:00:00-05:00", SENTINEL),
+        ],
+        "2024-07-02",
+    )
+
+    assert out["Date"].dt.tz is None
+    assert out["Date"].tolist() == [
+        pd.Timestamp("2024-01-02"),
+        pd.Timestamp("2024-03-11"),
+        pd.Timestamp("2024-07-02"),
+    ]
+    assert out["Open"].tolist() == [1.0, 11.0, 22.0]
+    assert not bool(out.isin([SENTINEL]).to_numpy().any())
+
+
+def test_cached_us_eastern_series_reloads_the_written_days(monkeypatch, tmp_path):
+    """A saved America/New_York frame stores ``-05:00`` and ``-04:00`` as text.
+
+    The first load sees one named zone. The cache file is the mixed-offset
+    CSV, and the next load must keep the same written days.
+    """
+    index = pd.DatetimeIndex(
+        ["2024-01-02", "2024-03-11", "2024-07-02", "2024-11-04"],
+        tz="America/New_York",
+        name="Date",
+    )
+    frame = pd.DataFrame(
+        {
+            "Open": [1.0, 11.0, 7.0, SENTINEL],
+            "High": [1.0, 11.0, 7.0, SENTINEL],
+            "Low": [1.0, 11.0, 7.0, SENTINEL],
+            "Close": [1.0, 11.0, 7.0, SENTINEL],
+            "Volume": [1.0, 1.0, 1.0, 1.0],
+        },
+        index=index,
+    )
+
+    def _download(*_args, **_kwargs):
+        return frame.copy()
+
+    monkeypatch.setattr(ss.yf, "download", _download)
+    df_config.initialize_config()
+    monkeypatch.setitem(df_config._config, "data_cache_dir", str(tmp_path))
+
+    first = ss.load_ohlcv("AAPL", "2024-07-02", fill_prices=False)
+    cached = list(tmp_path.glob("*.csv"))
+    assert len(cached) == 1
+    cached_text = cached[0].read_text()
+    assert "-05:00" in cached_text
+    assert "-04:00" in cached_text
+
+    def _no_network(*_args, **_kwargs):
+        raise AssertionError("offline: yfinance download")
+
+    monkeypatch.setattr(ss.yf, "download", _no_network)
+    second = ss.load_ohlcv("AAPL", "2024-07-02", fill_prices=False)
+
+    assert first["Date"].tolist() == second["Date"].tolist() == [
+        pd.Timestamp("2024-01-02"),
+        pd.Timestamp("2024-03-11"),
+        pd.Timestamp("2024-07-02"),
+    ]
+    assert first["Open"].tolist() == second["Open"].tolist() == [1.0, 11.0, 7.0]
+    assert second["Date"].dt.tz is None
+    assert not bool(second.isin([SENTINEL]).to_numpy().any())
+
+
+def test_dst_gap_is_not_filled_from_the_other_offset(monkeypatch, tmp_path):
+    """A leading NaN must not borrow an Open on the other side of DST."""
+    out = _load(
+        monkeypatch,
+        tmp_path,
+        [
+            _bar("2024-01-02 00:00:00-05:00", None),
+            _bar("2024-07-02 00:00:00-04:00", SENTINEL),
+        ],
+        "2024-01-02",
+        fill_prices=True,
+    )
+
+    assert _dates(out) == ["2024-01-02"]
+    assert pd.isna(out["Open"].iloc[0])
+    assert not bool(out.isin([SENTINEL]).to_numpy().any())
+
+
+def test_half_hour_dst_span_keeps_the_written_days(monkeypatch, tmp_path):
+    """A 30-minute shift is inside the one-hour span. Lord Howe is ``+10:30``/``+11:00``."""
+    out = _load(
+        monkeypatch,
+        tmp_path,
+        [
+            _bar("2024-01-02T00:00:00+10:30", 1.0),
+            _bar("2024-07-02T00:00:00+11:00", 2.0),
+        ],
+        "2024-07-02",
+    )
+
+    assert out["Date"].tolist() == [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-07-02")]
+    assert out["Open"].tolist() == [1.0, 2.0]
+
+
+def test_offset_one_minute_past_a_dst_hour_raises(monkeypatch, tmp_path):
+    """61 minutes is past a one-hour DST shift and stays fail-closed."""
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-02T00:00:00-05:00", 1.0),
+                _bar("2024-07-02T00:00:00-03:59", 2.0),
+            ],
+            "2024-07-02",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02T00:00:00-05:00'" in message
+    assert "row 1 raw='2024-07-02T00:00:00-03:59'" in message
+
+
+def test_dst_offsets_that_share_a_written_day_raise(monkeypatch, tmp_path):
+    """Two offsets on one written day are two bars for one session.
+
+    ``2024-01-02T22:00:00-05:00`` is 3 Jan in UTC and
+    ``2024-01-02T01:00:00-04:00`` is 2 Jan in UTC. The written day is 2 Jan
+    for both.
+    """
+    with pytest.raises(DataDefectError, match="duplicate calendar days") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-02T22:00:00-05:00", 22.0),
+                _bar("2024-07-02T00:00:00-04:00", 7.0),
+                _bar("2024-01-02T01:00:00-04:00", 1.0),
+            ],
+            "2024-07-02",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02T22:00:00-05:00'" in message
+    assert "row 2 raw='2024-01-02T01:00:00-04:00'" in message
+
+
+def test_wide_offsets_on_one_written_day_name_the_mix(monkeypatch, tmp_path):
+    """A 14-hour mix on one calendar day is still a mix of offsets."""
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-02T00:30:00+09:00", 2.0),
+                _bar("2024-01-02T00:30:00-05:00", 3.0),
+            ],
+            "2024-01-02",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "mixed timezones" in message
+    assert "duplicate calendar days" not in message
+    assert "row 0 raw='2024-01-02T00:30:00+09:00'" in message
+    assert "row 1 raw='2024-01-02T00:30:00-05:00'" in message
+
+
+def test_naive_date_beside_eastern_offsets_raises(monkeypatch, tmp_path):
+    """A bare date next to ``-05:00`` and ``-04:00`` is not a third written day."""
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-02 00:00:00-05:00", 1.0),
+                _bar("2024-07-02 00:00:00-04:00", 2.0),
+                _bar("2024-08-01", 3.0),
+            ],
+            "2024-08-01",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "mixed timezones" in message
+    assert "row 0 raw='2024-01-02 00:00:00-05:00'" in message
+    assert "row 1 raw='2024-07-02 00:00:00-04:00'" in message
+    assert "row 2 raw='2024-08-01'" in message
+
+
+def test_unparseable_date_beside_dst_offsets_is_not_dropped(monkeypatch, tmp_path):
+    """A value that is not a timestamp is not rewritten into a calendar day.
+
+    The original column reaches the ISO8601 parser, which raises
+    DataDefectError. The sentinel price is not returned.
+    """
+    with pytest.raises(DataDefectError, match="not-a-date") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("not-a-date", SENTINEL),
+                _bar("2024-01-02 00:00:00-05:00", 1.0),
+                _bar("2024-07-02 00:00:00-04:00", 2.0),
+            ],
+            "2024-07-02",
+        )
+
+    message = str(caught.value)
+    assert "Date mixes UTC offsets" not in message
+    assert "mixes timezone-aware and naive" not in message
+    assert "duplicate calendar days" not in message
+    assert "987654" not in message
+
+
+def test_us_date_with_offset_beside_dst_offsets_is_not_rewritten(monkeypatch, tmp_path):
+    """``01/04/2024 00:00:00-04:00`` is not rewritten to ``2024-01-04``.
+
+    Beside ``2024-01-03T00:00:00-05:00`` the column is left unchanged, so
+    DataDefectError names that row and the raw US date.
+    """
+    with pytest.raises(DataDefectError, match=r"row 1 raw='01/04/2024 00:00:00-04:00'") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-03T00:00:00-05:00", 1.0),
+                _bar("01/04/2024 00:00:00-04:00", SENTINEL),
+            ],
+            "2024-01-04",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "Date is not ISO8601" in message
+    assert "987654" not in message
 
 
 def test_same_offset_with_and_without_a_colon_keeps_both_days(monkeypatch, tmp_path):
