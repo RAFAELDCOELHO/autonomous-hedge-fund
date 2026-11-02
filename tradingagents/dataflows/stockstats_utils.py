@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 from pandas.tseries.holiday import USFederalHolidayCalendar
 from pandas.tseries.offsets import CustomBusinessDay
 from yfinance.exceptions import YFRateLimitError
-from typing import Annotated
+from typing import Annotated, NoReturn
 import os
 from .config import get_config
 
@@ -34,13 +34,75 @@ def yf_retry(func, max_retries=3, base_delay=2.0):
                 raise
 
 
-def _clean_dataframe(data: pd.DataFrame, fill_prices: bool = True) -> pd.DataFrame:
-    """Normalize a stock DataFrame for stockstats: parse dates, drop invalid rows, fill price gaps.
+def _empty_date_mask(values: pd.Series) -> pd.Series:
+    """True for a missing Date or a blank string. Those stay droppable NaT.
+
+    A whitespace-only cell is blank. Any other token is non-empty, so a later
+    NaT is a defect rather than a silent drop.
+    """
+    missing = values.isna()
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return missing
+    text = values.astype("string").str.strip()
+    blank = text.isna() | text.eq("")
+    return missing | blank.fillna(False)
+
+
+def _raise_date_defect(source: str | None, reason: str, offenders: pd.Series) -> NoReturn:
+    """Fail closed, naming the file or ticker, each row, and the raw value.
+
+    DataDefectError lives in runner, which imports load_ohlcv before that
+    class exists, so this import cannot sit at module level.
+    """
+    from tradingagents.backtest.runner import DataDefectError
+
+    where = source or "OHLCV Date column"
+    details = "; ".join(f"row {idx} raw={raw!r}" for idx, raw in offenders.items())
+    raise DataDefectError(f"{where}: {reason}: {details}")
+
+
+def _parse_ohlcv_dates(values: pd.Series, source: str | None) -> pd.Series:
+    """Parse Date as ISO8601. Non-empty failures raise; blanks stay NaT.
+
+    ``format="mixed"`` is not used: it chooses month and day per cell, so a
+    column of ``01/02/2024`` and ``13/02/2024`` is read as Jan 2 and Feb 13.
+    Naive timestamps mixed with offsets raise even under ``errors="coerce"``
+    (pandas: ``Mixed timezones``); that becomes the same fail-closed error,
+    naming each non-empty row.
+    """
+    try:
+        # ISO8601, not mixed: mixed decides month/day independently per cell.
+        parsed = pd.to_datetime(values, format="ISO8601", errors="coerce")
+    except ValueError as exc:
+        if "mixed timezones" in str(exc).lower():
+            _raise_date_defect(
+                source,
+                "mixed timezones in Date",
+                values.loc[~_empty_date_mask(values)],
+            )
+        raise
+    empty = _empty_date_mask(values)
+    bad = parsed.isna() & ~empty
+    if bad.any():
+        _raise_date_defect(source, "Date is not ISO8601", values.loc[bad])
+    return parsed
+
+
+def _clean_dataframe(
+    data: pd.DataFrame,
+    fill_prices: bool = True,
+    *,
+    source: str | None = None,
+) -> pd.DataFrame:
+    """Normalize a stock DataFrame for stockstats: parse dates, drop blank rows, fill price gaps.
 
     fill_prices=False leaves NaN prices (other than Close) in place, so a caller
     can fail closed on a missing Open instead of trading on a filled one.
+    A date defect raises DataDefectError naming ``source`` (ticker and file,
+    when the caller has them).
     """
-    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+    data = data.copy()
+    data["Date"] = _parse_ohlcv_dates(data["Date"], source)
     data = data.dropna(subset=["Date"])
 
     price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
@@ -67,18 +129,27 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     """Fetch OHLCV data with caching, filtered to prevent look-ahead bias.
 
     Downloads 5 years of data up to today and caches per symbol. On
-    subsequent calls the cache is reused. Rows after curr_date are
-    filtered out so backtests never see future prices. A timestamp with a
-    UTC offset is the calendar day written in the cell: the offset is
-    removed without shifting the clock to UTC, then the time is floored to
-    midnight. Naive timestamps are left as parsed. All of OHLC comes
-    from one auto_adjust=True download; the cache file name records that
-    setting. With fill_prices=True (the default), gaps in Open, High, Low,
-    Close, and Volume are forward-filled and then backfilled only on the
-    rows still dated on or before curr_date. The in-window bfill does use
-    later bars up to curr_date. A bar after curr_date is not a source, so
-    a missing price is never taken from a later bar after curr_date.
-    fill_prices=False leaves those gaps as NaN.
+    subsequent calls the cache is reused. Dates are parsed as ISO8601
+    (``format="ISO8601"``, ``errors="coerce"``). A column that mixes
+    ``2024-01-02T00:00:00`` and ``2024-01-03 00:00:00`` — naive, or every
+    cell carrying one offset — keeps each written day.
+    ``2024-01-04T22:00:00-05:00`` stays 4 Jan. A non-empty cell that is not
+    ISO8601 (a US date such as ``12/29/2023``, or garbage) raises
+    DataDefectError naming the ticker, the cache file, the row, and the raw
+    value. The same error is raised when naive timestamps are mixed with
+    offset timestamps. An empty or missing Date is still coerced to NaT and
+    dropped. When the parsed column is timezone-aware, the offset is
+    removed without shifting the clock to UTC and the time is floored to
+    midnight before the cutoff comparison. Naive timestamps are left as
+    parsed. Rows after curr_date are filtered out so backtests never see
+    future prices. All of OHLC comes from one auto_adjust=True download; the
+    cache file name records that setting. With fill_prices=True (the
+    default), gaps in Open, High, Low, Close, and Volume are forward-filled
+    and then backfilled only on the rows still dated on or before
+    curr_date. The in-window bfill does use later bars up to curr_date. A
+    bar after curr_date is not a source, so a missing price is never taken
+    from a later bar after curr_date. fill_prices=False leaves those gaps
+    as NaN.
     """
     config = get_config()
     curr_date_dt = pd.to_datetime(curr_date)
@@ -109,9 +180,13 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
         data = data.reset_index()
         data.to_csv(data_file, index=False)
 
-    # Parse and drop bad rows first, then cut the window, then fill. Backfill
-    # before the cut takes a leading NaN from a bar after curr_date.
-    data = _clean_dataframe(data, fill_prices=False)
+    # Cut the window, then fill. Backfill before the cut takes a leading NaN
+    # from a bar after curr_date.
+    data = _clean_dataframe(
+        data,
+        fill_prices=False,
+        source=f"{symbol} ({data_file})",
+    )
     # Wall clock, not UTC. A tz-aware Date cannot be compared with naive curr_date.
     # Naive stamps are left untouched so an existing cache still filters as before.
     dates = data["Date"]
