@@ -5,7 +5,7 @@ raises ``TypeError``. The offset is dropped without shifting the clock to UTC,
 then the day is floored to midnight. ``2024-01-05T00:30+09:00`` is 5 Jan as
 written and 4 Jan in UTC. Naive timestamps, including a time that is not
 midnight, stay as parsed. A column that mixes naive timestamps with
-timezone-aware ones, or that mixes UTC offsets, raises ``ValueError``.
+timezone-aware ones, or that mixes UTC offsets, raises ``DataDefectError``.
 """
 
 from __future__ import annotations
@@ -156,13 +156,20 @@ def test_tz_aware_gap_is_not_filled_from_the_next_written_day(monkeypatch, tmp_p
     assert not bool(out.isin([SENTINEL]).to_numpy().any())
 
 
+def _cache_name(symbol: str = "AAPL") -> str:
+    today = pd.Timestamp.today()
+    start = (today - pd.DateOffset(years=5)).strftime("%Y-%m-%d")
+    end = today.strftime("%Y-%m-%d")
+    return f"{symbol}-YFin-data-{start}-{end}-adj.csv"
+
+
 def test_aware_then_naive_dates_raise(monkeypatch, tmp_path):
     """A leading offset must not drop the naive row.
 
     ``pd.to_datetime`` keeps ``2024-01-03T00:30+09:00`` and turns ``2024-01-02``
     into NaT. The naive bar would then disappear. Fail closed instead.
     """
-    with pytest.raises(ValueError, match="AAPL: Date mixes timezone-aware and naive timestamps"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -172,11 +179,17 @@ def test_aware_then_naive_dates_raise(monkeypatch, tmp_path):
             ],
             "2024-01-03",
         )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-03T00:30:00+09:00'" in message
+    assert "row 1 raw='2024-01-02'" in message
 
 
 def test_naive_then_aware_dates_raise(monkeypatch, tmp_path):
     """The other order drops the timezone-aware row and keeps the naive one."""
-    with pytest.raises(ValueError, match="AAPL: Date mixes timezone-aware and naive timestamps"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -187,10 +200,16 @@ def test_naive_then_aware_dates_raise(monkeypatch, tmp_path):
             "2024-01-03",
         )
 
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02'" in message
+    assert "row 1 raw='2024-01-03T00:30:00+09:00'" in message
+
 
 def test_mixed_offsets_raise(monkeypatch, tmp_path):
     """Two offsets name the problem instead of pandas' mixed-timezone error."""
-    with pytest.raises(ValueError, match="AAPL: Date mixes UTC offsets"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -200,6 +219,12 @@ def test_mixed_offsets_raise(monkeypatch, tmp_path):
             ],
             "2024-01-03",
         )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02T00:30:00+09:00'" in message
+    assert "row 1 raw='2024-01-03T00:30:00-05:00'" in message
 
 
 def test_same_offset_with_and_without_a_colon_keeps_both_days(monkeypatch, tmp_path):

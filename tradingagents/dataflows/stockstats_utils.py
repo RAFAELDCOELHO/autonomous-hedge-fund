@@ -129,14 +129,16 @@ def _missing_date_cell(value) -> bool:
     return bool(missing)
 
 
-def _reject_mixed_date_zones(dates: pd.Series, symbol: str) -> None:
+def _reject_mixed_date_zones(dates: pd.Series, source: str | None) -> None:
     """Fail closed when Date mixes naive stamps with offsets, or mixes offsets.
 
     Column-wise ``pd.to_datetime`` turns the other kind into NaT, and the
     following drop deletes those rows, or it raises ``Mixed timezones detected``.
-    A datetime64 column already has one timezone, including a named zone whose
-    UTC offset changes across the year, and is left for the written-day
-    conversion. Naive stamps are not re-parsed here.
+    Both cases raise DataDefectError through ``_raise_date_defect``, naming
+    ``source``, each offending row, and the raw value. A datetime64 column
+    already has one timezone, including a named zone whose UTC offset changes
+    across the year, and is left for the written-day conversion. Naive stamps
+    are not re-parsed here.
     """
     if pd.api.types.is_datetime64_any_dtype(dates):
         return
@@ -145,7 +147,9 @@ def _reject_mixed_date_zones(dates: pd.Series, symbol: str) -> None:
 
     saw_naive = False
     offsets: set[int] = set()
-    for value in dates:
+    mixed_rows: list = []
+    offset_rows: list = []
+    for idx, value in dates.items():
         if _missing_date_cell(value):
             continue
         parsed = pd.to_datetime(value, errors="coerce")
@@ -153,12 +157,23 @@ def _reject_mixed_date_zones(dates: pd.Series, symbol: str) -> None:
             continue
         if getattr(parsed, "tzinfo", None) is None:
             saw_naive = True
+            mixed_rows.append(idx)
         else:
             offsets.add(int(parsed.utcoffset().total_seconds() // 60))
-        if saw_naive and offsets:
-            raise ValueError(f"{symbol}: Date mixes timezone-aware and naive timestamps")
+            mixed_rows.append(idx)
+            offset_rows.append(idx)
+    if saw_naive and offsets:
+        _raise_date_defect(
+            source,
+            "Date mixes timezone-aware and naive timestamps",
+            dates.loc[mixed_rows],
+        )
     if len(offsets) > 1:
-        raise ValueError(f"{symbol}: Date mixes UTC offsets")
+        _raise_date_defect(
+            source,
+            "Date mixes UTC offsets",
+            dates.loc[offset_rows],
+        )
 
 
 def _calendar_day_as_written(dates: pd.Series) -> pd.Series:
@@ -183,14 +198,15 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     ``2024-01-04T22:00:00-05:00`` stays 4 Jan. A non-empty cell that is not
     ISO8601 (a US date such as ``12/29/2023``, or garbage) raises
     DataDefectError naming the ticker, the cache file, the row, and the raw
-    value. An empty or missing Date is still coerced to NaT and dropped.
-    When the parsed column is timezone-aware, the offset is removed without
-    shifting the clock to UTC and the time is floored to midnight before the
-    cutoff comparison. Naive timestamps are left as parsed. A column that
-    mixes naive timestamps with timezone-aware ones, or that mixes more than
-    one UTC offset, raises ValueError: the rows are not dropped and the
-    offsets are not forced into one zone. Rows after curr_date are filtered
-    out so backtests never see future prices. All of OHLC comes from one
+    value. The same error is raised when naive timestamps are mixed with
+    offset timestamps, or when more than one UTC offset is present. Those
+    rows are not dropped, and the offsets are not forced into one zone. An
+    empty or missing Date is still coerced to NaT and dropped. When the
+    parsed column is timezone-aware, the offset is removed without shifting
+    the clock to UTC and the time is floored to midnight before the cutoff
+    comparison. Naive timestamps are left as parsed. Rows after curr_date
+    are filtered out so backtests never see future prices. All of OHLC comes
+    from one
     auto_adjust=True download; the cache file name records that setting.
     With fill_prices=True (the default), gaps in Open, High, Low, Close, and
     Volume are forward-filled and then backfilled only on the rows still
@@ -232,11 +248,12 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     # takes a leading NaN from a bar after curr_date.
     # Mixed naive/aware values become NaT and would be deleted; mixed offsets
     # raise pandas' "Mixed timezones detected". Name the problem instead.
-    _reject_mixed_date_zones(data["Date"], symbol)
+    source = f"{symbol} ({data_file})"
+    _reject_mixed_date_zones(data["Date"], source=source)
     data = _clean_dataframe(
         data,
         fill_prices=False,
-        source=f"{symbol} ({data_file})",
+        source=source,
     )
     # Wall clock, not UTC. A tz-aware Date cannot be compared with naive curr_date.
     # Naive stamps are left untouched so an existing cache still filters as before.
