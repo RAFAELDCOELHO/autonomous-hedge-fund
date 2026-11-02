@@ -46,6 +46,30 @@ class PercentileOfTests(unittest.TestCase):
 
         self.assertEqual(list(equity.values), [1_000.0, 1_000.0])
 
+    def test_negative_entry_close_keeps_cash(self):
+        # `p != 0` still buys a negative close. The flat bar must stay in cash.
+        idx = pd.date_range("2024-01-01", periods=2, freq="B")
+        closes = pd.Series([-5.0, 10.0], index=idx)
+        held = pd.Series([True, False], index=idx)
+
+        equity = self.rl._simulate_signal(closes, held, 1_000.0)
+
+        self.assertEqual(list(equity.values), [1_000.0, 1_000.0])
+
+    def test_entry_defers_to_the_next_positive_close(self):
+        # A zero or NaN bar does not consume the entry. The fill happens on the
+        # next positive close; the bar after that marks the position.
+        idx = pd.date_range("2024-01-01", periods=3, freq="B")
+        held = pd.Series([True, True, True], index=idx)
+        for bad in (0.0, float("nan")):
+            with self.subTest(bad=bad):
+                closes = pd.Series([bad, 10.0, 12.0], index=idx)
+                equity = self.rl._simulate_signal(closes, held, 1_000.0)
+                if bad == 0.0:
+                    self.assertEqual(list(equity.values), [1_000.0, 1_000.0, 1_200.0])
+                else:
+                    self.assertEqual(list(equity.iloc[1:].values), [1_000.0, 1_200.0])
+
 
 if __name__ == "__main__":
     unittest.main()
