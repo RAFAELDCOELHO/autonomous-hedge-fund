@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 
 import numpy as np
@@ -128,6 +129,24 @@ def test_missing_date_column_exits_2(tmp_path, capsys):
     assert captured.out == ""
     assert "missing Date column" in captured.err
     assert "AAPL.csv" in captured.err
+
+
+def test_unreadable_csv_exits_2(tmp_path, capsys):
+    if os.geteuid() == 0:
+        pytest.skip("root can read a mode 000 file")
+    path = _write(tmp_path / "snap", _snapshot())
+    blocked = path / "AAPL.csv"
+    blocked.chmod(0o000)
+    try:
+        code = check_snapshot.main([str(path)])
+    finally:
+        blocked.chmod(0o644)
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("error:")
+    assert "Permission denied" in captured.err
+    assert blocked.name in captured.err
 
 
 def test_unexpected_error_is_not_masked(tmp_path, monkeypatch):
