@@ -136,6 +136,10 @@ class MapSignalTests(unittest.TestCase):
         # Only those nouns: other hyphens and the unhyphenated verb are unchanged.
         self.assertEqual(self.mod.map_signal("STRONG-BUY"), "BUY")
         self.assertEqual(self.mod.map_signal("Sell off the position"), "SELL")
+        # Plurals and a lone side-noun carry no label. UNDER-WEIGHT is a rating.
+        self.assertFalse(self.mod.is_parseable_signal("SELL-SIDE"))
+        self.assertFalse(self.mod.is_parseable_signal("BUY-INS"))
+        self.assertEqual(self.mod.map_signal("UNDER-WEIGHT"), "SELL")
 
     def test_non_text_inputs_do_not_raise_and_fallback_reasonably(self):
         self.assertEqual(self.mod.map_signal(None), "HOLD")
