@@ -40,6 +40,7 @@ _TEXT_SIGNAL_PATTERN = re.compile(
 # Hyphenated nouns built on a label ("sell-off fears", "buy-side demand") are
 # not ratings. They are joined ("SELLOFF") before "-" becomes a space, so the
 # \b-bounded label pattern skips them.
+# HOLD-UP is deliberately not in the list, so "hold-up" still maps to HOLD.
 _COMPOUND_NOUN_PATTERN = re.compile(r"\b(?:SELL-(?:OFFS?|SIDE)|BUY-(?:SIDE|BACKS?|INS?))\b")
 _LABEL_BOUNDARY_PATTERN =re.compile(r"[.!?;:\n]|(?:\s-\s)")
 _NON_NEGATING_PHRASES_PATTERN = re.compile(
