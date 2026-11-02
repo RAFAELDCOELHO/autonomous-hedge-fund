@@ -145,6 +145,43 @@ class FingptHeadlineExtractionTests(unittest.TestCase):
             ["Apple beats earnings estimates", "Revenue grew faster than analysts expected.", "Q4 beat"],
         )
 
+    def test_bare_url_line_is_not_a_headline(self):
+        # No Link:/URL: prefix. Each URL is long enough that the old
+        # extractor scored it as a headline.
+        blob = (
+            "Apple beats earnings estimates by a wide margin.\n"
+            "https://example.com/apple-earnings-story\n"
+            "http://news.example.com/another-long-story\n"
+            "HTTPS://EXAMPLE.COM/CASE-MIXED-LONG-URL\n"
+        )
+        self.assertEqual(
+            _extract_headlines(blob),
+            ["Apple beats earnings estimates by a wide margin."],
+        )
+
+    def test_url_in_the_middle_of_a_sentence_is_kept(self):
+        # Drop a line only when it is nothing but the URL. A URL inside a
+        # sentence is still a headline. search() would drop the embedded
+        # URL; match() would drop a sentence that only starts with one.
+        middle = "Apple rose after https://example.com/story reported a wide earnings beat."
+        leading = "https://example.com/story reported that Apple beat earnings by a wide margin."
+        self.assertEqual(
+            _extract_headlines(middle + "\n" + leading),
+            [middle, leading],
+        )
+
+    def test_deeper_heading_levels_are_titles(self):
+        blob = (
+            "### Three level title (source: Reuters)\n"
+            "#### Four level title (source: Wire)\n"
+            "##### Five level title (source: Desk)\n"
+            "###### Six\n"
+        )
+        self.assertEqual(
+            _extract_headlines(blob),
+            ["Three level title", "Four level title", "Five level title", "Six"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

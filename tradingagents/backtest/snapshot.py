@@ -13,6 +13,14 @@ exchange calendar (calendar.py):
 - no vendor date up to the exit session may appear twice (the runner raises on
   a duplicate anywhere in the frame it loads, look-back included).
 
+A ``prices_by_ticker`` Date column of text is the calendar day written in each
+cell. Offsets that span at most 60 minutes (``-05:00`` and ``-04:00`` across a
+civil DST change) are read that way. One offset written with both ``T`` and a
+space is that same written day. A naive value beside an offset, a wider span,
+or two cells that write one day raises ValueError. A datetime64 column already
+has one zone, including a named zone whose UTC offset changes over the year,
+and keeps that written day.
+
 Vendor bars on non-sessions are ignored, so a holiday on only one exchange is
 never flagged for the other. Bars are loaded through the runner's own vendor
 path (load_ohlcv, auto_adjust=True, fill_prices=False) unless frames are
@@ -63,6 +71,92 @@ def prereg_tickers() -> list[str]:
     return [t + ".SA" if m == "BR" else t for t, m in PREREG_TICKERS.items()]
 
 
+# A calendar day ends in "-DD". That is not an offset. These are: "Z", "+",
+# "±HH:MM", "±HHMM", and a short negative offset after a time ("T00:30:00-05").
+_OFFSET_MARKER_RE = r"(?:Z|\+|[+-]\d{2}:\d{2}|[+-]\d{4}|T\d{2}:\d{2}:\d{2}-\d{2}$)"
+
+# A civil DST transition shifts the clock by at most one hour (US/Eastern
+# -05:00 vs -04:00; Lord Howe by 30 minutes). A wider mix is not that case.
+_MAX_DST_OFFSET_SPAN_MINUTES = 60
+
+
+def _missing_date_cell(value) -> bool:
+    if isinstance(value, str):
+        return not value.strip()
+    try:
+        missing = pd.isna(value)
+    except (TypeError, ValueError):
+        return False
+    return bool(missing)
+
+
+def _offset_minutes(parsed: pd.Timestamp) -> int | None:
+    if getattr(parsed, "tzinfo", None) is None:
+        return None
+    offset = parsed.utcoffset()
+    if offset is None:
+        return None
+    return int(offset.total_seconds() // 60)
+
+
+def _rewrite_mixed_offset_dates(frame: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """Read a DST-sized mix of text offsets as the written calendar day.
+
+    Column-wise ``pd.to_datetime`` raises ``Mixed timezones detected`` on
+    ``-05:00`` next to ``-04:00``. A span of at most 60 minutes is one civil
+    zone, so each cell becomes the day written in it and the column parser
+    does not see mixed offsets. A datetime64 index already has one zone and
+    is left for the wall-clock conversion. A single offset is left too,
+    including when ``T`` and a space are mixed.
+
+    Raises ValueError when the column mixes naive and aware values, when the
+    offsets span more than 60 minutes, or when two cells write one day.
+    A value that is not a timestamp is dropped, same as a NaT row.
+    """
+    index = frame.index
+    if isinstance(index, pd.DatetimeIndex) or pd.api.types.is_datetime64_any_dtype(index):
+        return frame
+    labels = pd.Series(list(index), dtype="string")
+    if not labels.str.contains(_OFFSET_MARKER_RE, regex=True, na=False).any():
+        return frame
+
+    saw_naive = False
+    offsets: set[int] = set()
+    parsed_at: list[tuple[int, pd.Timestamp]] = []
+    for pos, value in enumerate(index):
+        if _missing_date_cell(value):
+            continue
+        parsed = pd.to_datetime(value, errors="coerce")
+        if pd.isna(parsed):
+            continue
+        offset = _offset_minutes(parsed)
+        if offset is None:
+            saw_naive = True
+        else:
+            offsets.add(offset)
+            parsed_at.append((pos, parsed))
+        if saw_naive and offsets:
+            raise ValueError(f"{ticker}: Date mixes timezone-aware and naive timestamps")
+    if len(offsets) <= 1:
+        return frame
+    if max(offsets) - min(offsets) > _MAX_DST_OFFSET_SPAN_MINUTES:
+        raise ValueError(f"{ticker}: Date mixes UTC offsets")
+
+    seen: set[pd.Timestamp] = set()
+    keep: list[int] = []
+    days: list[pd.Timestamp] = []
+    for pos, parsed in parsed_at:
+        day = parsed.tz_localize(None).normalize()
+        if day in seen:
+            raise ValueError(f"{ticker}: Date normalizes to duplicate calendar days")
+        seen.add(day)
+        keep.append(pos)
+        days.append(day)
+    rewritten = frame.iloc[keep].copy()
+    rewritten.index = pd.DatetimeIndex(days, name=index.name)
+    return rewritten
+
+
 def _frame(ticker: str, exit_day: pd.Timestamp, given: Mapping[str, pd.DataFrame] | None):
     if given is not None:
         frame = given.get(ticker)
@@ -71,9 +165,16 @@ def _frame(ticker: str, exit_day: pd.Timestamp, given: Mapping[str, pd.DataFrame
     if frame is None:
         return None
     frame = frame.set_index("Date") if "Date" in frame.columns else frame
+    # Text ``-05:00``/``-04:00`` is not one dtype. Read each written day when
+    # the offsets span at most an hour; fail closed otherwise.
+    frame = _rewrite_mixed_offset_dates(frame, ticker)
     # Wall clock, not UTC. ``2024-01-05T00:30+09:00`` is 5 Jan as written
     # (UTC would make it 4 Jan and satisfy the previous session).
-    index = pd.DatetimeIndex(pd.to_datetime(frame.index))
+    # format="ISO8601" keeps one offset when cells mix ``T`` and a space
+    # (``2024-01-02T00:00:00-05:00`` and ``2024-01-03 00:00:00-05:00``).
+    # The default parser infers one strftime and raises. The offset stays
+    # here and is dropped below, without a shift to UTC.
+    index = pd.DatetimeIndex(pd.to_datetime(frame.index, format="ISO8601"))
     if index.tz is not None:
         index = index.tz_localize(None)
     return frame.set_axis(index.normalize())
@@ -101,6 +202,10 @@ def validate_snapshot(
     """Return ``{ticker: {exchange, n_sessions, first_d_minus_1, exit_session}}`` or raise.
 
     Raises SnapshotIncomplete (a runner.DataDefectError) whose ``missing`` names every gap.
+    A Date column of text keeps the calendar day written in each cell. One
+    offset may use ``T`` or a space; both are that written day. Offsets
+    spanning more than 60 minutes, a mix of naive and offset values, or two
+    cells that write one calendar day raise ValueError.
     """
     tickers = list(tickers) if tickers is not None else prereg_tickers()
     start = start or PREREG_WINDOW_START
