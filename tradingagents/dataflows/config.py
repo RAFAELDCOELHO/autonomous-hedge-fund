@@ -1,5 +1,7 @@
-import tradingagents.default_config as default_config
+from copy import deepcopy
 from typing import Dict, Optional
+
+import tradingagents.default_config as default_config
 
 # Use default config but allow it to be overridden
 _config: Optional[Dict] = None
@@ -21,10 +23,15 @@ def set_config(config: Dict):
 
 
 def get_config() -> Dict:
-    """Get the current configuration."""
+    """Get the current configuration.
+
+    The result is a deep copy. Nested maps such as ``data_vendors`` and
+    ``tool_vendors`` are not the live objects, so editing them does not
+    change later lookups.
+    """
     if _config is None:
         initialize_config()
-    return _config.copy()
+    return deepcopy(_config)
 
 
 # Initialize with default config

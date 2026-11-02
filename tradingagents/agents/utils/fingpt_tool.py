@@ -18,13 +18,12 @@ _MAX_HEADLINES = 30
 
 
 def _extract_headlines(news_text: str) -> list[str]:
-    """Heuristic extraction of headline-like lines from a vendor news blob.
+    """Headline-like lines from a vendor news blob.
 
-    Vendor news responses are human-readable strings (see yfinance_news,
-    alpha_vantage_news). We split on blank-line or newline boundaries and
-    keep lines with at least _MIN_HEADLINE_CHARS that are not markdown
-    headers or metadata. Sprint 6 will replace this with a structured
-    fetcher once the OpenBB data layer lands.
+    yfinance titles are ``### Title (source: Publisher)`` and the URL is a
+    ``Link:`` line (see get_news_yfinance). That title is a headline; the
+    ``## ... News`` banner and ``Link:`` / ``URL:`` lines are not. Any other
+    line of at least ``_MIN_HEADLINE_CHARS`` is kept.
     """
     if not news_text:
         return []
@@ -33,11 +32,12 @@ def _extract_headlines(news_text: str) -> list[str]:
     for chunk in chunks:
         for line in chunk.splitlines():
             line = line.strip()
-            if len(line) < _MIN_HEADLINE_CHARS:
+            is_title = line.startswith("###")
+            if is_title:
+                line = re.sub(r"\s*\(source:.*?\)\s*$", "", line.lstrip("#").strip(), flags=re.I)
+            elif line.startswith("#") or line.lower().startswith(("date:", "url:", "source:", "link:")):
                 continue
-            if line.startswith("#"):
-                continue
-            if line.lower().startswith(("date:", "url:", "source:")):
+            if not line or (not is_title and len(line) < _MIN_HEADLINE_CHARS):
                 continue
             headlines.append(line)
             if len(headlines) >= _MAX_HEADLINES:
