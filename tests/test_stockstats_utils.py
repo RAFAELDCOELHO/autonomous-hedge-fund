@@ -5,7 +5,11 @@ from __future__ import annotations
 import unittest
 
 import pandas as pd
+import pytest
 
+import tradingagents.dataflows.config as df_config
+import tradingagents.dataflows.stockstats_utils as stockstats_utils
+from tradingagents.backtest.runner import DataDefectError
 from tradingagents.dataflows.stockstats_utils import (
     _clean_dataframe,
     filter_financials_by_date,
@@ -39,7 +43,7 @@ class CleanDataFrameTests(unittest.TestCase):
     def test_clean_dataframe_parses_dates_drops_bad_rows_and_fills_prices(self):
         raw = pd.DataFrame(
             {
-                "Date": ["2024-01-01", "bad-date", "2024-01-03", "2024-01-04"],
+                "Date": ["2024-01-01", None, "2024-01-03", "2024-01-04"],
                 "Open": ["10", "11", None, "13"],
                 "High": ["11", "12", "14", "15"],
                 "Low": ["9", "10", "12", "13"],
@@ -50,7 +54,7 @@ class CleanDataFrameTests(unittest.TestCase):
 
         cleaned = _clean_dataframe(raw.copy())
 
-        # bad Date row and non-numeric Close row are removed
+        # missing Date and non-numeric Close are removed; a non-empty bad date raises
         self.assertEqual(len(cleaned), 2)
         self.assertEqual(
             cleaned["Date"].dt.strftime("%Y-%m-%d").tolist(),
@@ -59,6 +63,165 @@ class CleanDataFrameTests(unittest.TestCase):
         self.assertEqual(cleaned["Close"].tolist(), [10.5, 13.5])
         # Volume gap in surviving rows is filled from neighboring rows.
         self.assertEqual(cleaned["Volume"].tolist(), [1000.0, 1000.0])
+
+    def test_clean_dataframe_keeps_mixed_separators_and_written_day(self):
+        """ISO8601 accepts ``T`` and a space, and an offset keeps the written day.
+
+        ``2024-01-04T22:00:00-05:00`` is 5 Jan in UTC and 4 Jan as written.
+        """
+        naive = _ohlcv(
+            ["2024-01-02T00:00:00", "2024-01-03 00:00:00"],
+            [1.5, 2.5],
+        )
+        offset = _ohlcv(
+            [
+                "2024-01-02T00:00:00-05:00",
+                "2024-01-03 00:00:00-05:00",
+                "2024-01-04T22:00:00-05:00",
+            ],
+            [1.5, 2.5, 4.5],
+        )
+
+        naive_out = _clean_dataframe(naive.copy(), fill_prices=False)
+        offset_out = _clean_dataframe(offset.copy(), fill_prices=False)
+
+        self.assertEqual(len(naive_out), len(naive))
+        self.assertEqual(len(offset_out), len(offset))
+        self.assertEqual(
+            naive_out["Date"].dt.strftime("%Y-%m-%d").tolist(),
+            ["2024-01-02", "2024-01-03"],
+        )
+        self.assertEqual(
+            offset_out["Date"].dt.strftime("%Y-%m-%d").tolist(),
+            ["2024-01-02", "2024-01-03", "2024-01-04"],
+        )
+
+    def test_clean_dataframe_rejects_us_style_dates(self):
+        """A US date such as 12/29/2023 is not ISO8601 and fails closed.
+
+        ``format="mixed"`` would parse these and the assertion would fail.
+        """
+        raw = _ohlcv(
+            ["12/29/2023", "01/02/2024", "1/3/2024"],
+            [1.0, 2.0, 3.0],
+        )
+
+        with self.assertRaises(DataDefectError) as caught:
+            _clean_dataframe(raw.copy(), fill_prices=False, source="AAPL (fixture.csv)")
+
+        message = str(caught.exception)
+        self.assertIn("AAPL", message)
+        self.assertIn("fixture.csv", message)
+        self.assertIn("row 0", message)
+        self.assertIn("12/29/2023", message)
+        self.assertIn("row 1", message)
+        self.assertIn("01/02/2024", message)
+        self.assertIn("row 2", message)
+        self.assertIn("1/3/2024", message)
+
+    def test_clean_dataframe_rejects_garbage_date_among_valid_rows(self):
+        """A garbage cell fails closed and names that row, not its neighbors.
+
+        ``errors="raise"`` raises pandas' ValueError, not DataDefectError.
+        Dropping the bad row and returning the others does not raise at all.
+        """
+        raw = _ohlcv(
+            ["2024-01-02", "not-a-date", "2024-01-04"],
+            [1.5, 2.5, 4.5],
+        )
+
+        with self.assertRaises(DataDefectError) as caught:
+            _clean_dataframe(raw.copy(), fill_prices=False, source="MSFT (cache.csv)")
+
+        message = str(caught.exception)
+        self.assertIn("MSFT", message)
+        self.assertIn("cache.csv", message)
+        self.assertIn("row 1", message)
+        self.assertIn("not-a-date", message)
+        self.assertNotIn("row 0", message)
+        self.assertNotIn("row 2", message)
+
+    def test_clean_dataframe_rejects_mixed_timezones(self):
+        """Naive timestamps mixed with an offset fail closed, naming each row."""
+        raw = _ohlcv(
+            ["2024-01-02T00:00:00", "2024-01-03T00:00:00-05:00"],
+            [1.0, 2.0],
+        )
+
+        with self.assertRaises(DataDefectError) as caught:
+            _clean_dataframe(raw.copy(), fill_prices=False, source="AAPL (cache.csv)")
+
+        message = str(caught.exception)
+        self.assertIn("mixed timezones", message)
+        self.assertIn("AAPL", message)
+        self.assertIn("cache.csv", message)
+        self.assertIn("row 0", message)
+        self.assertIn("2024-01-02T00:00:00", message)
+        self.assertIn("row 1", message)
+        self.assertIn("2024-01-03T00:00:00-05:00", message)
+
+    def test_clean_dataframe_drops_blank_dates_and_keeps_neighbors(self):
+        """Missing and blank dates are dropped. Neighbors stay. Nothing is raised."""
+        raw = _ohlcv(
+            ["2024-01-02", "", "   ", None, "2024-01-05"],
+            [1.0, 2.0, 3.0, 4.0, 5.0],
+        )
+
+        cleaned = _clean_dataframe(raw.copy(), fill_prices=False)
+
+        self.assertEqual(
+            cleaned["Date"].dt.strftime("%Y-%m-%d").tolist(),
+            ["2024-01-02", "2024-01-05"],
+        )
+        self.assertEqual(cleaned["Close"].tolist(), [1.0, 5.0])
+
+
+def test_load_ohlcv_names_ticker_and_file_when_a_date_is_not_iso(monkeypatch, tmp_path):
+    """The loader's DataDefectError names the ticker, the cache file, and the row."""
+
+    def _no_network(*_args, **_kwargs):
+        raise AssertionError("offline: yfinance download")
+
+    monkeypatch.setattr(stockstats_utils.yf, "download", _no_network)
+    df_config.initialize_config()
+    monkeypatch.setitem(df_config._config, "data_cache_dir", str(tmp_path))
+    today = pd.Timestamp.today()
+    start = (today - pd.DateOffset(years=5)).strftime("%Y-%m-%d")
+    end = today.strftime("%Y-%m-%d")
+    path = tmp_path / f"AAPL-YFin-data-{start}-{end}-adj.csv"
+    pd.DataFrame(
+        {
+            "Date": ["2024-01-02", "01/03/2024", "2024-01-04"],
+            "Open": [1.0, 2.0, 3.0],
+            "High": [1.0, 2.0, 3.0],
+            "Low": [1.0, 2.0, 3.0],
+            "Close": [1.0, 2.0, 3.0],
+            "Volume": [1.0, 1.0, 1.0],
+        }
+    ).to_csv(path, index=False)
+
+    with pytest.raises(DataDefectError) as caught:
+        stockstats_utils.load_ohlcv("AAPL", "2024-01-04", fill_prices=False)
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert path.name in message
+    assert "row 1" in message
+    assert "01/03/2024" in message
+    assert "2024-01-02" not in message
+
+
+def _ohlcv(dates: list[str], closes: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Date": dates,
+            "Open": closes,
+            "High": closes,
+            "Low": closes,
+            "Close": closes,
+            "Volume": [1.0] * len(dates),
+        }
+    )
 
 
 class FilterFinancialsByDateTests(unittest.TestCase):
