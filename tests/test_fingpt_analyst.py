@@ -159,6 +159,17 @@ class FingptHeadlineExtractionTests(unittest.TestCase):
             ["Apple beats earnings estimates by a wide margin."],
         )
 
+    def test_url_in_the_middle_of_a_sentence_is_kept(self):
+        # Drop a line only when it is nothing but the URL. A URL inside a
+        # sentence is still a headline. search() would drop the embedded
+        # URL; match() would drop a sentence that only starts with one.
+        middle = "Apple rose after https://example.com/story reported a wide earnings beat."
+        leading = "https://example.com/story reported that Apple beat earnings by a wide margin."
+        self.assertEqual(
+            _extract_headlines(middle + "\n" + leading),
+            [middle, leading],
+        )
+
     def test_deeper_heading_levels_are_titles(self):
         blob = (
             "### Three level title (source: Reuters)\n"
