@@ -114,6 +114,17 @@ def _clean_dataframe(
     return data
 
 
+def _calendar_day_as_written(dates: pd.Series) -> pd.Series:
+    """Calendar day printed on the stamp. Drop a UTC offset; do not shift the clock.
+
+    ``2024-01-05T00:30+09:00`` is 5 Jan as written (UTC would make it 4 Jan).
+    Naive values are returned unchanged, including a time that is not midnight.
+    """
+    if getattr(dates.dt, "tz", None) is None:
+        return dates
+    return dates.dt.tz_localize(None).dt.normalize()
+
+
 def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.DataFrame:
     """Fetch OHLCV data with caching, filtered to prevent look-ahead bias.
 
@@ -127,7 +138,10 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     DataDefectError naming the ticker, the cache file, the row, and the raw
     value. The same error is raised when naive timestamps are mixed with
     offset timestamps. An empty or missing Date is still coerced to NaT and
-    dropped. Rows after curr_date are filtered out so backtests never see
+    dropped. When the parsed column is timezone-aware, the offset is
+    removed without shifting the clock to UTC and the time is floored to
+    midnight before the cutoff comparison. Naive timestamps are left as
+    parsed. Rows after curr_date are filtered out so backtests never see
     future prices. All of OHLC comes from one auto_adjust=True download; the
     cache file name records that setting. With fill_prices=True (the
     default), gaps in Open, High, Low, Close, and Volume are forward-filled
@@ -173,6 +187,11 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
         fill_prices=False,
         source=f"{symbol} ({data_file})",
     )
+    # Wall clock, not UTC. A tz-aware Date cannot be compared with naive curr_date.
+    # Naive stamps are left untouched so an existing cache still filters as before.
+    dates = data["Date"]
+    if getattr(dates.dt, "tz", None) is not None:
+        data["Date"] = _calendar_day_as_written(dates)
     data = data.loc[data["Date"] <= curr_date_dt].copy()
     if fill_prices:
         price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
