@@ -105,7 +105,10 @@ def _parse_signal(raw: Optional[str]) -> Optional[str]:
         return mapped
 
     normalized_text = _COMPOUND_NOUN_PATTERN.sub(lambda m: m.group().replace("-", ""), cleaned)
-    normalized_text = normalized_text.replace("_", " ")
+    # "_" and markdown emphasis (* `) are separators. Otherwise the negation
+    # window, which only allows whitespace, misses "do not **BUY**" and
+    # "do **not** BUY" and the bold label is taken as the rating.
+    normalized_text = re.sub(r"[_*`]+", " ", normalized_text)
     normalized_text = re.sub(r"(?<=[A-Z])-(?=[A-Z])", " ", normalized_text)
     previous_label_end = 0
     for match in _TEXT_SIGNAL_PATTERN.finditer(normalized_text):
