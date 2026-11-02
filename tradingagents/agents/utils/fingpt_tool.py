@@ -15,14 +15,17 @@ from tradingagents.dataflows.interface import route_to_vendor
 
 _MIN_HEADLINE_CHARS = 20
 _MAX_HEADLINES = 30
+# A line that is only an http(s) URL (no ``Link:`` / ``URL:`` prefix).
+_BARE_URL_LINE = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
 def _extract_headlines(news_text: str) -> list[str]:
     """Headline-like lines from a vendor news blob.
 
     yfinance titles are ``### Title (source: Publisher)`` and the URL is a
-    ``Link:`` line (see get_news_yfinance). That title is a headline; the
-    ``## ... News`` banner and ``Link:`` / ``URL:`` lines are not. Any other
+    ``Link:`` line (see get_news_yfinance). That title is a headline, and so
+    is ``####`` or any deeper heading. The ``## ... News`` banner, ``Link:`` /
+    ``URL:`` lines, and a bare ``http``/``https`` URL line are not. Any other
     line of at least ``_MIN_HEADLINE_CHARS`` is kept.
     """
     if not news_text:
@@ -32,6 +35,8 @@ def _extract_headlines(news_text: str) -> list[str]:
     for chunk in chunks:
         for line in chunk.splitlines():
             line = line.strip()
+            if _BARE_URL_LINE.fullmatch(line):
+                continue
             is_title = line.startswith("###")
             if is_title:
                 line = re.sub(r"\s*\(source:.*?\)\s*$", "", line.lstrip("#").strip(), flags=re.I)
