@@ -13,6 +13,9 @@ ceiling. A leading NaN Open is filled from a later bar on or before
 from __future__ import annotations
 
 import pandas as pd
+import pytest
+
+from tradingagents.backtest.runner import DataDefectError
 
 SENTINEL = 987654.0
 
@@ -139,20 +142,24 @@ def test_rows_strictly_after_cutoff_yield_an_empty_frame(monkeypatch, tmp_path):
     assert not _has(out, SENTINEL)
 
 
-def test_unparseable_date_is_dropped_and_does_not_echo_its_price(monkeypatch, tmp_path):
-    out = _load(
-        monkeypatch,
-        tmp_path,
-        [
-            _bar("not-a-date", SENTINEL),
-            _bar("2024-01-13", SENTINEL),
-            _bar("2024-01-12", 12.0),
-        ],
-        "2024-01-12",
-    )
+def test_unparseable_date_raises_and_does_not_echo_its_price(monkeypatch, tmp_path):
+    """A non-empty unreadable Date fails closed, so its price is not returned."""
+    with pytest.raises(DataDefectError, match=r"row 0 raw='not-a-date'") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("not-a-date", SENTINEL),
+                _bar("2024-01-13", SENTINEL),
+                _bar("2024-01-12", 12.0),
+            ],
+            "2024-01-12",
+        )
 
-    assert _dates(out) == ["2024-01-12"]
-    assert not _has(out, SENTINEL)
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert "not-a-date" in message
+    assert "987654" not in message
 
 
 def test_fill_prices_false_does_not_take_open_from_after_cutoff(monkeypatch, tmp_path):
