@@ -15,10 +15,11 @@ exchange calendar (calendar.py):
 
 A ``prices_by_ticker`` Date column of text is the calendar day written in each
 cell. Offsets that span at most 60 minutes (``-05:00`` and ``-04:00`` across a
-civil DST change) are read that way. A naive value beside an offset, a wider
-span, or two cells that write one day raises ValueError. A datetime64 column
-already has one zone, including a named zone whose UTC offset changes over the
-year, and keeps that written day.
+civil DST change) are read that way. One offset written with both ``T`` and a
+space is that same written day. A naive value beside an offset, a wider span,
+or two cells that write one day raises ValueError. A datetime64 column already
+has one zone, including a named zone whose UTC offset changes over the year,
+and keeps that written day.
 
 Vendor bars on non-sessions are ignored, so a holiday on only one exchange is
 never flagged for the other. Bars are loaded through the runner's own vendor
@@ -105,7 +106,8 @@ def _rewrite_mixed_offset_dates(frame: pd.DataFrame, ticker: str) -> pd.DataFram
     ``-05:00`` next to ``-04:00``. A span of at most 60 minutes is one civil
     zone, so each cell becomes the day written in it and the column parser
     does not see mixed offsets. A datetime64 index already has one zone and
-    is left for the wall-clock conversion. A single offset is left too.
+    is left for the wall-clock conversion. A single offset is left too,
+    including when ``T`` and a space are mixed.
 
     Raises ValueError when the column mixes naive and aware values, when the
     offsets span more than 60 minutes, or when two cells write one day.
@@ -168,7 +170,11 @@ def _frame(ticker: str, exit_day: pd.Timestamp, given: Mapping[str, pd.DataFrame
     frame = _rewrite_mixed_offset_dates(frame, ticker)
     # Wall clock, not UTC. ``2024-01-05T00:30+09:00`` is 5 Jan as written
     # (UTC would make it 4 Jan and satisfy the previous session).
-    index = pd.DatetimeIndex(pd.to_datetime(frame.index))
+    # format="ISO8601" keeps one offset when cells mix ``T`` and a space
+    # (``2024-01-02T00:00:00-05:00`` and ``2024-01-03 00:00:00-05:00``).
+    # The default parser infers one strftime and raises. The offset stays
+    # here and is dropped below, without a shift to UTC.
+    index = pd.DatetimeIndex(pd.to_datetime(frame.index, format="ISO8601"))
     if index.tz is not None:
         index = index.tz_localize(None)
     return frame.set_axis(index.normalize())
@@ -196,7 +202,8 @@ def validate_snapshot(
     """Return ``{ticker: {exchange, n_sessions, first_d_minus_1, exit_session}}`` or raise.
 
     Raises SnapshotIncomplete (a runner.DataDefectError) whose ``missing`` names every gap.
-    A Date column of text keeps the calendar day written in each cell. Offsets
+    A Date column of text keeps the calendar day written in each cell. One
+    offset may use ``T`` or a space; both are that written day. Offsets
     spanning more than 60 minutes, a mix of naive and offset values, or two
     cells that write one calendar day raise ValueError.
     """
