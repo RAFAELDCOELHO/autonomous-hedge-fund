@@ -56,6 +56,10 @@ def _clean_dataframe(data: pd.DataFrame, fill_prices: bool = True) -> pd.DataFra
 # "±HH:MM", "±HHMM", and a short negative offset after a time ("T00:30:00-05").
 _OFFSET_MARKER_RE = r"(?:Z|\+|[+-]\d{2}:\d{2}|[+-]\d{4}|T\d{2}:\d{2}:\d{2}-\d{2}$)"
 
+# A civil DST transition shifts the clock by at most one hour (US/Eastern
+# -05:00 vs -04:00; Lord Howe by 30 minutes). A wider mix is not that case.
+_MAX_DST_OFFSET_SPAN_MINUTES = 60
+
 
 def _missing_date_cell(value) -> bool:
     if isinstance(value, str):
@@ -67,23 +71,29 @@ def _missing_date_cell(value) -> bool:
     return bool(missing)
 
 
-def _reject_mixed_date_zones(dates: pd.Series, symbol: str) -> None:
-    """Fail closed when Date mixes naive stamps with offsets, or mixes offsets.
+def _reject_mixed_date_zones(dates: pd.Series, symbol: str) -> pd.Series | None:
+    """Fail closed on mixed date zones. Rewrite a DST-sized offset mix.
 
     Column-wise ``pd.to_datetime`` turns the other kind into NaT, and the
     following drop deletes those rows, or it raises ``Mixed timezones detected``.
     A datetime64 column already has one timezone, including a named zone whose
     UTC offset changes across the year, and is left for the written-day
-    conversion. Naive stamps are not re-parsed here.
+    conversion. Naive stamps are not re-parsed here. ``None`` means unchanged.
+
+    Text offsets spanning more than 60 minutes raise. A span of at most 60
+    minutes is one civil zone across DST, so each cell becomes the calendar
+    day written in it and the column parser does not see mixed offsets. Two
+    cells that name one calendar day raise.
     """
     if pd.api.types.is_datetime64_any_dtype(dates):
-        return
+        return None
     if not dates.astype("string").str.contains(_OFFSET_MARKER_RE, regex=True, na=False).any():
-        return
+        return None
 
     saw_naive = False
     offsets: set[int] = set()
-    for value in dates:
+    parsed_at: list[tuple[object, pd.Timestamp]] = []
+    for idx, value in dates.items():
         if _missing_date_cell(value):
             continue
         parsed = pd.to_datetime(value, errors="coerce")
@@ -93,10 +103,23 @@ def _reject_mixed_date_zones(dates: pd.Series, symbol: str) -> None:
             saw_naive = True
         else:
             offsets.add(int(parsed.utcoffset().total_seconds() // 60))
+            parsed_at.append((idx, parsed))
         if saw_naive and offsets:
             raise ValueError(f"{symbol}: Date mixes timezone-aware and naive timestamps")
-    if len(offsets) > 1:
+    if len(offsets) <= 1:
+        return None
+    if max(offsets) - min(offsets) > _MAX_DST_OFFSET_SPAN_MINUTES:
         raise ValueError(f"{symbol}: Date mixes UTC offsets")
+
+    out = dates.copy()
+    seen: set[pd.Timestamp] = set()
+    for idx, parsed in parsed_at:
+        day = parsed.tz_localize(None).normalize()
+        if day in seen:
+            raise ValueError(f"{symbol}: Date normalizes to duplicate calendar days")
+        seen.add(day)
+        out.at[idx] = f"{day:%Y-%m-%d}"
+    return out
 
 
 def _calendar_day_as_written(dates: pd.Series) -> pd.Series:
@@ -118,10 +141,15 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     filtered out so backtests never see future prices. A timestamp with a
     UTC offset is the calendar day written in the cell: the offset is
     removed without shifting the clock to UTC, then the time is floored to
-    midnight. Naive timestamps are left as parsed. A column that mixes naive
-    timestamps with timezone-aware ones, or that mixes more than one UTC
-    offset, raises ValueError: the rows are not dropped and the offsets are
-    not forced into one zone. All of OHLC comes
+    midnight. Naive timestamps are left as parsed. Text offsets that differ by
+    at most 60 minutes are that same reading per cell, so a US/Eastern file
+    with ``-05:00`` and ``-04:00`` across DST keeps each written day. A column
+    that mixes naive timestamps with timezone-aware ones raises ValueError.
+    So does a column whose offsets span more than 60 minutes: the rows are
+    not dropped and the offsets are not forced into one zone. Written days
+    that collide after that reading also raise ValueError. The 60-minute
+    bound is the span of the offsets, not a zone name, so two zones an hour
+    apart are read the same way when each shows only one offset. All of OHLC comes
     from one auto_adjust=True download; the cache file name records that
     setting. With fill_prices=True (the default), gaps in Open, High, Low,
     Close, and Volume are forward-filled and then backfilled only on the
@@ -161,8 +189,11 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     # Parse and drop bad rows first, then cut the window, then fill. Backfill
     # before the cut takes a leading NaN from a bar after curr_date.
     # Mixed naive/aware values become NaT and would be deleted; mixed offsets
-    # raise pandas' "Mixed timezones detected". Name the problem instead.
-    _reject_mixed_date_zones(data["Date"], symbol)
+    # raise pandas' "Mixed timezones detected". A span of at most an hour is
+    # rewritten to each written day first. A wider span is named and rejected.
+    rewritten = _reject_mixed_date_zones(data["Date"], symbol)
+    if rewritten is not None:
+        data["Date"] = rewritten
     data = _clean_dataframe(data, fill_prices=False)
     # Wall clock, not UTC. A tz-aware Date cannot be compared with naive curr_date.
     # Naive stamps are left untouched so an existing cache still filters as before.
