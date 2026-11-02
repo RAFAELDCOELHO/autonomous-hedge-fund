@@ -4,7 +4,8 @@
 raises ``TypeError``. The offset is dropped without shifting the clock to UTC,
 then the day is floored to midnight. ``2024-01-05T00:30+09:00`` is 5 Jan as
 written and 4 Jan in UTC. Naive timestamps, including a time that is not
-midnight, stay as parsed.
+midnight, stay as parsed. A column that mixes naive timestamps with
+timezone-aware ones, or that mixes UTC offsets, raises ``DataDefectError``.
 """
 
 from __future__ import annotations
@@ -153,6 +154,148 @@ def test_tz_aware_gap_is_not_filled_from_the_next_written_day(monkeypatch, tmp_p
     assert _dates(out) == ["2024-01-12"]
     assert pd.isna(out["Open"].iloc[0])
     assert not bool(out.isin([SENTINEL]).to_numpy().any())
+
+
+def _cache_name(symbol: str = "AAPL") -> str:
+    today = pd.Timestamp.today()
+    start = (today - pd.DateOffset(years=5)).strftime("%Y-%m-%d")
+    end = today.strftime("%Y-%m-%d")
+    return f"{symbol}-YFin-data-{start}-{end}-adj.csv"
+
+
+def test_aware_then_naive_dates_raise(monkeypatch, tmp_path):
+    """A leading offset must not drop the naive row.
+
+    ``pd.to_datetime`` keeps ``2024-01-03T00:30+09:00`` and turns ``2024-01-02``
+    into NaT. The naive bar would then disappear. Fail closed instead.
+    """
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-03T00:30:00+09:00", 3.0),
+                _bar("2024-01-02", 2.0),
+            ],
+            "2024-01-03",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-03T00:30:00+09:00'" in message
+    assert "row 1 raw='2024-01-02'" in message
+
+
+def test_naive_then_aware_dates_raise(monkeypatch, tmp_path):
+    """The other order drops the timezone-aware row and keeps the naive one."""
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-02", 2.0),
+                _bar("2024-01-03T00:30:00+09:00", 3.0),
+            ],
+            "2024-01-03",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02'" in message
+    assert "row 1 raw='2024-01-03T00:30:00+09:00'" in message
+
+
+def test_mixed_offsets_raise(monkeypatch, tmp_path):
+    """Two offsets name the problem instead of pandas' mixed-timezone error."""
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-02T00:30:00+09:00", 2.0),
+                _bar("2024-01-03T00:30:00-05:00", 3.0),
+            ],
+            "2024-01-03",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02T00:30:00+09:00'" in message
+    assert "row 1 raw='2024-01-03T00:30:00-05:00'" in message
+
+
+def test_same_offset_with_and_without_a_colon_keeps_both_days(monkeypatch, tmp_path):
+    """``+09:00`` and ``+0900`` are one offset. Both written days stay."""
+    out = _load(
+        monkeypatch,
+        tmp_path,
+        [
+            _bar("2024-01-02T00:00:00+09:00", 2.0),
+            _bar("2024-01-03T00:00:00+0900", 3.0),
+        ],
+        "2024-01-03",
+    )
+
+    assert out["Date"].tolist() == [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")]
+    assert out["Open"].tolist() == [2.0, 3.0]
+
+
+def test_unparseable_date_beside_one_offset_is_not_a_second_zone(monkeypatch, tmp_path):
+    """A value that is not a timestamp is not a second zone.
+
+    It fails closed as a non-ISO8601 Date, so the sentinel price is not
+    returned. The mixed-offset error is not the one raised.
+    """
+    with pytest.raises(DataDefectError, match="not-a-date") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("not-a-date", SENTINEL),
+                _bar("2024-01-02T00:30:00+09:00", 2.0),
+            ],
+            "2024-01-02",
+        )
+
+    message = str(caught.value)
+    assert "Date mixes UTC offsets" not in message
+    assert "mixes timezone-aware and naive" not in message
+    assert "987654" not in message
+
+
+def test_named_zone_across_dst_keeps_the_written_days(monkeypatch, tmp_path):
+    """America/New_York is one zone. January is -05:00 and July is -04:00.
+
+    The in-memory vendor frame is datetime64 with that zone. Both sessions
+    stay on the calendar day written on the stamp.
+    """
+    index = pd.DatetimeIndex(["2024-01-02", "2024-07-02"], tz="America/New_York", name="Date")
+    frame = pd.DataFrame(
+        {
+            "Open": [1.0, 2.0],
+            "High": [1.0, 2.0],
+            "Low": [1.0, 2.0],
+            "Close": [1.0, 2.0],
+            "Volume": [1.0, 1.0],
+        },
+        index=index,
+    )
+
+    def _download(*_args, **_kwargs):
+        return frame.copy()
+
+    monkeypatch.setattr(ss.yf, "download", _download)
+    df_config.initialize_config()
+    monkeypatch.setitem(df_config._config, "data_cache_dir", str(tmp_path))
+
+    out = ss.load_ohlcv("AAPL", "2024-07-02", fill_prices=False)
+
+    assert out["Date"].dt.tz is None
+    assert out["Date"].tolist() == [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-07-02")]
+    assert out["Open"].tolist() == [1.0, 2.0]
 
 
 def test_naive_intraday_stamp_is_not_floored(monkeypatch, tmp_path):

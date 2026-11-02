@@ -137,19 +137,21 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     ISO8601 (a US date such as ``12/29/2023``, or garbage) raises
     DataDefectError naming the ticker, the cache file, the row, and the raw
     value. The same error is raised when naive timestamps are mixed with
-    offset timestamps. An empty or missing Date is still coerced to NaT and
-    dropped. When the parsed column is timezone-aware, the offset is
-    removed without shifting the clock to UTC and the time is floored to
-    midnight before the cutoff comparison. Naive timestamps are left as
-    parsed. Rows after curr_date are filtered out so backtests never see
-    future prices. All of OHLC comes from one auto_adjust=True download; the
-    cache file name records that setting. With fill_prices=True (the
-    default), gaps in Open, High, Low, Close, and Volume are forward-filled
-    and then backfilled only on the rows still dated on or before
-    curr_date. The in-window bfill does use later bars up to curr_date. A
-    bar after curr_date is not a source, so a missing price is never taken
-    from a later bar after curr_date. fill_prices=False leaves those gaps
-    as NaN.
+    offset timestamps, or when more than one UTC offset is present. Those
+    rows are not dropped, and the offsets are not forced into one zone. An
+    empty or missing Date is still coerced to NaT and dropped. When the
+    parsed column is timezone-aware, the offset is removed without shifting
+    the clock to UTC and the time is floored to midnight before the cutoff
+    comparison. Naive timestamps are left as parsed. Rows after curr_date
+    are filtered out so backtests never see future prices. All of OHLC comes
+    from one auto_adjust=True download; the cache file name records that
+    setting.
+    With fill_prices=True (the default), gaps in Open, High, Low, Close, and
+    Volume are forward-filled and then backfilled only on the rows still
+    dated on or before curr_date. The in-window bfill does use later bars up
+    to curr_date. A bar after curr_date is not a source, so a missing price
+    is never taken from a later bar after curr_date. fill_prices=False
+    leaves those gaps as NaN.
     """
     config = get_config()
     curr_date_dt = pd.to_datetime(curr_date)
@@ -180,8 +182,8 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
         data = data.reset_index()
         data.to_csv(data_file, index=False)
 
-    # Cut the window, then fill. Backfill before the cut takes a leading NaN
-    # from a bar after curr_date.
+    # Parse dates, then cut the window, then fill. Backfill before the cut
+    # takes a leading NaN from a bar after curr_date.
     data = _clean_dataframe(
         data,
         fill_prices=False,
