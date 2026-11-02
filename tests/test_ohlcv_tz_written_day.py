@@ -4,11 +4,12 @@
 raises ``TypeError``. The offset is dropped without shifting the clock to UTC,
 then the day is floored to midnight. ``2024-01-05T00:30+09:00`` is 5 Jan as
 written and 4 Jan in UTC. Naive timestamps, including a time that is not
-midnight, stay as parsed. A column that mixes naive timestamps with
-timezone-aware ones raises ``ValueError``. Offsets that span more than 60
-minutes do too. A US/Eastern file whose text offsets are ``-05:00`` and
-``-04:00`` keeps each written day. Written days that collide raise
-``ValueError``.
+midnight, stay as parsed. A US/Eastern file whose text offsets are ``-05:00``
+and ``-04:00`` keeps each written day. A column that mixes naive timestamps
+with timezone-aware ones raises ``DataDefectError``. Offsets that span more
+than 60 minutes do too, and so do written days that collide after that
+reading. The error names the ticker, the cache file, the row, and the raw
+value.
 """
 
 from __future__ import annotations
@@ -159,13 +160,20 @@ def test_tz_aware_gap_is_not_filled_from_the_next_written_day(monkeypatch, tmp_p
     assert not bool(out.isin([SENTINEL]).to_numpy().any())
 
 
+def _cache_name(symbol: str = "AAPL") -> str:
+    today = pd.Timestamp.today()
+    start = (today - pd.DateOffset(years=5)).strftime("%Y-%m-%d")
+    end = today.strftime("%Y-%m-%d")
+    return f"{symbol}-YFin-data-{start}-{end}-adj.csv"
+
+
 def test_aware_then_naive_dates_raise(monkeypatch, tmp_path):
     """A leading offset must not drop the naive row.
 
     ``pd.to_datetime`` keeps ``2024-01-03T00:30+09:00`` and turns ``2024-01-02``
     into NaT. The naive bar would then disappear. Fail closed instead.
     """
-    with pytest.raises(ValueError, match="AAPL: Date mixes timezone-aware and naive timestamps"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -175,11 +183,17 @@ def test_aware_then_naive_dates_raise(monkeypatch, tmp_path):
             ],
             "2024-01-03",
         )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-03T00:30:00+09:00'" in message
+    assert "row 1 raw='2024-01-02'" in message
 
 
 def test_naive_then_aware_dates_raise(monkeypatch, tmp_path):
     """The other order drops the timezone-aware row and keeps the naive one."""
-    with pytest.raises(ValueError, match="AAPL: Date mixes timezone-aware and naive timestamps"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -190,10 +204,16 @@ def test_naive_then_aware_dates_raise(monkeypatch, tmp_path):
             "2024-01-03",
         )
 
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02'" in message
+    assert "row 1 raw='2024-01-03T00:30:00+09:00'" in message
+
 
 def test_mixed_offsets_raise(monkeypatch, tmp_path):
     """Two offsets name the problem instead of pandas' mixed-timezone error."""
-    with pytest.raises(ValueError, match="AAPL: Date mixes UTC offsets"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -203,6 +223,12 @@ def test_mixed_offsets_raise(monkeypatch, tmp_path):
             ],
             "2024-01-03",
         )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02T00:30:00+09:00'" in message
+    assert "row 1 raw='2024-01-03T00:30:00-05:00'" in message
 
 
 def test_us_eastern_dst_offsets_keep_the_written_day(monkeypatch, tmp_path):
@@ -322,7 +348,7 @@ def test_half_hour_dst_span_keeps_the_written_days(monkeypatch, tmp_path):
 
 def test_offset_one_minute_past_a_dst_hour_raises(monkeypatch, tmp_path):
     """61 minutes is past a one-hour DST shift and stays fail-closed."""
-    with pytest.raises(ValueError, match="AAPL: Date mixes UTC offsets"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -333,6 +359,12 @@ def test_offset_one_minute_past_a_dst_hour_raises(monkeypatch, tmp_path):
             "2024-07-02",
         )
 
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02T00:00:00-05:00'" in message
+    assert "row 1 raw='2024-07-02T00:00:00-03:59'" in message
+
 
 def test_dst_offsets_that_share_a_written_day_raise(monkeypatch, tmp_path):
     """Two offsets on one written day are two bars for one session.
@@ -341,7 +373,7 @@ def test_dst_offsets_that_share_a_written_day_raise(monkeypatch, tmp_path):
     ``2024-01-02T01:00:00-04:00`` is 2 Jan in UTC. The written day is 2 Jan
     for both.
     """
-    with pytest.raises(ValueError, match="AAPL: Date normalizes to duplicate calendar days"):
+    with pytest.raises(DataDefectError, match="duplicate calendar days") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -353,10 +385,16 @@ def test_dst_offsets_that_share_a_written_day_raise(monkeypatch, tmp_path):
             "2024-07-02",
         )
 
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "row 0 raw='2024-01-02T22:00:00-05:00'" in message
+    assert "row 2 raw='2024-01-02T01:00:00-04:00'" in message
+
 
 def test_wide_offsets_on_one_written_day_name_the_mix(monkeypatch, tmp_path):
     """A 14-hour mix on one calendar day is still a mix of offsets."""
-    with pytest.raises(ValueError, match="AAPL: Date mixes UTC offsets"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -367,10 +405,18 @@ def test_wide_offsets_on_one_written_day_name_the_mix(monkeypatch, tmp_path):
             "2024-01-02",
         )
 
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "mixed timezones" in message
+    assert "duplicate calendar days" not in message
+    assert "row 0 raw='2024-01-02T00:30:00+09:00'" in message
+    assert "row 1 raw='2024-01-02T00:30:00-05:00'" in message
+
 
 def test_naive_date_beside_eastern_offsets_raises(monkeypatch, tmp_path):
     """A bare date next to ``-05:00`` and ``-04:00`` is not a third written day."""
-    with pytest.raises(ValueError, match="AAPL: Date mixes timezone-aware and naive timestamps"):
+    with pytest.raises(DataDefectError, match=r"row 0 raw=") as caught:
         _load(
             monkeypatch,
             tmp_path,
@@ -382,23 +428,38 @@ def test_naive_date_beside_eastern_offsets_raises(monkeypatch, tmp_path):
             "2024-08-01",
         )
 
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "mixed timezones" in message
+    assert "row 0 raw='2024-01-02 00:00:00-05:00'" in message
+    assert "row 1 raw='2024-07-02 00:00:00-04:00'" in message
+    assert "row 2 raw='2024-08-01'" in message
 
-def test_unparseable_date_beside_dst_offsets_is_dropped(monkeypatch, tmp_path):
-    """A value that is not a timestamp is not a third offset."""
-    out = _load(
-        monkeypatch,
-        tmp_path,
-        [
-            _bar("not-a-date", SENTINEL),
-            _bar("2024-01-02 00:00:00-05:00", 1.0),
-            _bar("2024-07-02 00:00:00-04:00", 2.0),
-        ],
-        "2024-07-02",
-    )
 
-    assert out["Date"].tolist() == [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-07-02")]
-    assert out["Open"].tolist() == [1.0, 2.0]
-    assert not bool(out.isin([SENTINEL]).to_numpy().any())
+def test_unparseable_date_beside_dst_offsets_is_not_dropped(monkeypatch, tmp_path):
+    """A value that is not a timestamp is not a third offset.
+
+    It fails closed as a non-ISO8601 Date, so the sentinel price is not
+    returned. The mixed-offset error is not the one raised.
+    """
+    with pytest.raises(DataDefectError, match="not-a-date") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("not-a-date", SENTINEL),
+                _bar("2024-01-02 00:00:00-05:00", 1.0),
+                _bar("2024-07-02 00:00:00-04:00", 2.0),
+            ],
+            "2024-07-02",
+        )
+
+    message = str(caught.value)
+    assert "Date mixes UTC offsets" not in message
+    assert "mixes timezone-aware and naive" not in message
+    assert "duplicate calendar days" not in message
+    assert "987654" not in message
 
 
 def test_same_offset_with_and_without_a_colon_keeps_both_days(monkeypatch, tmp_path):
@@ -417,21 +478,27 @@ def test_same_offset_with_and_without_a_colon_keeps_both_days(monkeypatch, tmp_p
     assert out["Open"].tolist() == [2.0, 3.0]
 
 
-def test_unparseable_date_beside_one_offset_is_dropped(monkeypatch, tmp_path):
-    """A value that is not a timestamp is not a second zone."""
-    out = _load(
-        monkeypatch,
-        tmp_path,
-        [
-            _bar("not-a-date", SENTINEL),
-            _bar("2024-01-02T00:30:00+09:00", 2.0),
-        ],
-        "2024-01-02",
-    )
+def test_unparseable_date_beside_one_offset_is_not_a_second_zone(monkeypatch, tmp_path):
+    """A value that is not a timestamp is not a second zone.
 
-    assert out["Date"].tolist() == [pd.Timestamp("2024-01-02")]
-    assert out["Open"].tolist() == [2.0]
-    assert not bool(out.isin([SENTINEL]).to_numpy().any())
+    It fails closed as a non-ISO8601 Date, so the sentinel price is not
+    returned. The mixed-offset error is not the one raised.
+    """
+    with pytest.raises(DataDefectError, match="not-a-date") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("not-a-date", SENTINEL),
+                _bar("2024-01-02T00:30:00+09:00", 2.0),
+            ],
+            "2024-01-02",
+        )
+
+    message = str(caught.value)
+    assert "Date mixes UTC offsets" not in message
+    assert "mixes timezone-aware and naive" not in message
+    assert "987654" not in message
 
 
 def test_named_zone_across_dst_keeps_the_written_days(monkeypatch, tmp_path):

@@ -1,21 +1,21 @@
-"""Edge cases for the OHLCV ``curr_date`` ceiling.
-
-``load_ohlcv`` keeps a row when ``Date <= curr_date`` and drops the next
-calendar day, including the Saturday after a Friday and the session after a
-holiday. History before ``curr_date`` stays. ``fill_prices=False`` (the
-runner) does not fill a missing Open from a later bar.
-
-With the default ``fill_prices=True``, gaps are filled only after that
-ceiling, forward-fill then backfill. A leading NaN Open is filled from a
-later bar on or before ``curr_date``. A NaN on the last day of the window
-is filled from the previous kept bar. Neither is taken from a bar after
-``curr_date``. An interior gap takes the earlier bar, because forward-fill
-runs first.
+"""Edge cases for the OHLCV ``curr_date`` ceiling. ``load_ohlcv`` keeps a
+row when ``Date <= curr_date`` and drops the next calendar day, including
+the Saturday after a Friday and the session after a holiday. History before
+``curr_date`` stays. ``fill_prices=False`` (the runner) does not fill a
+missing Open from a later bar. With the default ``fill_prices=True``, gaps
+are filled only after that ceiling, forward-fill then backfill. A leading
+NaN Open is filled from a later bar on or before ``curr_date``. A NaN on
+the last day of the window is filled from the previous kept bar. Neither is
+taken from a bar after ``curr_date``. An interior gap takes the earlier
+bar, because forward-fill runs first.
 """
 
 from __future__ import annotations
 
 import pandas as pd
+import pytest
+
+from tradingagents.backtest.runner import DataDefectError
 
 SENTINEL = 987654.0
 
@@ -142,20 +142,24 @@ def test_rows_strictly_after_cutoff_yield_an_empty_frame(monkeypatch, tmp_path):
     assert not _has(out, SENTINEL)
 
 
-def test_unparseable_date_is_dropped_and_does_not_echo_its_price(monkeypatch, tmp_path):
-    out = _load(
-        monkeypatch,
-        tmp_path,
-        [
-            _bar("not-a-date", SENTINEL),
-            _bar("2024-01-13", SENTINEL),
-            _bar("2024-01-12", 12.0),
-        ],
-        "2024-01-12",
-    )
+def test_unparseable_date_raises_and_does_not_echo_its_price(monkeypatch, tmp_path):
+    """A non-empty unreadable Date fails closed, so its price is not returned."""
+    with pytest.raises(DataDefectError, match=r"row 0 raw='not-a-date'") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("not-a-date", SENTINEL),
+                _bar("2024-01-13", SENTINEL),
+                _bar("2024-01-12", 12.0),
+            ],
+            "2024-01-12",
+        )
 
-    assert _dates(out) == ["2024-01-12"]
-    assert not _has(out, SENTINEL)
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert "not-a-date" in message
+    assert "987654" not in message
 
 
 def test_fill_prices_false_does_not_take_open_from_after_cutoff(monkeypatch, tmp_path):

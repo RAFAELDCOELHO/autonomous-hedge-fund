@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 from pandas.tseries.holiday import USFederalHolidayCalendar
 from pandas.tseries.offsets import CustomBusinessDay
 from yfinance.exceptions import YFRateLimitError
-from typing import Annotated
+from typing import Annotated, NoReturn
 import os
 from .config import get_config
 
@@ -34,13 +34,75 @@ def yf_retry(func, max_retries=3, base_delay=2.0):
                 raise
 
 
-def _clean_dataframe(data: pd.DataFrame, fill_prices: bool = True) -> pd.DataFrame:
-    """Normalize a stock DataFrame for stockstats: parse dates, drop invalid rows, fill price gaps.
+def _empty_date_mask(values: pd.Series) -> pd.Series:
+    """True for a missing Date or a blank string. Those stay droppable NaT.
+
+    A whitespace-only cell is blank. Any other token is non-empty, so a later
+    NaT is a defect rather than a silent drop.
+    """
+    missing = values.isna()
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return missing
+    text = values.astype("string").str.strip()
+    blank = text.isna() | text.eq("")
+    return missing | blank.fillna(False)
+
+
+def _raise_date_defect(source: str | None, reason: str, offenders: pd.Series) -> NoReturn:
+    """Fail closed, naming the file or ticker, each row, and the raw value.
+
+    DataDefectError lives in runner, which imports load_ohlcv before that
+    class exists, so this import cannot sit at module level.
+    """
+    from tradingagents.backtest.runner import DataDefectError
+
+    where = source or "OHLCV Date column"
+    details = "; ".join(f"row {idx} raw={raw!r}" for idx, raw in offenders.items())
+    raise DataDefectError(f"{where}: {reason}: {details}")
+
+
+def _parse_ohlcv_dates(values: pd.Series, source: str | None) -> pd.Series:
+    """Parse Date as ISO8601. Non-empty failures raise; blanks stay NaT.
+
+    ``format="mixed"`` is not used: it chooses month and day per cell, so a
+    column of ``01/02/2024`` and ``13/02/2024`` is read as Jan 2 and Feb 13.
+    Naive timestamps mixed with offsets raise even under ``errors="coerce"``
+    (pandas: ``Mixed timezones``); that becomes the same fail-closed error,
+    naming each non-empty row.
+    """
+    try:
+        # ISO8601, not mixed: mixed decides month/day independently per cell.
+        parsed = pd.to_datetime(values, format="ISO8601", errors="coerce")
+    except ValueError as exc:
+        if "mixed timezones" in str(exc).lower():
+            _raise_date_defect(
+                source,
+                "mixed timezones in Date",
+                values.loc[~_empty_date_mask(values)],
+            )
+        raise
+    empty = _empty_date_mask(values)
+    bad = parsed.isna() & ~empty
+    if bad.any():
+        _raise_date_defect(source, "Date is not ISO8601", values.loc[bad])
+    return parsed
+
+
+def _clean_dataframe(
+    data: pd.DataFrame,
+    fill_prices: bool = True,
+    *,
+    source: str | None = None,
+) -> pd.DataFrame:
+    """Normalize a stock DataFrame for stockstats: parse dates, drop blank rows, fill price gaps.
 
     fill_prices=False leaves NaN prices (other than Close) in place, so a caller
     can fail closed on a missing Open instead of trading on a filled one.
+    A date defect raises DataDefectError naming ``source`` (ticker and file,
+    when the caller has them).
     """
-    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+    data = data.copy()
+    data["Date"] = _parse_ohlcv_dates(data["Date"], source)
     data = data.dropna(subset=["Date"])
 
     price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
@@ -50,76 +112,6 @@ def _clean_dataframe(data: pd.DataFrame, fill_prices: bool = True) -> pd.DataFra
         data[price_cols] = data[price_cols].ffill().bfill()
 
     return data
-
-
-# A calendar day ends in "-DD". That is not an offset. These are: "Z", "+",
-# "±HH:MM", "±HHMM", and a short negative offset after a time ("T00:30:00-05").
-_OFFSET_MARKER_RE = r"(?:Z|\+|[+-]\d{2}:\d{2}|[+-]\d{4}|T\d{2}:\d{2}:\d{2}-\d{2}$)"
-
-# A civil DST transition shifts the clock by at most one hour (US/Eastern
-# -05:00 vs -04:00; Lord Howe by 30 minutes). A wider mix is not that case.
-_MAX_DST_OFFSET_SPAN_MINUTES = 60
-
-
-def _missing_date_cell(value) -> bool:
-    if isinstance(value, str):
-        return not value.strip()
-    try:
-        missing = pd.isna(value)
-    except (TypeError, ValueError):
-        return False
-    return bool(missing)
-
-
-def _reject_mixed_date_zones(dates: pd.Series, symbol: str) -> pd.Series | None:
-    """Fail closed on mixed date zones. Rewrite a DST-sized offset mix.
-
-    Column-wise ``pd.to_datetime`` turns the other kind into NaT, and the
-    following drop deletes those rows, or it raises ``Mixed timezones detected``.
-    A datetime64 column already has one timezone, including a named zone whose
-    UTC offset changes across the year, and is left for the written-day
-    conversion. Naive stamps are not re-parsed here. ``None`` means unchanged.
-
-    Text offsets spanning more than 60 minutes raise. A span of at most 60
-    minutes is one civil zone across DST, so each cell becomes the calendar
-    day written in it and the column parser does not see mixed offsets. Two
-    cells that name one calendar day raise.
-    """
-    if pd.api.types.is_datetime64_any_dtype(dates):
-        return None
-    if not dates.astype("string").str.contains(_OFFSET_MARKER_RE, regex=True, na=False).any():
-        return None
-
-    saw_naive = False
-    offsets: set[int] = set()
-    parsed_at: list[tuple[object, pd.Timestamp]] = []
-    for idx, value in dates.items():
-        if _missing_date_cell(value):
-            continue
-        parsed = pd.to_datetime(value, errors="coerce")
-        if pd.isna(parsed):
-            continue
-        if getattr(parsed, "tzinfo", None) is None:
-            saw_naive = True
-        else:
-            offsets.add(int(parsed.utcoffset().total_seconds() // 60))
-            parsed_at.append((idx, parsed))
-        if saw_naive and offsets:
-            raise ValueError(f"{symbol}: Date mixes timezone-aware and naive timestamps")
-    if len(offsets) <= 1:
-        return None
-    if max(offsets) - min(offsets) > _MAX_DST_OFFSET_SPAN_MINUTES:
-        raise ValueError(f"{symbol}: Date mixes UTC offsets")
-
-    out = dates.copy()
-    seen: set[pd.Timestamp] = set()
-    for idx, parsed in parsed_at:
-        day = parsed.tz_localize(None).normalize()
-        if day in seen:
-            raise ValueError(f"{symbol}: Date normalizes to duplicate calendar days")
-        seen.add(day)
-        out.at[idx] = f"{day:%Y-%m-%d}"
-    return out
 
 
 def _calendar_day_as_written(dates: pd.Series) -> pd.Series:
@@ -133,29 +125,104 @@ def _calendar_day_as_written(dates: pd.Series) -> pd.Series:
     return dates.dt.tz_localize(None).dt.normalize()
 
 
+# A calendar day ends in "-DD". That is not an offset. These are: "Z", "+",
+# "±HH:MM", "±HHMM", and a short negative offset after a time ("T00:30:00-05").
+_OFFSET_MARKER_RE = r"(?:Z|\+|[+-]\d{2}:\d{2}|[+-]\d{4}|T\d{2}:\d{2}:\d{2}-\d{2}$)"
+
+# A civil DST transition shifts the clock by at most one hour (US/Eastern
+# -05:00 vs -04:00; Lord Howe by 30 minutes). A wider mix is not that case.
+_MAX_DST_OFFSET_SPAN_MINUTES = 60
+
+
+def _rewrite_dst_offset_span(dates: pd.Series, source: str | None) -> pd.Series | None:
+    """Rewrite text offsets spanning at most 60 minutes to each written day.
+
+    ``None`` means the column is unchanged. A datetime64 column, a column
+    with no offset marker, a single offset, a naive value beside an offset,
+    and a span wider than 60 minutes are unchanged, so ``_parse_ohlcv_dates``
+    still owns those cases. A blank or unparseable cell is left in place.
+    Two cells in that span that name one calendar day raise DataDefectError
+    naming ``source``, each colliding row, and the raw value.
+    """
+    if pd.api.types.is_datetime64_any_dtype(dates):
+        return None
+    if not dates.astype("string").str.contains(_OFFSET_MARKER_RE, regex=True, na=False).any():
+        return None
+
+    empty = _empty_date_mask(dates)
+    saw_naive = False
+    offsets: set[int] = set()
+    parsed_at: list[tuple[object, pd.Timestamp]] = []
+    for idx, value in dates.items():
+        if bool(empty.loc[idx]):
+            continue
+        parsed = pd.to_datetime(value, errors="coerce")
+        if pd.isna(parsed):
+            continue
+        if getattr(parsed, "tzinfo", None) is None:
+            saw_naive = True
+        else:
+            offset_minutes = parsed.utcoffset()
+            offsets.add(int(offset_minutes.total_seconds() // 60))
+            parsed_at.append((idx, parsed))
+        if saw_naive and offsets:
+            return None
+    if len(offsets) <= 1:
+        return None
+    if max(offsets) - min(offsets) > _MAX_DST_OFFSET_SPAN_MINUTES:
+        return None
+
+    seen: dict[pd.Timestamp, list[object]] = {}
+    for idx, parsed in parsed_at:
+        day = parsed.tz_localize(None).normalize()
+        seen.setdefault(day, []).append(idx)
+    dup_idx = [idx for idxs in seen.values() if len(idxs) > 1 for idx in idxs]
+    if dup_idx:
+        _raise_date_defect(
+            source,
+            "Date normalizes to duplicate calendar days",
+            dates.loc[dup_idx],
+        )
+
+    out = dates.copy()
+    for idx, parsed in parsed_at:
+        day = parsed.tz_localize(None).normalize()
+        out.at[idx] = f"{day:%Y-%m-%d}"
+    return out
+
+
 def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.DataFrame:
     """Fetch OHLCV data with caching, filtered to prevent look-ahead bias.
 
     Downloads 5 years of data up to today and caches per symbol. On
-    subsequent calls the cache is reused. Rows after curr_date are
-    filtered out so backtests never see future prices. A timestamp with a
-    UTC offset is the calendar day written in the cell: the offset is
-    removed without shifting the clock to UTC, then the time is floored to
-    midnight. Naive timestamps are left as parsed. Text offsets that differ by
+    subsequent calls the cache is reused. Dates are parsed as ISO8601
+    (``format="ISO8601"``, ``errors="coerce"``). A column that mixes
+    ``2024-01-02T00:00:00`` and ``2024-01-03 00:00:00`` — naive, or every
+    cell carrying one offset — keeps each written day.
+    ``2024-01-04T22:00:00-05:00`` stays 4 Jan. Text offsets that differ by
     at most 60 minutes are that same reading per cell, so a US/Eastern file
-    with ``-05:00`` and ``-04:00`` across DST keeps each written day. A column
-    that mixes naive timestamps with timezone-aware ones raises ValueError.
-    So does a column whose offsets span more than 60 minutes: the rows are
-    not dropped and the offsets are not forced into one zone. Written days
-    that collide after that reading also raise ValueError. The 60-minute
-    bound is the span of the offsets, not a zone name, so two zones an hour
-    apart are read the same way when each shows only one offset. All of OHLC comes
-    from one auto_adjust=True download; the cache file name records that
-    setting. With fill_prices=True (the default), gaps in Open, High, Low,
-    Close, and Volume are forward-filled and then backfilled only on the
-    rows still dated on or before curr_date. The in-window bfill does use
-    later bars up to curr_date. A bar after curr_date is not a source.
-    fill_prices=False leaves those gaps as NaN.
+    with ``-05:00`` and ``-04:00`` across DST keeps each written day. The
+    60-minute bound is the span of the offsets, not a zone name, so two
+    zones an hour apart are read the same way when each shows only one
+    offset. A non-empty cell that is not ISO8601 (a US date such as
+    ``12/29/2023``, or garbage) raises DataDefectError naming the ticker,
+    the cache file, the row, and the raw value. The same error is raised
+    when naive timestamps are mixed with offset timestamps, when offsets
+    span more than 60 minutes, or when that DST-sized reading puts two
+    cells on one calendar day. Those rows are not dropped, and the offsets
+    are not forced into one zone. An empty or missing Date is still coerced
+    to NaT and dropped. When the parsed column is timezone-aware, the offset
+    is removed without shifting the clock to UTC and the time is floored to
+    midnight before the cutoff comparison. Naive timestamps are left as
+    parsed. Rows after curr_date are filtered out so backtests never see
+    future prices. All of OHLC comes from one auto_adjust=True download; the
+    cache file name records that setting.
+    With fill_prices=True (the default), gaps in Open, High, Low, Close, and
+    Volume are forward-filled and then backfilled only on the rows still
+    dated on or before curr_date. The in-window bfill does use later bars up
+    to curr_date. A bar after curr_date is not a source, so a missing price
+    is never taken from a later bar after curr_date. fill_prices=False
+    leaves those gaps as NaN.
     """
     config = get_config()
     curr_date_dt = pd.to_datetime(curr_date)
@@ -186,15 +253,18 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
         data = data.reset_index()
         data.to_csv(data_file, index=False)
 
-    # Parse and drop bad rows first, then cut the window, then fill. Backfill
-    # before the cut takes a leading NaN from a bar after curr_date.
-    # Mixed naive/aware values become NaT and would be deleted; mixed offsets
-    # raise pandas' "Mixed timezones detected". A span of at most an hour is
-    # rewritten to each written day first. A wider span is named and rejected.
-    rewritten = _reject_mixed_date_zones(data["Date"], symbol)
+    # Parse dates, then cut the window, then fill. Backfill before the cut
+    # takes a leading NaN from a bar after curr_date. A text offset span of
+    # at most one hour is rewritten to each written day before that parse.
+    source = f"{symbol} ({data_file})"
+    rewritten = _rewrite_dst_offset_span(data["Date"], source)
     if rewritten is not None:
         data["Date"] = rewritten
-    data = _clean_dataframe(data, fill_prices=False)
+    data = _clean_dataframe(
+        data,
+        fill_prices=False,
+        source=source,
+    )
     # Wall clock, not UTC. A tz-aware Date cannot be compared with naive curr_date.
     # Naive stamps are left untouched so an existing cache still filters as before.
     dates = data["Date"]
