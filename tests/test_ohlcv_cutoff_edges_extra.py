@@ -6,6 +6,8 @@ holiday. History before ``curr_date`` stays. ``fill_prices=False`` (the
 runner) does not fill a missing Open from a later bar.
 
 With the default ``fill_prices=True``, gaps are filled only after that
+ceiling. A leading NaN Open is filled from a later bar on or before
+``curr_date``, and never from a bar after it.
 ceiling, forward-fill then backfill. A leading NaN Open is filled from a
 later bar on or before ``curr_date``. A NaN on the last day of the window
 is filled from the previous kept bar. Neither is taken from a bar after

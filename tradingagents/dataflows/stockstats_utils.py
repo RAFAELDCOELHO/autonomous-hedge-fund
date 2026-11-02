@@ -61,6 +61,8 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     from one auto_adjust=True download; the cache file name records that
     setting. With fill_prices=True (the default), gaps in Open, High, Low,
     Close, and Volume are forward-filled and then backfilled only on the
+    rows still dated on or before curr_date, so a missing price is never
+    taken from a later bar. fill_prices=False leaves those gaps as NaN.
     rows still dated on or before curr_date. The in-window bfill does use
     later bars up to curr_date. A bar after curr_date is not a source.
     fill_prices=False leaves those gaps as NaN.
