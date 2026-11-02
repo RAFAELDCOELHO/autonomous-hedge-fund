@@ -22,6 +22,16 @@ class BaselineSimulateHelperTests(unittest.TestCase):
 
         self.assertEqual(list(equity.values), [1_000.0, 1_200.0, 1_100.0, 1_100.0])
 
+    def test_non_positive_entry_does_not_wipe_cash(self):
+        # price <= 0 cannot be bought; cash must stay put, including after the signal ends.
+        idx = pd.date_range("2024-01-01", periods=2, freq="B")
+        prices = pd.DataFrame({"Close": [0.0, 10.0]}, index=idx)
+        signals = pd.Series([True, False], index=idx)
+
+        equity = _simulate(prices, signals, initial_capital=1_000.0)
+
+        self.assertEqual(list(equity.values), [1_000.0, 1_000.0])
+
 
 if __name__ == "__main__":
     unittest.main()
