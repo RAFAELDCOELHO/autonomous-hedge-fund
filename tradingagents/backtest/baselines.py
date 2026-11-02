@@ -36,14 +36,15 @@ def _simulate(prices: pd.DataFrame, signals: pd.Series, initial_capital: float) 
     for i in range(n):
         state = in_pos[i]
         price = closes[i]
-        if state and not prev_state:
-            shares = cash / price if price > 0 else 0.0
+        if state and not prev_state and price > 0:
+            shares = cash / price
             cash = 0.0
+            prev_state = True
         elif prev_state and not state:
             cash = shares * price
             shares = 0.0
+            prev_state = False
         equity[i] = cash + shares * price
-        prev_state = state
 
     return pd.Series(equity, index=prices.index, name="equity")
 
