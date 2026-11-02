@@ -102,9 +102,12 @@ def _simulate_open(ticker, days, opens, decide, initial_capital, market=_REQUIRE
     one included. A BUY fills only when that open is positive. A zero,
     negative, or NaN open does not take the position, so the cash balance is
     left as it is (and still earns rf when a cash rate is set) and a later
-    BUY at a positive open can enter. run_strategy and run_agent_strategy
-    never pass such an open: _execution_plan raises DataDefectError first, so
-    a checked run (including H1) is unchanged.
+    BUY at a positive open can enter. A SELL fills only when that open is
+    positive. A zero, negative, or NaN open does not leave the position, so
+    the shares stay (the bad price is not realized) and a later SELL at a
+    positive open exits. run_strategy and run_agent_strategy never pass such
+    an open: _execution_plan raises DataDefectError first, so a checked run
+    (including H1) is unchanged.
 
     The curve opens with an initial-capital anchor (P4.11 B2): index
     [D-1 of D_0, D_0, ..., D_n], value initial_capital at D-1, where D-1 is the
@@ -141,7 +144,7 @@ def _simulate_open(ticker, days, opens, decide, initial_capital, market=_REQUIRE
         if action == "BUY" and shares == 0.0 and price > 0:
             shares = cash / price
             cash = 0.0
-        elif action == "SELL" and shares > 0.0:
+        elif action == "SELL" and shares > 0.0 and price > 0:
             cash = shares * price
             shares = 0.0
         if rf is not None:
