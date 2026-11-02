@@ -39,8 +39,14 @@ def _clean_dataframe(data: pd.DataFrame, fill_prices: bool = True) -> pd.DataFra
 
     fill_prices=False leaves NaN prices (other than Close) in place, so a caller
     can fail closed on a missing Open instead of trading on a filled one.
+
+    Dates are parsed per cell (``format="mixed"``). A column that mixes
+    ``2024-01-02T00:00:00`` and ``2024-01-03 00:00:00`` — naive, or every cell
+    carrying one offset — keeps each written day. ``format="ISO8601"`` would
+    coerce a US date such as ``12/29/2023`` to NaT and drop that row. A cell
+    that is not a date is still coerced to NaT and dropped.
     """
-    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+    data["Date"] = pd.to_datetime(data["Date"], errors="coerce", format="mixed")
     data = data.dropna(subset=["Date"])
 
     price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]

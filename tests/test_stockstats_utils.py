@@ -60,6 +60,68 @@ class CleanDataFrameTests(unittest.TestCase):
         # Volume gap in surviving rows is filled from neighboring rows.
         self.assertEqual(cleaned["Volume"].tolist(), [1000.0, 1000.0])
 
+    def test_clean_dataframe_keeps_mixed_separators_and_written_day(self):
+        """T and a space are the same day, naive and with one offset.
+
+        The unformatted parser infers one strftime from the first cell and
+        coerces the other separator to NaT. ``2024-01-04T22:00:00-05:00`` is
+        5 Jan in UTC and 4 Jan as written.
+        """
+        naive = _ohlcv(
+            ["2024-01-02T00:00:00", "2024-01-03 00:00:00"],
+            [1.5, 2.5],
+        )
+        offset = _ohlcv(
+            [
+                "2024-01-02T00:00:00-05:00",
+                "2024-01-03 00:00:00-05:00",
+                "2024-01-04T22:00:00-05:00",
+            ],
+            [1.5, 2.5, 4.5],
+        )
+
+        naive_out = _clean_dataframe(naive.copy(), fill_prices=False)
+        offset_out = _clean_dataframe(offset.copy(), fill_prices=False)
+
+        self.assertEqual(len(naive_out), len(naive))
+        self.assertEqual(len(offset_out), len(offset))
+        self.assertEqual(
+            naive_out["Date"].dt.strftime("%Y-%m-%d").tolist(),
+            ["2024-01-02", "2024-01-03"],
+        )
+        self.assertEqual(
+            offset_out["Date"].dt.strftime("%Y-%m-%d").tolist(),
+            ["2024-01-02", "2024-01-03", "2024-01-04"],
+        )
+
+    def test_clean_dataframe_keeps_us_style_dates(self):
+        """A US date such as 12/29/2023 stays, as the unformatted parser keeps it."""
+        raw = _ohlcv(
+            ["12/29/2023", "01/02/2024", "1/3/2024"],
+            [1.0, 2.0, 3.0],
+        )
+
+        cleaned = _clean_dataframe(raw.copy(), fill_prices=False)
+
+        self.assertEqual(len(cleaned), len(raw))
+        self.assertEqual(
+            cleaned["Date"].dt.strftime("%Y-%m-%d").tolist(),
+            ["2023-12-29", "2024-01-02", "2024-01-03"],
+        )
+
+
+def _ohlcv(dates: list[str], closes: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Date": dates,
+            "Open": closes,
+            "High": closes,
+            "Low": closes,
+            "Close": closes,
+            "Volume": [1.0] * len(dates),
+        }
+    )
+
 
 class FilterFinancialsByDateTests(unittest.TestCase):
     def test_quarterly_boundary_is_strict_and_uses_45_day_lag(self):
