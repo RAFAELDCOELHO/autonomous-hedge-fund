@@ -120,6 +120,9 @@ def test_exactly_five_words_between_negation_and_label_still_negates():
         ("do not\n**SELL**", "SELL"),
         ("**BUY**", "BUY"),
         ("do not `BUY`", "HOLD"),
+        ("do not ~~BUY~~", "HOLD"),
+        ("do not ~~BUY~~, SELL", "SELL"),
+        ("* NOT\n* BUY", "BUY"),
     ],
 )
 def test_markdown_emphasis_does_not_hide_a_negation(raw, expected):
