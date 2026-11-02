@@ -1,0 +1,100 @@
+"""A non-positive close must not fill a SELL in the action-stream book.
+
+``_simulate_actions`` already refuses a BUY when the close is not positive.
+A SELL used to fill anyway: close 0 set cash to 0, a negative close made
+cash negative, and NaN wiped the curve. The shares have to stay so a later
+positive close can exit. Positive closes are unchanged, so the committed
+random-agent artifacts stay the same.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import math
+import unittest
+from pathlib import Path
+
+import pandas as pd
+
+
+def _load_regime_lib():
+    path = Path(__file__).resolve().parents[1] / "scripts" / "regime_lib.py"
+    spec = importlib.util.spec_from_file_location("regime_lib", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class SimulateActionsNonpositiveSellTests(unittest.TestCase):
+    def setUp(self):
+        self.rl = _load_regime_lib()
+
+    def _equity(self, closes, actions, capital=1_000.0):
+        index = pd.date_range("2024-01-02", periods=len(closes), freq="B")
+        return self.rl._simulate_actions(pd.Series(closes, index=index), actions, capital)
+
+    def test_positive_sell_still_exits_at_that_close(self):
+        equity = self._equity([10.0, 12.5], ["BUY", "SELL"])
+        self.assertEqual([float(v) for v in equity], [1_000.0, 1_250.0])
+
+    def test_sell_at_zero_keeps_shares_for_a_later_positive_close(self):
+        equity = self._equity([10.0, 0.0, 12.0], ["BUY", "SELL", "SELL"])
+        # 100 shares bought at 10. The zero close does not exit. 12 does.
+        self.assertEqual(float(equity.iloc[-1]), 1_200.0)
+
+    def test_sell_at_negative_close_does_not_realize_it(self):
+        equity = self._equity([10.0, -4.0, 11.0], ["BUY", "SELL", "HOLD"])
+        # Old book: cash = 100 * -4 = -400, and the position is gone.
+        self.assertEqual(float(equity.iloc[-1]), 1_100.0)
+
+    def test_sell_at_nan_close_does_not_wipe_the_curve(self):
+        equity = self._equity([10.0, float("nan"), 11.0], ["BUY", "SELL", "HOLD"])
+        self.assertTrue(math.isnan(float(equity.iloc[1])))
+        self.assertEqual(float(equity.iloc[-1]), 1_100.0)
+
+
+
+class SimulateActionsBuyGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.rl = _load_regime_lib()
+
+    def _equity(self, closes, actions, capital=1_000.0):
+        index = pd.date_range("2024-01-02", periods=len(closes), freq="B")
+        return self.rl._simulate_actions(pd.Series(closes, index=index), actions, capital)
+
+    def _assert_later_buy_fills_normally(self, equity):
+        """BUY at 10 then HOLD at 15 is an all-in long: 1000, then 1500.
+
+        That path exists only if the earlier BUY left shares at 0 and cash
+        at 1000. Both marks are finite (no NaN, no inf).
+        """
+        self.assertEqual([float(v) for v in equity.iloc[1:]], [1_000.0, 1_500.0])
+        for value in equity.iloc[1:]:
+            self.assertTrue(math.isfinite(float(value)))
+
+    def test_buy_at_zero_close_does_not_fill_and_later_buy_does(self):
+        equity = self._equity([0.0, 10.0, 15.0], ["BUY", "BUY", "HOLD"])
+        # Close 0 marks at the untouched cash. It must not be inf or NaN.
+        self.assertEqual(float(equity.iloc[0]), 1_000.0)
+        self.assertTrue(math.isfinite(float(equity.iloc[0])))
+        self._assert_later_buy_fills_normally(equity)
+
+    def test_buy_at_negative_close_does_not_fill_and_later_buy_does(self):
+        equity = self._equity([-4.0, 10.0, 15.0], ["BUY", "BUY", "HOLD"])
+        # A fill at -4 would also mark this bar at 1000, then mark 10 at -2500
+        # and skip the later BUY. The untouched book stays at 1000 here.
+        self.assertEqual(float(equity.iloc[0]), 1_000.0)
+        self.assertTrue(math.isfinite(float(equity.iloc[0])))
+        self._assert_later_buy_fills_normally(equity)
+
+    def test_buy_at_nan_close_does_not_fill_and_later_buy_does(self):
+        equity = self._equity([float("nan"), 10.0, 15.0], ["BUY", "BUY", "HOLD"])
+        # A NaN close marks to NaN even while flat (0 * NaN). The book is not
+        # poisoned: the next bars are a normal long, not NaN.
+        self.assertTrue(math.isnan(float(equity.iloc[0])))
+        self.assertFalse(math.isinf(float(equity.iloc[0])))
+        self._assert_later_buy_fills_normally(equity)
+
+
+if __name__ == "__main__":
+    unittest.main()

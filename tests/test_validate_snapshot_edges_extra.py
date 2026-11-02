@@ -47,6 +47,33 @@ def test_snapshot_missing_normalizes_dates_from_mixed_timestamp_types():
     assert api.snapshot_missing(exc) == {("AAPL", "2024-01-02", "Open"), ("AAPL", "2024-01-03", "bar")}
 
 
+def test_offset_timestamps_keep_the_written_day():
+    """A UTC offset must not crash validation or move the bar to another session.
+
+    ``2024-01-02T00:30+09:00`` is 2 Jan as written and 1 Jan in UTC. The exit
+    bar written on 5 Jan (4 Jan in UTC) does not fill 4 Jan.
+    """
+    days = ["2023-12-29", "2024-01-02", "2024-01-03", "2024-01-04"]
+    frame = pd.DataFrame(
+        {
+            "Date": [f"{day}T00:30:00+09:00" for day in days],
+            "Open": [100.0, 101.0, 102.0, 103.0],
+            "Close": [99.0, 100.0, 101.0, 102.0],
+        }
+    )
+    report = validate_snapshot(
+        ["AAPL"], "2024-01-02", "2024-01-03", prices_by_ticker={"AAPL": frame}
+    )
+    assert report["AAPL"]["exit_session"] == "2024-01-04"
+
+    frame.loc[3, "Date"] = "2024-01-05T00:30:00+09:00"
+    with pytest.raises(SnapshotIncomplete) as info:
+        validate_snapshot(
+            ["AAPL"], "2024-01-02", "2024-01-03", prices_by_ticker={"AAPL": frame}
+        )
+    assert api.snapshot_missing(info.value) == {("AAPL", "2024-01-04", "bar")}
+
+
 def test_validate_snapshot_flags_nan_open_on_required_session_even_if_dates_are_unsorted():
     frame = _us_frame().iloc[[2, 0, 3, 1]]
     frame.loc[pd.Timestamp("2024-01-02"), "Open"] = np.nan
