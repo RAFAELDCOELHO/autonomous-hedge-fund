@@ -114,68 +114,6 @@ def _clean_dataframe(
     return data
 
 
-# A calendar day ends in "-DD". That is not an offset. These are: "Z", "+",
-# "±HH:MM", "±HHMM", and a short negative offset after a time ("T00:30:00-05").
-_OFFSET_MARKER_RE = r"(?:Z|\+|[+-]\d{2}:\d{2}|[+-]\d{4}|T\d{2}:\d{2}:\d{2}-\d{2}$)"
-
-
-def _missing_date_cell(value) -> bool:
-    if isinstance(value, str):
-        return not value.strip()
-    try:
-        missing = pd.isna(value)
-    except (TypeError, ValueError):
-        return False
-    return bool(missing)
-
-
-def _reject_mixed_date_zones(dates: pd.Series, source: str | None) -> None:
-    """Fail closed when Date mixes naive stamps with offsets, or mixes offsets.
-
-    Column-wise ``pd.to_datetime`` turns the other kind into NaT, and the
-    following drop deletes those rows, or it raises ``Mixed timezones detected``.
-    Both cases raise DataDefectError through ``_raise_date_defect``, naming
-    ``source``, each offending row, and the raw value. A datetime64 column
-    already has one timezone, including a named zone whose UTC offset changes
-    across the year, and is left for the written-day conversion. Naive stamps
-    are not re-parsed here.
-    """
-    if pd.api.types.is_datetime64_any_dtype(dates):
-        return
-    if not dates.astype("string").str.contains(_OFFSET_MARKER_RE, regex=True, na=False).any():
-        return
-
-    saw_naive = False
-    offsets: set[int] = set()
-    mixed_rows: list = []
-    offset_rows: list = []
-    for idx, value in dates.items():
-        if _missing_date_cell(value):
-            continue
-        parsed = pd.to_datetime(value, errors="coerce")
-        if pd.isna(parsed):
-            continue
-        if getattr(parsed, "tzinfo", None) is None:
-            saw_naive = True
-            mixed_rows.append(idx)
-        else:
-            offsets.add(int(parsed.utcoffset().total_seconds() // 60))
-            mixed_rows.append(idx)
-            offset_rows.append(idx)
-    if saw_naive and offsets:
-        _raise_date_defect(
-            source,
-            "Date mixes timezone-aware and naive timestamps",
-            dates.loc[mixed_rows],
-        )
-    if len(offsets) > 1:
-        _raise_date_defect(
-            source,
-            "Date mixes UTC offsets",
-            dates.loc[offset_rows],
-        )
-
-
 def _calendar_day_as_written(dates: pd.Series) -> pd.Series:
     """Calendar day printed on the stamp. Drop a UTC offset; do not shift the clock.
 
@@ -206,8 +144,8 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     the clock to UTC and the time is floored to midnight before the cutoff
     comparison. Naive timestamps are left as parsed. Rows after curr_date
     are filtered out so backtests never see future prices. All of OHLC comes
-    from one
-    auto_adjust=True download; the cache file name records that setting.
+    from one auto_adjust=True download; the cache file name records that
+    setting.
     With fill_prices=True (the default), gaps in Open, High, Low, Close, and
     Volume are forward-filled and then backfilled only on the rows still
     dated on or before curr_date. The in-window bfill does use later bars up
@@ -246,14 +184,10 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
 
     # Parse dates, then cut the window, then fill. Backfill before the cut
     # takes a leading NaN from a bar after curr_date.
-    # Mixed naive/aware values become NaT and would be deleted; mixed offsets
-    # raise pandas' "Mixed timezones detected". Name the problem instead.
-    source = f"{symbol} ({data_file})"
-    _reject_mixed_date_zones(data["Date"], source=source)
     data = _clean_dataframe(
         data,
         fill_prices=False,
-        source=source,
+        source=f"{symbol} ({data_file})",
     )
     # Wall clock, not UTC. A tz-aware Date cannot be compared with naive curr_date.
     # Naive stamps are left untouched so an existing cache still filters as before.
