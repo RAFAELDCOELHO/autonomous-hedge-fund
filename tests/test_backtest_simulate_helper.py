@@ -32,6 +32,31 @@ class BaselineSimulateHelperTests(unittest.TestCase):
 
         self.assertEqual(list(equity.values), [1_000.0, 1_000.0])
 
+    def test_negative_entry_close_keeps_cash(self):
+        # `price != 0` still buys a negative close (the zero-price test does not
+        # catch it). The flat bar must stay in cash, not mark that short.
+        idx = pd.date_range("2024-01-01", periods=2, freq="B")
+        prices = pd.DataFrame({"Close": [-5.0, 10.0]}, index=idx)
+        signals = pd.Series([True, False], index=idx)
+
+        equity = _simulate(prices, signals, initial_capital=1_000.0)
+
+        self.assertEqual(list(equity.values), [1_000.0, 1_000.0])
+
+    def test_entry_defers_to_the_next_positive_close(self):
+        # A zero or NaN bar does not consume the entry. The fill happens on the
+        # next positive close; the bar after that marks the position.
+        idx = pd.date_range("2024-01-01", periods=3, freq="B")
+        signals = pd.Series([True, True, True], index=idx)
+        for bad in (0.0, float("nan")):
+            with self.subTest(bad=bad):
+                prices = pd.DataFrame({"Close": [bad, 10.0, 12.0]}, index=idx)
+                equity = _simulate(prices, signals, initial_capital=1_000.0)
+                if bad == 0.0:
+                    self.assertEqual(list(equity.values), [1_000.0, 1_000.0, 1_200.0])
+                else:
+                    self.assertEqual(list(equity.iloc[1:].values), [1_000.0, 1_200.0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,10 @@ class OpenAIClientBaseUrlTests(unittest.TestCase):
     the built-in default. The CLI stores a different host for Qwen
     (dashscope.aliyuncs.com) and GLM (open.bigmodel.cn) than those defaults
     (dashscope-intl, api.z.ai), so the selected endpoint never left the client.
+
+    An empty string is not a host. It falls back the same way None does:
+    a known provider keeps its _PROVIDER_CONFIG default, and native OpenAI
+    omits base_url. A check that only rejects None forwards "" as the host.
     """
 
     @patch("tradingagents.llm_clients.openai_client.NormalizedChatOpenAI")
@@ -52,6 +56,34 @@ class OpenAIClientBaseUrlTests(unittest.TestCase):
             mock_chat.call_args.kwargs["base_url"],
             "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         )
+
+    @patch("tradingagents.llm_clients.openai_client.NormalizedChatOpenAI")
+    def test_empty_base_url_falls_back_like_none(self, mock_chat):
+        """Empty string uses the provider default, the same host None does.
+
+        Known providers use ``self.base_url or default_base_url``. Native
+        OpenAI uses ``elif self.base_url``. Replacing either with
+        ``is not None`` forwards "" and fails this test.
+        """
+        qwen_default = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        for base_url in ("", None):
+            with self.subTest(provider="qwen", base_url=base_url):
+                mock_chat.reset_mock()
+                OpenAIClient("qwen-plus", base_url, provider="qwen").get_llm()
+                self.assertEqual(
+                    mock_chat.call_args.kwargs.get("base_url"),
+                    qwen_default,
+                    msg=f"base_url={base_url!r} must fall back to the provider default",
+                )
+
+            with self.subTest(provider="openai", base_url=base_url):
+                mock_chat.reset_mock()
+                OpenAIClient("gpt-4.1", base_url, provider="openai").get_llm()
+                self.assertNotIn(
+                    "base_url",
+                    mock_chat.call_args.kwargs,
+                    msg=f"base_url={base_url!r} must not be forwarded as the host",
+                )
 
 
 if __name__ == "__main__":
