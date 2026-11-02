@@ -137,12 +137,12 @@ _MAX_DST_OFFSET_SPAN_MINUTES = 60
 def _rewrite_dst_offset_span(dates: pd.Series, source: str | None) -> pd.Series | None:
     """Rewrite text offsets spanning at most 60 minutes to each written day.
 
-    ``None`` means the column is unchanged. A datetime64 column, a column
-    with no offset marker, a single offset, a naive value beside an offset,
-    and a span wider than 60 minutes are unchanged, so ``_parse_ohlcv_dates``
-    still owns those cases. A blank or unparseable cell is left in place.
-    Two cells in that span that name one calendar day raise DataDefectError
-    naming ``source``, each colliding row, and the raw value.
+    ``None`` leaves the column untouched. That is a datetime64 column, a
+    column with no offset marker, a single offset, a naive value beside an
+    offset, a span wider than 60 minutes, or any non-empty cell that
+    ``format="ISO8601"`` cannot parse. Two cells that are rewritten onto one
+    calendar day raise DataDefectError naming ``source``, each colliding
+    row, and the raw value.
     """
     if pd.api.types.is_datetime64_any_dtype(dates):
         return None
@@ -156,13 +156,18 @@ def _rewrite_dst_offset_span(dates: pd.Series, source: str | None) -> pd.Series 
     for idx, value in dates.items():
         if bool(empty.loc[idx]):
             continue
-        parsed = pd.to_datetime(value, errors="coerce")
+        try:
+            parsed = pd.to_datetime(value, format="ISO8601", errors="coerce")
+        except (TypeError, ValueError):
+            return None
         if pd.isna(parsed):
-            continue
+            return None
         if getattr(parsed, "tzinfo", None) is None:
             saw_naive = True
         else:
             offset_minutes = parsed.utcoffset()
+            if offset_minutes is None:
+                return None
             offsets.add(int(offset_minutes.total_seconds() // 60))
             parsed_at.append((idx, parsed))
         if saw_naive and offsets:
@@ -199,7 +204,7 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     (``format="ISO8601"``, ``errors="coerce"``). A column that mixes
     ``2024-01-02T00:00:00`` and ``2024-01-03 00:00:00`` — naive, or every
     cell carrying one offset — keeps each written day.
-    ``2024-01-04T22:00:00-05:00`` stays 4 Jan. Text offsets that differ by
+    ``2024-01-04T22:00:00-05:00`` stays 4 Jan. ISO8601 offsets that differ by
     at most 60 minutes are that same reading per cell, so a US/Eastern file
     with ``-05:00`` and ``-04:00`` across DST keeps each written day. The
     60-minute bound is the span of the offsets, not a zone name, so two

@@ -438,10 +438,10 @@ def test_naive_date_beside_eastern_offsets_raises(monkeypatch, tmp_path):
 
 
 def test_unparseable_date_beside_dst_offsets_is_not_dropped(monkeypatch, tmp_path):
-    """A value that is not a timestamp is not a third offset.
+    """A value that is not a timestamp is not rewritten into a calendar day.
 
-    It fails closed as a non-ISO8601 Date, so the sentinel price is not
-    returned. The mixed-offset error is not the one raised.
+    The original column reaches the ISO8601 parser, which raises
+    DataDefectError. The sentinel price is not returned.
     """
     with pytest.raises(DataDefectError, match="not-a-date") as caught:
         _load(
@@ -459,6 +459,30 @@ def test_unparseable_date_beside_dst_offsets_is_not_dropped(monkeypatch, tmp_pat
     assert "Date mixes UTC offsets" not in message
     assert "mixes timezone-aware and naive" not in message
     assert "duplicate calendar days" not in message
+    assert "987654" not in message
+
+
+def test_us_date_with_offset_beside_dst_offsets_is_not_rewritten(monkeypatch, tmp_path):
+    """``01/04/2024 00:00:00-04:00`` is not rewritten to ``2024-01-04``.
+
+    Beside ``2024-01-03T00:00:00-05:00`` the column is left unchanged, so
+    DataDefectError names that row and the raw US date.
+    """
+    with pytest.raises(DataDefectError, match=r"row 1 raw='01/04/2024 00:00:00-04:00'") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("2024-01-03T00:00:00-05:00", 1.0),
+                _bar("01/04/2024 00:00:00-04:00", SENTINEL),
+            ],
+            "2024-01-04",
+        )
+
+    message = str(caught.value)
+    assert "AAPL" in message
+    assert _cache_name() in message
+    assert "Date is not ISO8601" in message
     assert "987654" not in message
 
 
