@@ -133,6 +133,9 @@ class MapSignalTests(unittest.TestCase):
         self.assertEqual(self.mod.map_signal("Buy-backs continue: HOLD"), "HOLD")
         # A compound alone carries no label: a decision error, not a trade.
         self.assertFalse(self.mod.is_parseable_signal("Sector sell-off continues"))
+        self.assertFalse(self.mod.is_parseable_signal("SELL-OFFS"))
+        self.assertFalse(self.mod.is_parseable_signal("sell-offs"))
+        self.assertEqual(self.mod.map_signal("Sell-offs aside, BUY"), "BUY")
         # Only those nouns: other hyphens and the unhyphenated verb are unchanged.
         self.assertEqual(self.mod.map_signal("STRONG-BUY"), "BUY")
         self.assertEqual(self.mod.map_signal("Sell off the position"), "SELL")
@@ -140,6 +143,12 @@ class MapSignalTests(unittest.TestCase):
         self.assertFalse(self.mod.is_parseable_signal("SELL-SIDE"))
         self.assertFalse(self.mod.is_parseable_signal("BUY-INS"))
         self.assertEqual(self.mod.map_signal("UNDER-WEIGHT"), "SELL")
+
+    def test_hold_up_still_maps_to_hold(self):
+        # HOLD-UP is deliberately absent from _COMPOUND_NOUN_PATTERN. The
+        # hyphen still splits, so the word is a HOLD label, not a fallback.
+        self.assertTrue(self.mod.is_parseable_signal("hold-up"))
+        self.assertEqual(self.mod.map_signal("hold-up"), "HOLD")
 
     def test_non_text_inputs_do_not_raise_and_fallback_reasonably(self):
         self.assertEqual(self.mod.map_signal(None), "HOLD")
