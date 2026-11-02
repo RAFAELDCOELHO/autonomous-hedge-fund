@@ -23,6 +23,8 @@ def _extract_headlines(news_text: str) -> list[str]:
     """Headline-like lines from a vendor news blob.
 
     yfinance titles are ``### Title (source: Publisher)`` and the URL is a
+    ``Link:`` line (see get_news_yfinance). That title is a headline; the
+    ``## ... News`` banner and ``Link:`` / ``URL:`` lines are not. Any other
     ``Link:`` line (see get_news_yfinance). That title is a headline, and so
     is ``####`` or any deeper heading. The ``## ... News`` banner, ``Link:`` /
     ``URL:`` lines, and a bare ``http``/``https`` URL line are not. Any other
