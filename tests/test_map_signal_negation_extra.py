@@ -104,3 +104,31 @@ def test_more_closed_negation_clauses_are_buy(raw):
 
 def test_exactly_five_words_between_negation_and_label_still_negates():
     assert map_signal("We do not think that you really should BUY") == "HOLD"
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("do not **BUY**", "HOLD"),
+        ("do **not** BUY", "HOLD"),
+        ("don't **SELL**", "HOLD"),
+        ("never, ever **BUY**", "HOLD"),
+        ("do not **BUY**, SELL", "SELL"),
+        ("NOT **SELL**, BUY", "BUY"),
+        ("not only **BUY**", "BUY"),
+        ("No question, **BUY**", "BUY"),
+        ("do not\n**SELL**", "SELL"),
+        ("**BUY**", "BUY"),
+        ("do not `BUY`", "HOLD"),
+        ("do not ~~BUY~~", "HOLD"),
+        ("do not ~~BUY~~, SELL", "SELL"),
+        ("* NOT\n* BUY", "BUY"),
+    ],
+)
+def test_markdown_emphasis_does_not_hide_a_negation(raw, expected):
+    """Emphasis markers are separators, so a bold label stays inside the negation window.
+
+    On main, ``do not **BUY**, SELL`` returned BUY: the stars blocked the window
+    and the negated label was executed. The later SELL is the rating.
+    """
+    assert map_signal(raw) == expected

@@ -5,6 +5,8 @@ import math
 from pathlib import Path
 import unittest
 
+import pandas as pd
+
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO / "scripts"
@@ -34,6 +36,15 @@ class PercentileOfTests(unittest.TestCase):
     def test_all_nan_input_returns_nan(self):
         out = self.rl.percentile_of([float("nan"), float("nan")], 1.0)
         self.assertTrue(math.isnan(out))
+
+    def test_non_positive_entry_does_not_wipe_cash(self):
+        idx = pd.date_range("2024-01-01", periods=2, freq="B")
+        closes = pd.Series([0.0, 10.0], index=idx)
+        held = pd.Series([True, False], index=idx)
+
+        equity = self.rl._simulate_signal(closes, held, 1_000.0)
+
+        self.assertEqual(list(equity.values), [1_000.0, 1_000.0])
 
 
 if __name__ == "__main__":
