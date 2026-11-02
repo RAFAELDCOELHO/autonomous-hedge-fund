@@ -71,7 +71,12 @@ def _frame(ticker: str, exit_day: pd.Timestamp, given: Mapping[str, pd.DataFrame
     if frame is None:
         return None
     frame = frame.set_index("Date") if "Date" in frame.columns else frame
-    return frame.set_axis(pd.to_datetime(frame.index))
+    # Wall clock, not UTC. ``2024-01-05T00:30+09:00`` is 5 Jan as written
+    # (UTC would make it 4 Jan and satisfy the previous session).
+    index = pd.DatetimeIndex(pd.to_datetime(frame.index))
+    if index.tz is not None:
+        index = index.tz_localize(None)
+    return frame.set_axis(index.normalize())
 
 
 def _price_ok(frame: pd.DataFrame, day: pd.Timestamp, column: str) -> bool:

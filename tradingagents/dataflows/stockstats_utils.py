@@ -59,7 +59,10 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
     subsequent calls the cache is reused. Rows after curr_date are
     filtered out so backtests never see future prices. All of OHLC comes
     from one auto_adjust=True download; the cache file name records that
-    setting. fill_prices: see _clean_dataframe.
+    setting. With fill_prices=True (the default), gaps in Open, High, Low,
+    Close, and Volume are forward-filled and then backfilled only on the
+    rows still dated on or before curr_date, so a missing price is never
+    taken from a later bar. fill_prices=False leaves those gaps as NaN.
     """
     config = get_config()
     curr_date_dt = pd.to_datetime(curr_date)
@@ -90,10 +93,14 @@ def load_ohlcv(symbol: str, curr_date: str, fill_prices: bool = True) -> pd.Data
         data = data.reset_index()
         data.to_csv(data_file, index=False)
 
-    data = _clean_dataframe(data, fill_prices=fill_prices)
-
-    # Filter to curr_date to prevent look-ahead bias in backtesting
-    data = data[data["Date"] <= curr_date_dt]
+    # Parse and drop bad rows first, then cut the window, then fill. Backfill
+    # before the cut takes a leading NaN from a bar after curr_date.
+    data = _clean_dataframe(data, fill_prices=False)
+    data = data.loc[data["Date"] <= curr_date_dt].copy()
+    if fill_prices:
+        price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
+        if price_cols:
+            data[price_cols] = data[price_cols].ffill().bfill()
 
     return data
 
