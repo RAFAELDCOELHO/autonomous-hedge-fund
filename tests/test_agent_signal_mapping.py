@@ -21,6 +21,9 @@ def _load_module():
 
     fake_backtest_pkg = types.ModuleType("tradingagents.backtest")
     fake_backtest_pkg.__path__ = []
+    fake_cash_rate = types.ModuleType("tradingagents.backtest.cash_rate")
+    fake_cash_rate._REQUIRED = object()
+    fake_cash_rate._cash_rate = lambda *_, **__: None
     fake_runner = types.ModuleType("tradingagents.backtest.runner")
     fake_runner.run_agent_strategy = lambda **_: None
 
@@ -44,6 +47,7 @@ def _load_module():
     stubbed = {
         "pandas": fake_pandas,
         "tradingagents.backtest": fake_backtest_pkg,
+        "tradingagents.backtest.cash_rate": fake_cash_rate,
         "tradingagents.backtest.runner": fake_runner,
         "tradingagents.graph": fake_graph_pkg,
         "tradingagents.graph.trading_graph": fake_graph_mod,
@@ -118,6 +122,20 @@ class MapSignalTests(unittest.TestCase):
             self.mod.map_signal("Insider buying noted. Rating: HOLD"), "HOLD"
         )
         self.assertEqual(self.mod.map_signal("Still holding for now. SELL"), "SELL")
+
+    def test_hyphenated_compound_nouns_are_not_signal_labels(self):
+        # Before this rule the first two mapped to the opposite action.
+        self.assertEqual(self.mod.map_signal("Despite sell-off fears, we BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("Buy-side interest rising; SELL"), "SELL")
+        self.assertEqual(self.mod.map_signal("Sell-side consensus is weak. Rating: BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("Buy-back program supports. Final: HOLD"), "HOLD")
+        self.assertEqual(self.mod.map_signal("Sell-offs and buy-ins aside, SELL"), "SELL")
+        self.assertEqual(self.mod.map_signal("Buy-backs continue: HOLD"), "HOLD")
+        # A compound alone carries no label: a decision error, not a trade.
+        self.assertFalse(self.mod.is_parseable_signal("Sector sell-off continues"))
+        # Only those nouns: other hyphens and the unhyphenated verb are unchanged.
+        self.assertEqual(self.mod.map_signal("STRONG-BUY"), "BUY")
+        self.assertEqual(self.mod.map_signal("Sell off the position"), "SELL")
 
     def test_non_text_inputs_do_not_raise_and_fallback_reasonably(self):
         self.assertEqual(self.mod.map_signal(None), "HOLD")

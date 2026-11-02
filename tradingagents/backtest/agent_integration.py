@@ -37,7 +37,11 @@ _TEXT_SIGNAL_PATTERN = re.compile(
     r"|\b(?P<hold>HOLD)\b"
     r"|\b(?P<sell>UNDER\s+WEIGHT|UNDERWEIGHT|SELL)\b"
 )
-_LABEL_BOUNDARY_PATTERN = re.compile(r"[.!?;:\n]|(?:\s-\s)")
+# Hyphenated nouns built on a label ("sell-off fears", "buy-side demand") are
+# not ratings. They are joined ("SELLOFF") before "-" becomes a space, so the
+# \b-bounded label pattern skips them.
+_COMPOUND_NOUN_PATTERN = re.compile(r"\b(?:SELL-(?:OFFS?|SIDE)|BUY-(?:SIDE|BACKS?|INS?))\b")
+_LABEL_BOUNDARY_PATTERN =re.compile(r"[.!?;:\n]|(?:\s-\s)")
 _NON_NEGATING_PHRASES_PATTERN = re.compile(
     r"(?:\bNO\s+DOUBT\b|\bNOT\s+ONLY\b|\bNO\s+REASON\s+NOT\s+TO\b)[\s,]*$"
 )
@@ -100,7 +104,8 @@ def _parse_signal(raw: Optional[str]) -> Optional[str]:
     if mapped is not None:
         return mapped
 
-    normalized_text = cleaned.replace("_", " ")
+    normalized_text = _COMPOUND_NOUN_PATTERN.sub(lambda m: m.group().replace("-", ""), cleaned)
+    normalized_text = normalized_text.replace("_", " ")
     normalized_text = re.sub(r"(?<=[A-Z])-(?=[A-Z])", " ", normalized_text)
     previous_label_end = 0
     for match in _TEXT_SIGNAL_PATTERN.finditer(normalized_text):
