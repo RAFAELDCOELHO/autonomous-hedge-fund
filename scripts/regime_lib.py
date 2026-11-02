@@ -124,7 +124,11 @@ def warm_window(df: pd.DataFrame, regime: str) -> tuple[pd.DataFrame, pd.DataFra
 # Simulation (mirrors baselines._simulate and runner.run_agent_strategy)
 # --------------------------------------------------------------------------- #
 def _simulate_signal(closes: pd.Series, in_pos: pd.Series, capital: float) -> pd.Series:
-    """Equity curve from a boolean 'hold into this close' signal."""
+    """Equity curve from a boolean 'hold into this close' signal.
+
+    An exit fills only when that close is positive. A zero, negative, or NaN
+    close keeps the shares and the cash, so a later positive close can exit.
+    """
     c = closes.astype(float).to_numpy()
     s = in_pos.astype(bool).to_numpy()
     n = len(c)
@@ -132,19 +136,27 @@ def _simulate_signal(closes: pd.Series, in_pos: pd.Series, capital: float) -> pd
     eq = np.empty(n, dtype=float)
     for i in range(n):
         st, p = bool(s[i]), c[i]
-        if st and not prev:
-            shares = cash / p if p > 0 else 0.0
+        if st and not prev and p > 0:
+            shares = cash / p
             cash = 0.0
+            prev = True
         elif prev and not st:
-            cash = shares * p
-            shares = 0.0
+            if p > 0:
+                cash = shares * p
+                shares = 0.0
+                prev = False
+            # else: keep shares, cash, and prev so a later positive close exits
         eq[i] = cash + shares * p
-        prev = st
     return pd.Series(eq, index=closes.index)
 
 
 def _simulate_actions(closes: pd.Series, actions: list[str], capital: float) -> pd.Series:
-    """Equity curve from a BUY/SELL/HOLD action stream (agent semantics)."""
+    """Equity curve from a BUY/SELL/HOLD action stream (agent semantics).
+
+    A BUY or a SELL fills only when that close is positive. A zero, negative,
+    or NaN close does not enter or leave the position, so the bad price is not
+    realized and a later positive close can.
+    """
     c = closes.astype(float).to_numpy()
     n = len(c)
     cash, shares = float(capital), 0.0
@@ -155,7 +167,7 @@ def _simulate_actions(closes: pd.Series, actions: list[str], capital: float) -> 
         if a == "BUY" and shares == 0.0 and p > 0:
             shares = cash / p
             cash = 0.0
-        elif a == "SELL" and shares > 0.0:
+        elif a == "SELL" and shares > 0.0 and p > 0:
             cash = shares * p
             shares = 0.0
         eq[i] = cash + shares * p

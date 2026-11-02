@@ -218,21 +218,27 @@ def test_same_offset_with_and_without_a_colon_keeps_both_days(monkeypatch, tmp_p
     assert out["Open"].tolist() == [2.0, 3.0]
 
 
-def test_unparseable_date_beside_one_offset_is_dropped(monkeypatch, tmp_path):
-    """A value that is not a timestamp is not a second zone."""
-    out = _load(
-        monkeypatch,
-        tmp_path,
-        [
-            _bar("not-a-date", SENTINEL),
-            _bar("2024-01-02T00:30:00+09:00", 2.0),
-        ],
-        "2024-01-02",
-    )
+def test_unparseable_date_beside_one_offset_is_not_a_second_zone(monkeypatch, tmp_path):
+    """A value that is not a timestamp is not a second zone.
 
-    assert out["Date"].tolist() == [pd.Timestamp("2024-01-02")]
-    assert out["Open"].tolist() == [2.0]
-    assert not bool(out.isin([SENTINEL]).to_numpy().any())
+    It fails closed as a non-ISO8601 Date, so the sentinel price is not
+    returned. The mixed-offset error is not the one raised.
+    """
+    with pytest.raises(DataDefectError, match="not-a-date") as caught:
+        _load(
+            monkeypatch,
+            tmp_path,
+            [
+                _bar("not-a-date", SENTINEL),
+                _bar("2024-01-02T00:30:00+09:00", 2.0),
+            ],
+            "2024-01-02",
+        )
+
+    message = str(caught.value)
+    assert "Date mixes UTC offsets" not in message
+    assert "mixes timezone-aware and naive" not in message
+    assert "987654" not in message
 
 
 def test_named_zone_across_dst_keeps_the_written_days(monkeypatch, tmp_path):
