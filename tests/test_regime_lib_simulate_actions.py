@@ -1,13 +1,10 @@
-"""A non-positive close must not fill a BUY or a SELL in the action-stream book.
+"""A non-positive close must not fill a SELL in the action-stream book.
 
-``_simulate_actions`` fills only when the close is positive. A zero, negative,
-or NaN close does not enter or leave the position, so the bad price is not
-realized and a later positive close can.
-
-``SimulateActionsNonpositiveSellTests`` keeps the shares through a bad SELL.
-``SimulateActionsBuyGuardTests`` leaves the cash untouched through a bad BUY.
-Positive closes are unchanged, so the committed random-agent artifacts stay
-the same.
+``_simulate_actions`` already refuses a BUY when the close is not positive.
+A SELL used to fill anyway: close 0 set cash to 0, a negative close made
+cash negative, and NaN wiped the curve. The shares have to stay so a later
+positive close can exit. Positive closes are unchanged, so the committed
+random-agent artifacts stay the same.
 """
 
 from __future__ import annotations
@@ -54,6 +51,7 @@ class SimulateActionsNonpositiveSellTests(unittest.TestCase):
         equity = self._equity([10.0, float("nan"), 11.0], ["BUY", "SELL", "HOLD"])
         self.assertTrue(math.isnan(float(equity.iloc[1])))
         self.assertEqual(float(equity.iloc[-1]), 1_100.0)
+
 
 
 class SimulateActionsBuyGuardTests(unittest.TestCase):
