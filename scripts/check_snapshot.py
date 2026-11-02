@@ -14,8 +14,13 @@ D-1 Close rule. One stdout line per defect::
     <field code> <ticker> <YYYY-MM-DD>
 
 Field codes are the ones ``validate_snapshot`` reports (``bar``, ``Open``,
-``Close``, ``duplicate``). Exit 0 when the snapshot is complete, 1 when any
-defect is listed, 2 on usage or I/O error.
+``Close``, ``duplicate``).
+
+Exit codes:
+
+- 0: clean
+- 1: defects
+- 2: usage or I/O error
 
 Usage::
 
@@ -56,6 +61,10 @@ def load_snapshot(path: Path) -> dict[str, pd.DataFrame]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Check one snapshot directory.
+
+    Exit codes: 0 clean, 1 defects, 2 usage or I/O error.
+    """
     parser = argparse.ArgumentParser(
         description="Run validate_snapshot on a directory of per-ticker OHLCV CSVs."
     )

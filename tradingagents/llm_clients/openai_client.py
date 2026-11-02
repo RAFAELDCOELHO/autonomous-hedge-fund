@@ -59,10 +59,12 @@ class OpenAIClient(BaseLLMClient):
         self.warn_if_unknown_model()
         llm_kwargs = {"model": self.model}
 
-        # Provider-specific base URL and auth
+        # Provider-specific base URL and auth. An explicit base_url (the
+        # graph's backend_url, including the CLI selection) wins. Known
+        # providers otherwise keep the default in _PROVIDER_CONFIG.
         if self.provider in _PROVIDER_CONFIG:
-            base_url, api_key_env = _PROVIDER_CONFIG[self.provider]
-            llm_kwargs["base_url"] = base_url
+            default_base_url, api_key_env = _PROVIDER_CONFIG[self.provider]
+            llm_kwargs["base_url"] = self.base_url or default_base_url
             if api_key_env:
                 api_key = os.environ.get(api_key_env)
                 if api_key:
