@@ -1,13 +1,13 @@
-"""Edge cases for the OHLCV ``curr_date`` ceiling.
-
-``load_ohlcv`` keeps a row when ``Date <= curr_date`` and drops the next
-calendar day, including the Saturday after a Friday and the session after a
-holiday. History before ``curr_date`` stays. ``fill_prices=False`` (the
-runner) does not fill a missing Open from a later bar.
-
-With the default ``fill_prices=True``, gaps are filled only after that
-ceiling. A leading NaN Open is filled from a later bar on or before
-``curr_date``, and never from a bar after it.
+"""Edge cases for the OHLCV ``curr_date`` ceiling. ``load_ohlcv`` keeps a
+row when ``Date <= curr_date`` and drops the next calendar day, including
+the Saturday after a Friday and the session after a holiday. History before
+``curr_date`` stays. ``fill_prices=False`` (the runner) does not fill a
+missing Open from a later bar. With the default ``fill_prices=True``, gaps
+are filled only after that ceiling, forward-fill then backfill. A leading
+NaN Open is filled from a later bar on or before ``curr_date``. A NaN on
+the last day of the window is filled from the previous kept bar. Neither is
+taken from a bar after ``curr_date``. An interior gap takes the earlier
+bar, because forward-fill runs first.
 """
 
 from __future__ import annotations
@@ -207,4 +207,40 @@ def test_leading_nan_open_is_filled_from_a_later_bar_on_or_before_cutoff(monkeyp
 
     assert _dates(out) == ["2024-01-11", "2024-01-12"]
     assert out.sort_values("Date")["Open"].tolist() == [12.0, 12.0]
+    assert not _has(out, SENTINEL)
+
+
+def test_gap_on_last_day_and_at_the_start_is_ffill_then_bfill(monkeypatch, tmp_path):
+    """Start gap plus a gap on the last day of the window, with an interior gap.
+
+    curr_date is Friday 2024-01-12. Open is missing on the first kept day,
+    on the middle day, and on the last day. The bar after the cutoff stays
+    out. Forward-fill then backfill fills the start from the next kept bar
+    (11), the interior gap from the earlier bar (11, not 15), and the last
+    day from the previous kept bar (15). Backfill alone leaves the last day
+    empty. Backfill before forward-fill writes 15 into the interior gap.
+    """
+    out = _load(
+        monkeypatch,
+        tmp_path,
+        [
+            _bar("2024-01-08", None),
+            _bar("2024-01-09", 11.0),
+            _bar("2024-01-10", None),
+            _bar("2024-01-11", 15.0),
+            _bar("2024-01-12", None),
+            _bar("2024-01-16", SENTINEL),
+        ],
+        "2024-01-12",
+        fill_prices=True,
+    )
+
+    assert _dates(out) == [
+        "2024-01-08",
+        "2024-01-09",
+        "2024-01-10",
+        "2024-01-11",
+        "2024-01-12",
+    ]
+    assert out.sort_values("Date")["Open"].tolist() == [11.0, 11.0, 11.0, 15.0, 15.0]
     assert not _has(out, SENTINEL)
