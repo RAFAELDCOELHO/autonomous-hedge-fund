@@ -20,7 +20,7 @@ research
 ## Repository Description (max 350 chars)
 
 ```
-Multi-agent LLM trading system extending TradingAgents with a Macro Economist Agent. Original research: testing whether explicit macro context (SELIC, IPCA, GDP, BRL) improves Sharpe ratio more in emerging markets than developed markets. Kronos (AAAI 2026) + FinGPT + Claude.
+Multi-agent LLM trading system extending TradingAgents with a Macro Economist Agent. Pre-registered, not yet run: does explicit macro context (SELIC, IPCA, GDP, BRL) improve Sharpe more in emerging than in developed markets? Claude agents, a Kronos forecast tool, a FinGPT-style sentiment prompt.
 ```
 
-(275 characters — within the 350-character limit.)
+(296 characters — within the 350-character limit.)

@@ -14,8 +14,8 @@ Entry points
   scripts/smoke_macro_agent.py                 Manual smoke test for the Macro Economist Agent (real API calls)
 
 Agents (tradingagents/agents/)
-  analysts/market_analyst.py                   Market Analyst (technical, Kronos-backed)
-  analysts/social_media_analyst.py             Social Analyst (sentiment, FinGPT methodology)
+  analysts/market_analyst.py                   Market Analyst (technical, plus a Kronos forecast tool)
+  analysts/social_media_analyst.py             Social Analyst (sentiment, plus a FinGPT-style prompt on Claude Haiku)
   analysts/news_analyst.py                     News Analyst (event analysis)
   analysts/fundamentals_analyst.py             Fundamentals Analyst (financial statements)
   analysts/macro_economist.py                  Macro Economist Agent (original contribution; opt-in)
@@ -41,14 +41,14 @@ Data adapters (tradingagents/dataflows/)
   y_finance.py, yfinance_news.py               Price and news data (yfinance)
   alpha_vantage_*.py                           Alpha Vantage stock/news/fundamentals/indicators
   indicator_fallback.py                        Fallback chain when an indicator source fails
-  kronos_analyst.py                            Kronos time-series forecasting adapter
-  fingpt_analyst.py                            FinGPT-methodology sentiment adapter
+  kronos_analyst.py                            Kronos time-series forecasting adapter (returns None when the model cannot load)
+  fingpt_analyst.py                            FinGPT v3 prompt template run on claude-haiku-4-5 (no FinGPT weights)
   stockstats_utils.py                          load_ohlcv — cached OHLCV loader used by the backtest runner
 
 Backtest (tradingagents/backtest/)
   baselines.py                                 BuyAndHold, MACD(12,26,9), SMA(50/200) — shared decide() interface
   metrics.py                                   CR, Annualized Return, Sharpe, MDD from an equity curve
-  runner.py                                    Day-by-day execution engine; the no-lookahead loop
+  runner.py                                    Day-by-day execution engine: decide on D-1, fill at Open(D) (P4.11)
   agent_integration.py                         map_signal, make_decide_fn, run_tradingagents_backtest
   report.py                                    Comparison tables and equity curves
 
@@ -78,9 +78,9 @@ A full trading-day decision costs roughly 17–25 LLM calls depending on selecte
 
 ## 3. Agent Responsibilities
 
-**Market Analyst** (`analysts/market_analyst.py`). Produces the technical view: price action, momentum, and indicator state for the ticker. Unlike the upstream framework, its forecasting is backed by Kronos, a foundation model trained on financial time series, rather than generic LLM reasoning over price tables — the premise being that numerical forecasting belongs to a model trained on quantitative market structure. Output: `market_report`.
+**Market Analyst** (`analysts/market_analyst.py`). Produces the technical view: price action, momentum, and indicator state for the ticker. Unlike the upstream framework, it can call a Kronos-small forecast tool (a foundation model trained on financial time series), on the premise that numerical forecasting belongs to a model trained on quantitative market structure. The model runs with model code from a local clone of the Kronos repository and weights from the Hugging Face Hub; when it cannot load or predict, the tool returns "Kronos model unavailable for this run." and the analyst continues on indicators alone (`dataflows/kronos_analyst.py:6-9`, `agents/utils/kronos_tool.py:32`). No committed run shows Kronos output. Output: `market_report`.
 
-**Social Analyst** (`analysts/social_media_analyst.py`). Produces the sentiment view following the FinGPT methodology, using domain-specific sentiment modeling instead of a generic backbone. It summarizes the prevailing retail/social mood around the ticker and flags sentiment shifts. Output: `sentiment_report`.
+**Social Analyst** (`analysts/social_media_analyst.py`). Produces the sentiment view. Its extra tool applies the FinGPT v3 prompt template to recent headlines on Claude Haiku 4.5 (`dataflows/fingpt_analyst.py:1-4,23`): a generic LLM call with a FinGPT-style prompt, not a FinGPT model. It summarizes the prevailing retail/social mood around the ticker and flags sentiment shifts. Output: `sentiment_report`.
 
 **News Analyst** (`analysts/news_analyst.py`). Reads recent news for the ticker and the broader market through the news adapters and reports event-driven risks and catalysts — earnings, litigation, product, and general macro *narrative* (as text, not structured indicators; structured macro belongs to the Macro Economist). Output: `news_report`.
 
@@ -106,12 +106,12 @@ A full trading-day decision costs roughly 17–25 LLM calls depending on selecte
 
 The harness lives in `tradingagents/backtest/` (see PAPER.md §4 for the academic treatment; this section explains the *why* behind three load-bearing choices).
 
-### Why `prices.iloc[:i+1]` — look-ahead prevention by construction
+### The decision-timing rule: decide on D-1, fill at the open of D
 
-`runner.run_agent_strategy` walks the price series day by day and, at step `i`, hands the decision function only `prices.iloc[:i+1]` — bars up to and including the current day, never beyond (`runner.py:69`). The guarantee is structural: a strategy *cannot* peek at future bars because the data is not in scope, rather than being trusted not to. This matters because look-ahead bugs are the classic silent killer of backtest credibility — they inflate results without crashing anything. Two supporting details:
+*History.* This section used to be titled "Why `prices.iloc[:i+1]` — look-ahead prevention by construction": at step `i` the runner handed the decision function the bars up to and including the current day and executed at that day's close. The P4.1 audit found that this is look-ahead (leak L9, `docs/TEMPORAL_AUDIT.md` §2): a decision that sees the close of D cannot also be filled at it, and the news window could admit items up to the end of D. Since P4.11 (#64, `c6d990d`) the runner decides each session D on data published up to the close of D-1 (news: up to 00:00 UTC of the calendar day after D-1, decision 4b in `docs/TEMPORAL_AUDIT.md` §10.1), fills at the open of D, and every agent tool caps its date at D-1 (`docs/TEMPORAL_AUDIT.md` §10.2). The slicing alone was never a guarantee: the agent tools fetch their own data, so the guarantee now rests on the date cap in every tool. The cap does not close every leak: open temporal items include P4.2 (the `get_fundamentals` vendors ignore the date and return the current snapshot), P4.10 (as-of pricing policy; leak L7's adjusted prices, `auto_adjust=True`, are still in the code, while since #98 the gap fill no longer reads bars after the cutoff) and P4.12 (GDP vintages; leak L8, current IBGE vintages); ROADMAP F4 lists all six open items. This matters because look-ahead bugs are the classic silent killer of backtest credibility — they inflate results without crashing anything. Two supporting details:
 
-- The agent path's `decide_fn` ignores the price window argument (the graph fetches its own data), but the contract still holds because `propagate` is called with `curr_date` and all agent tools are date-keyed — they can only query data up to that date (`agent_integration.py:68-72`).
-- A `decide_fn` that raises degrades to `HOLD` instead of aborting the run (`runner.py:72-74`), so a transient failure produces a conservative no-op rather than a corrupted equity curve.
+- The agent path's `decide_fn` ignores the price window argument (the graph fetches its own data). The tools are date-capped through `cap_date` (`agents/utils/temporal.py`); `get_fundamentals` is capped too, but its vendors ignore the date (P4.2).
+- A `decide_fn` that raises degrades to `HOLD` instead of aborting the run (`runner.py:267-269`), so a transient failure produces a conservative no-op rather than a corrupted equity curve.
 
 ### Why the 5→3 signal mapping
 

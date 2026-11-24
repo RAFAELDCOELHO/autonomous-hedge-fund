@@ -30,12 +30,15 @@ Current state (v0.3.0):
 Separately from brazilfi, I developed an implementation inspired by 
 TradingAgents (Xiao et al., 2024, arXiv:2412.20138), a multi-agent LLM 
 framework for financial trading from UCLA/MIT's Tauric Research. My 
-implementation replaced the original generic LLM backbones with specialized 
-models:
+implementation added specialized tools next to the generic LLM backbones:
 
 - **Claude (Anthropic)** for agent reasoning and debate
-- **Kronos** (AAAI 2026) for time series forecasting
-- **FinGPT methodology** for sentiment analysis
+- **Kronos** (AAAI 2026) as a time-series forecast tool for the Market
+  Analyst (model code from a local clone, weights from the Hugging Face
+  Hub; when it cannot load, the tool reports it unavailable and the run
+  continues without it)
+- **the FinGPT v3 prompt template**, run on Claude Haiku 4.5, for sentiment
+  (a FinGPT-style prompt, not FinGPT model weights)
 
 The initial research question was empirical: do specialized backbones 
 (each optimized for its specific task) outperform generic LLMs across 
@@ -88,7 +91,9 @@ This convergence was not planned from the outset. The two projects
 were developed independently: brazilfi as a general-purpose SDK 
 addressing the fragmentation of Brazilian financial data sources, 
 and the hedge-fund research as an empirical question about 
-specialized backbones in multi-agent trading systems. The convergence 
+specialized backbones in multi-agent trading systems (as later implemented,
+Kronos and the FinGPT-style prompt are tools next to generic LLM calls, not
+backbones). The convergence 
 became apparent when extending the research into emerging markets 
 required macroeconomic data access as infrastructure.
 
@@ -153,11 +158,15 @@ one job each:
 - `baselines.py` — reference strategies: BuyAndHold, MACD crossover,
   SMA crossover. Shared signature: `decide(prices_so_far) -> Action`.
 - `metrics.py` — CR, AR, Sharpe, MDD. Computed from position-and-price
-  path. No look-ahead by construction.
-- `runner.py` — execution engine. `run_agent_strategy(prices, decide_fn)`
-  walks the series day by day and passes only `prices.iloc[:i+1]` to
-  `decide_fn` at step `i`. The slicing is the only guarantee against
-  leakage.
+  path.
+- `runner.py` — execution engine. As first written, `run_agent_strategy`
+  passed `prices.iloc[:i+1]` to `decide_fn` at step `i` and executed at
+  the same day's close; the later temporal audit found that this is
+  look-ahead (leak L9, `docs/TEMPORAL_AUDIT.md`). Since #64 it decides
+  each session D on data up to the close of D-1 and fills at the open
+  of D, and every agent tool caps its date at D-1 (`get_fundamentals` is capped
+  too, but its vendors ignore the date: P4.2; P4.10 and P4.12 also remain
+  open, see ROADMAP F4).
 - `report.py` — aggregates results into comparable tables and equity
   curves.
 

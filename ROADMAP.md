@@ -4,10 +4,10 @@ Research plan for testing H1 — that explicit macroeconomic reasoning matters m
 
 ## Phase 1: Infrastructure ✅ (complete)
 
-Everything needed to run the experiment exists and is validated. See PAPER.md §3–4 for the full treatment.
+Everything needed to run the experiment exists and is validated, except the H1 prerequisite P4.2 (point-in-time fundamentals, open; see F4 below). See PAPER.md §3–4 for the full treatment.
 
 - [x] Macro Economist Agent — fifth analyst, brazilfi-backed tools, opt-in via `selected_analysts`
-- [x] Backtest runner with look-ahead prevention by construction (`prices.iloc[:i+1]`)
+- [x] Backtest runner (at phase close it passed `prices.iloc[:i+1]` and executed at the same-day close, which the P4.1 audit later found to be look-ahead leak L9; since P4.11, #64, it decides on data up to the close of D-1 and fills at the open of D)
 - [x] Agent integration layer — 5→3 signal mapping, dependency-injected `decide_fn` factory
 - [x] Test suite green at phase close (current offline count intentionally not hard-coded; check live inventory with `python -m pytest --collect-only -q` in the project env)
 - [x] Neutrality validation — mock always-BUY agent numerically identical to BuyAndHold (PAPER.md Table 1)
