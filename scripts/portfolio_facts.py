@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "portfolio" / "FACTS.md"
-PIN = "7740909"  # origin/main of 2026-11-02 (#91), the state the inventory was read at
+PIN = "10fca51"  # origin/main of 2026-11-02 (#121), the base of the facts PR
 TYPES = ("prospectivo", "retrospectivo", "estado")
 
 
@@ -576,7 +576,9 @@ def build() -> str:
         queue,
         "lista dos upgrades",
     )
-    workflow = show(".github/workflows/tests.yml")
+    workflow = (ROOT / ".github/workflows/tests.yml").read_text(
+        encoding="utf-8"
+    )  # today's CI
     find(r"actions/checkout@", workflow, "checkout do CI")
     ci_note = (
         ""

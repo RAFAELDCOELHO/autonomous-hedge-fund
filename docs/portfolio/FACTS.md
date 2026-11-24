@@ -1,6 +1,6 @@
 # Fatos do portfólio: Autonomous Hedge Fund (trading multiagente)
 
-Gerado por `scripts/portfolio_facts.py` a partir do commit `7740909` (2026-11-02). Não edite à mão: `tests/test_portfolio_facts.py` falha se este arquivo não for a regeneração exata (localmente; o CI faz clone raso, sem `fetch-depth: 0` em `.github/workflows/tests.yml`, então lá o commit fixado não existe e o teste é pulado).
+Gerado por `scripts/portfolio_facts.py` a partir do commit `10fca51` (2026-11-02). Não edite à mão: `tests/test_portfolio_facts.py` falha se este arquivo não for a regeneração exata.
 
 Tipos: **prospectivo** = previsão gravada antes do fato e conferida depois; **retrospectivo** = backtest num período já visto (descreve, não prova); **estado** = contagem do que existe no repositório nesse commit. Toda fração vem com o denominador.
 
@@ -25,8 +25,8 @@ Tipos: **prospectivo** = previsão gravada antes do fato e conferida depois; **r
 | 15 | LLM local: determinismo | qwen2.5:7b local, temperatura 0: 3 datas × 10 partidas a frio, respostas idênticas em 3 de 3 datas (todas BUY); o prompt usa o fechamento do dia da decisão (look-ahead) | Mostra só que a temperatura 0 repete a resposta; não mede acerto. | retrospectivo | `benchmark/results/qwen_n10/summary.csv`; `docs/TEMPORAL_AUDIT.md` §10 |
 | 16 | LLM local: confiança | 1 faixa de confiança, 6 decisões de mistral:7b, 1 prompt único: não é calibração | Um esqueleto de análise, sem dados para concluir nada. | retrospectivo | `benchmark/results/reliability/bins.csv` |
 | 17 | Headline Arena (braço prospectivo) | 0 resultados ao vivo; a pasta tem 2 arquivos (SCHEMA.md, dry_run.json), um ensaio offline | O único caminho com previsões travadas antes do resultado ainda não rodou. | estado | `benchmark/results/headline_arena/`; `README.md` |
-| 18 | Autoria e uso de IA | 124 commits na main em `7740909`: 66 com coautoria do Cursor Agent e 3 do Claude (trailer `Co-authored-by`) | Commits com trailer de coautoria de IA; um commit sem trailer também pode ter usado IA. | estado | `git log` em PIN |
-| 19 | Tamanho do código | tradingagents: 71 arquivos .py; scripts: 16 arquivos .py; tests: 89 arquivos .py; 593 funções `def test_` (contagem estática) | O pacote `tradingagents` vem do TradingAgents (Xiao et al., 2024); a divisão entre o código novo e o herdado não é medida aqui. | estado | `git ls-tree` em PIN |
+| 18 | Autoria e uso de IA | 151 commits na main em `10fca51`: 93 com coautoria do Cursor Agent e 3 do Claude (trailer `Co-authored-by`) | Commits com trailer de coautoria de IA; um commit sem trailer também pode ter usado IA. | estado | `git log` em PIN |
+| 19 | Tamanho do código | tradingagents: 71 arquivos .py; scripts: 16 arquivos .py; tests: 96 arquivos .py; 684 funções `def test_` (contagem estática) | O pacote `tradingagents` vem do TradingAgents (Xiao et al., 2024); a divisão entre o código novo e o herdado não é medida aqui. | estado | `git ls-tree` em PIN |
 | 20 | SDK de dados brasileiros | brazilfi 0.2.1, instalado de https://pypi.org/simple | O agente macro lê SELIC, IPCA, PIB e câmbio por esse pacote, que o PAPER atribui ao mesmo autor. | estado | `uv.lock`; `PAPER.md` §3.1 |
 
 ## O que não está aqui, e por quê
@@ -35,4 +35,4 @@ Tipos: **prospectivo** = previsão gravada antes do fato e conferida depois; **r
 - **Quantos testes passam:** o resultado do CI não fica gravado no repositório; aqui só a contagem estática.
 - **Quanto do código é novo:** o repositório não tem o histórico do upstream para comparar.
 - **Os upgrades de setembro (`up/17`…`up/42`: custos, sementes, bootstrap, PSR/DSR, Holm):** ficaram em branches locais, fora da main; `docs/archive/PR_QUEUE.md` diz: None of the "Adds (upgrade)" deliverables reached `main`.
-- **O número de PRs como mérito:** 30 de 124 commits da main têm assunto `test`/`tests` (26 com coautoria do Cursor Agent); a contagem de PRs não mede trabalho de pesquisa.
+- **O número de PRs como mérito:** 35 de 151 commits da main têm assunto `test`/`tests` (31 com coautoria do Cursor Agent); a contagem de PRs não mede trabalho de pesquisa.

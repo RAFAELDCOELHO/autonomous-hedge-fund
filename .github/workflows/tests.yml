@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # full history: tests/test_portfolio_facts.py reads the pinned commit
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
