@@ -14,7 +14,7 @@ Prints CR / Sharpe / MDD for Buy & Hold, MACD(12,26,9), and SMA(50/200). The liv
 - Filled Datasets & Benchmarks checklist: [`docs/NEURIPS_CHECKLIST.md`](docs/NEURIPS_CHECKLIST.md)
 - Repro instructions on `main`: see [Reproduce the paper tables (offline, no API key)](#reproduce-the-paper-tables-offline-no-api-key) in this README using `make reproduce`.
 - Reproducibility manifest (seeds, JSONL schemas, model versions): [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md)
-- H1 statistical criterion (pre-registration draft, awaiting sign-off): [`docs/PREREGISTRATION.md`](docs/PREREGISTRATION.md)
+- H1 statistical criterion (pre-registration signed by the author on 2026-09-29, signed version `3c9f8f0`, a pre-squash commit that is not in main's history; the experiment has not been run): [`docs/PREREGISTRATION.md`](docs/PREREGISTRATION.md)
 - Superseded daily PR plan (historical; its upgrades never landed): [`docs/archive/PR_QUEUE.md`](docs/archive/PR_QUEUE.md)
 
 > Does explicit macroeconomic reasoning matter more for LLM trading agents in emerging markets than in developed ones? This is an independent research project that extends the TradingAgents framework with an original Macro Economist Agent and a 2×2 factorial experiment to test that hypothesis.
@@ -42,8 +42,8 @@ flowchart LR
     end
 
     subgraph ANALYSTS["Analyst Layer (independent)"]
-        MKT["Market Analyst<br/>(Kronos)"]
-        SOC["Social Analyst<br/>(FinGPT)"]
+        MKT["Market Analyst<br/>(+ Kronos tool)"]
+        SOC["Social Analyst<br/>(+ FinGPT-style prompt)"]
         NWS["News Analyst"]
         FND["Fundamentals Analyst"]
         MEC["Macro Economist Agent ★"]
@@ -90,8 +90,8 @@ flowchart LR
 | Layer | Technology |
 |-------|------------|
 | LLM backbone | Claude Sonnet 4.6 (reasoning, debate) + Claude Haiku 4.5 (fast tasks) |
-| Time series | Kronos-small (AAAI 2026) |
-| Sentiment | FinGPT v3 methodology |
+| Time series | Kronos-small (AAAI 2026) as a Market Analyst tool, run with model code from a local clone of the Kronos repository and weights from the Hugging Face Hub; if it cannot load or predict, the tool reports "Kronos model unavailable for this run." and the run continues without it (`tradingagents/dataflows/kronos_analyst.py:6-9`, `tradingagents/agents/utils/kronos_tool.py:32`). No committed run shows Kronos output. |
+| Sentiment | the FinGPT v3 prompt template run on Claude Haiku 4.5, not FinGPT model weights (`tradingagents/dataflows/fingpt_analyst.py:1-4,23`) |
 | Macro data | brazilfi (Bacen, IBGE, Tesouro Direto, B3 — typed Python SDK) |
 | Market data | Yahoo Finance + OpenBB |
 | Orchestration | LangGraph StateGraph, ~17–25 LLM calls per trading day |
@@ -108,9 +108,9 @@ flowchart LR
 - Macro Economist Agent: a fifth analyst that consumes structured Brazilian macro data (SELIC, IPCA, GDP, BRL/USD)
 - brazilfi integration: an agent tool layer built on a typed SDK for Bacen/IBGE/Tesouro/B3 data (also authored independently)
 - The H1 hypothesis and 2×2 factorial design: macroeconomic volatility asymmetry across market types
-- Backtest infrastructure: `baselines.py`, `metrics.py`, `runner.py`, `report.py`, with look-ahead prevention by construction (`prices.iloc[:i+1]`)
+- Backtest infrastructure: `baselines.py`, `metrics.py`, `runner.py`, `report.py`. Since #64 (`c6d990d`) the runner decides each session D on data published up to the close of D-1 (news: up to 00:00 UTC of the calendar day after D-1, decision 4b in `docs/TEMPORAL_AUDIT.md` §10.1) and fills at the open of D, and every agent tool caps its date at D-1, though open temporal items include P4.2 (the `get_fundamentals` vendors ignore the date and return the current snapshot), P4.10 (as-of pricing policy; leak L7, adjusted and back-filled prices, is still in the code) and P4.12 (GDP vintages; leak L8, current IBGE vintages); ROADMAP F4 lists all six open items; the earlier same-day close execution (`prices.iloc[:i+1]`) was look-ahead leak L9 (`docs/TEMPORAL_AUDIT.md`, §2 and §10.2)
 - Agent–backtest integration layer (`agent_integration.py`): signal mapping (5→3 classes), a dependency-injected `decide_fn` factory, validated for neutrality against Buy & Hold
-- Specialized backbones: Kronos for time-series forecasting and FinGPT for sentiment, instead of generic LLM calls
+- Extra analyst tools: a Kronos-small forecast for the Market Analyst (it degrades to "unavailable" when the model cannot load) and a FinGPT v3-style sentiment prompt run on Claude Haiku 4.5 for the Social Analyst (a generic LLM call with a FinGPT prompt, not a FinGPT model)
 - Brazilian equity universe: ITUB4, BPAC11 (banking, SELIC-sensitive), PETR4 (energy, FX + commodity), VALE3 (mining, FX + China), WEGE3 (industrial exporter, FX), RADL3 (defensive consumer, low macro sensitivity; the control)
 
 ## Experimental design (2×2 factorial)
@@ -124,7 +124,7 @@ Prediction: ΔSharpe (macro present − absent) ≫ 0 for Brazilian equities, �
 
 ## Current results (baselines)
 
-Reference strategies on AAPL, full year 2023:
+Reference strategies on AAPL, full year 2023 (computed before #64, under the earlier close-execution convention; this text was last changed on 2026-06-12 and the numbers have not been re-derived under the current open-execution runner):
 
 | Strategy | CR (%) | Sharpe | MDD (%) |
 |----------|--------|--------|---------|
@@ -132,7 +132,7 @@ Reference strategies on AAPL, full year 2023:
 | MACD(12,26,9) | 36.04 | 2.047 | -6.40 |
 | SMA(50/200) | 9.64 | 0.722 | -5.09 |
 
-Before any experiment, the integration layer was validated for neutrality: a mock agent that always returns BUY produces results numerically identical to Buy & Hold (CR, Sharpe, and MDD all match). This rules out hidden transaction costs, off-by-one errors, and state leakage in the harness.
+Before any experiment, the integration layer was validated for neutrality: a mock agent that always returns BUY produces results numerically identical to Buy & Hold (CR, Sharpe, and MDD all match). On that path it rules out hidden transaction costs, off-by-one errors, and state leakage in the harness; the check covers only the BUY path over one month (AAPL, January 2024), and SELL/HOLD-path checks are still planned (PAPER.md §4).
 
 There are no multi-agent results yet; the H1 experiment has not been run. See [CONTRIBUTION.md](CONTRIBUTION.md) for the experimental plan.
 

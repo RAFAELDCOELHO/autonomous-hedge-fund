@@ -73,27 +73,27 @@ Prompt text for those logs lives in the producing scripts
 prompt builder in `brazilbench_mistral_test.py`). They are **not** yet
 exported as a versioned prompt pack separate from the scripts.
 
-### qwen2.5:7b — N=10 cold-start (**open PR, not on `main`**)
+### qwen2.5:7b — N=10 cold-start (on `main` since #8, `be53470`, 2026-09-06)
 
 | Item | Value |
 |---|---|
 | Branch / PR | `feat/p1-5-qwen-coldstart-n10` ([PR #8](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/pull/8)) |
 | Runtime | **Ollama**, cold-start protocol (`pkill` + `OLLAMA_KEEP_ALIVE=0`) |
-| Model tag | `qwen2.5:7b` (digest recorded in branch `summary.json`) |
-| Results dir (on that branch) | `benchmark/results/qwen_n10/` (`runs.jsonl`, `summary.csv`, `summary.json`) |
+| Model tag | `qwen2.5:7b` (digest recorded in `summary.json`) |
+| Results dir | `benchmark/results/qwen_n10/` (`runs.jsonl`, `summary.csv`, `summary.json`) |
 | Script | `scripts/qwen_coldstart_n10.py` |
 
-Until #8 merges, these paths are **absent from `main`**.
+Caveat: the prompt carries the close of the decision day D and returns computed to it, which is look-ahead under the decide-before-the-open rule (`docs/TEMPORAL_AUDIT.md` §10).
 
-### Chronos — `amazon/chronos-t5-tiny` optional extra (**open PR, not on `main`**)
+### Chronos — `amazon/chronos-t5-tiny` optional extra (on `main` since #12, `e6017aa`, 2026-09-07)
 
 | Item | Value |
 |---|---|
 | Branch / PR | `feat/p1-10-chronos` ([PR #12](https://github.com/RAFAELDCOELHO/autonomous-hedge-fund/pull/12)) |
 | Runtime | **Hugging Face** / `chronos-forecasting` (CPU), **not** Ollama |
 | Model id | `amazon/chronos-t5-tiny` |
-| Optional dep (on that branch) | `[project.optional-dependencies] chronos` |
-| Results dir (on that branch) | `benchmark/results/chronos/` (+ local README) |
+| Optional dep | `[project.optional-dependencies] chronos` |
+| Results dir | `benchmark/results/chronos/` (+ local README) |
 | Script | `scripts/chronos_comparator.py` (`CHRONOS_SKIP=1` keeps CI green without the extra) |
 
 ### Ollama vs Hugging Face (how to read model lines)
@@ -102,7 +102,7 @@ Until #8 merges, these paths are **absent from `main`**.
 |---|---|---|
 | Local LLM logs / cold-start | **Ollama** tag (`model:size`) | `mistral:7b`, `qwen2.5:7b` |
 | Chronos comparator | **HF** model id via `chronos-forecasting` | `amazon/chronos-t5-tiny` |
-| Kronos analyst (pipeline) | HF / torch (GPU-oriented) | separate from `$0` `make reproduce` |
+| Kronos analyst (pipeline) | HF / torch (GPU-oriented), model code from a local clone of the Kronos repository, weights from the Hugging Face Hub; the tool reports "unavailable" when it cannot load | separate from `$0` `make reproduce`; no committed run shows Kronos output |
 
 Do not treat an Ollama tag and an HF id as interchangeable.
 
@@ -113,18 +113,16 @@ Do not treat an Ollama tag and an HF id as interchangeable.
 | Artifact | Schema / notes |
 |---|---|
 | `benchmark/results/reliability/decisions.jsonl` | **`benchmark/results/reliability/SCHEMA.md`** (fields, types, caveats) |
-| `benchmark/results/qwen_n10/runs.jsonl` | Documented in P1.5 script docstring / `summary.json` metadata (**PR #8 only**) |
+| `benchmark/results/qwen_n10/runs.jsonl` | Documented in P1.5 script docstring / `summary.json` metadata |
 | Classical CSVs (`random_n100`, `baselines`, `brazilbench`) | [`benchmark/results/SCHEMA.md`](../benchmark/results/SCHEMA.md) (fields, types); also producing scripts + paper table captions; not JSONL |
 
 ---
 
-## Other classical extras on open PRs (not on `main`)
+## Other classical extras (were on open PRs, now on `main`)
 
-> **Status update:** the qwen_n10 / chronos / hmm_regimes / multi_asset /
-> survivorship result trees listed below have since been merged into `main`.
-
-These are `$0` / offline once merged; listed here so the inventory is
-honest. Paths below **do not exist on `main`** as of this manifest.
+These were listed here as not on `main` while their PRs were open. All three
+have since merged (#9 `83dcd52`, #10 `fff7a6b`, #11 `fa3a5b2`), and their
+result trees are on `main`. They are `$0` / offline.
 
 | Topic | Branch | PR | Results dir |
 |---|---|---|---|
@@ -143,10 +141,7 @@ honest. Paths below **do not exist on `main`** as of this manifest.
   (`make reliability` + SCHEMA.md); Claude multi-seed logs do not.
 - **Separate prompt archive** outside producing scripts for mistral /
   qwen (prompts are embedded in `determinism_test.py`,
-  `brazilbench_mistral_test.py`, and the P1.5 script on its branch).
-- **qwen_n10 / chronos / hmm_regimes / multi_asset / survivorship**
-  result trees — present on open PRs above, **not** on `main` until
-  those PRs merge (do not invent them here).
+  `brazilbench_mistral_test.py`, and `scripts/qwen_coldstart_n10.py`).
 - Hand-typed `docs/brazilbench.tex` classical tables from an older
   yfinance vintage — outside `make reproduce`.
 
@@ -183,7 +178,7 @@ scripts/reliability_diagram.py
 Makefile
 ```
 
-Open-PR-only paths (must be mentioned above as **not on `main`**):
+Paths that were open-PR-only when this manifest was written (merged since: #8, #9, #10, #11, #12):
 
 ```
 benchmark/results/qwen_n10/
